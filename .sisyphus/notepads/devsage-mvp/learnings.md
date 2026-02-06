@@ -704,3 +704,34 @@ await db.select().from(users);
 - ✅ GET /hackathons/:id/registrations as organiser owner → 200 with user list
 - ✅ GET /hackathons/:id/registrations as non-owner → 403 Forbidden
 
+
+## Task 8: HackathonLifecycleDO — State Machine with Alarm-Driven Transitions (2026-02-06)
+
+### Durable Object SQLite + RPC pattern
+- Use `this.ctx.blockConcurrencyWhile()` in constructor to run `CREATE TABLE IF NOT EXISTS lifecycle_state (...)` before handling requests.
+- Keep DO state internal to SQLite (`this.ctx.storage.sql`) and expose only RPC endpoints: `POST /initialize`, `GET /state`, `POST /transition`.
+- For SQL cursor typing under strict TypeScript, parse `toArray()` rows as unknown records and validate shape at runtime.
+
+### Compare-and-set transition pattern
+- Transition request shape: `{ action, expectedVersion }`, where `expectedVersion` must equal current `version`.
+- CAS update uses SQL guard: `UPDATE ... WHERE hackathon_id = ? AND version = ?` then verifies `version === expectedVersion + 1` and target status.
+- Conflict responses should include `currentState`, `allowedTransitions`, and `allowedActions` to make retries deterministic.
+
+### Alarm scheduling pattern
+- On transition to `REGISTRATION_OPEN`, schedule alarm at `hackingStart`; on transition to `HACKING`, schedule at `submissionDeadline`.
+- Alarm handler checks current status and deadline before auto-transitioning (`REGISTRATION_OPEN -> HACKING`, `HACKING -> SUBMISSION_CLOSED`).
+- After reaching terminal/non-alarm states (`SUBMISSION_CLOSED`, `COMPLETED`, `DRAFT`), clear alarms with `deleteAlarm()`.
+
+### Worker <-> DO consistency pattern
+- Use DO ID strategy: `env.HACKATHON_LIFECYCLE.idFromName(hackathonId)` so one logical lifecycle object per hackathon.
+- Worker remains the only component touching D1: after successful DO transition, update `hackathons.status` and `updated_at`.
+- `GET /api/hackathons/:id/lifecycle` also reconciles D1 status with DO status to handle alarm-driven transitions (eventual consistency repair).
+
+### Verification executed
+- ✅ `pnpm turbo build --filter=@devsage/api` passes.
+- ✅ Lifecycle initialization returns `DRAFT` with `version: 1`.
+- ✅ `DRAFT -> REGISTRATION_OPEN` succeeds with `version: 2`.
+- ✅ Invalid transition and stale version both return `409` with conflict details.
+- ✅ Full manual progression reaches `COMPLETED` at `version: 5`.
+- ✅ Alarm-driven progression auto-advanced `REGISTRATION_OPEN -> HACKING -> SUBMISSION_CLOSED` using near-term deadlines.
+- ✅ D1 status matched DO status after transitions (`GET /api/hackathons/:id` returned `COMPLETED`).

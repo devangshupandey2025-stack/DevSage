@@ -978,7 +978,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 8. HackathonLifecycleDO — State Machine with Alarm-Driven Transitions
+- [x] 8. HackathonLifecycleDO — State Machine with Alarm-Driven Transitions
 
   **What to do**:
   - Implement `HackathonLifecycleDO` in `apps/api/src/durable-objects/hackathon-lifecycle.ts`:
