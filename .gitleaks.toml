@@ -1,0 +1,23 @@
+title = "DevSage gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow common placeholders and generated files"
+
+# NOTE: `paths` are regexes (not globs).
+paths = [
+  '''^pnpm-lock\.yaml$''',
+  '''^.*\.tsbuildinfo$''',
+  '''^.*\/dist\/.*$''',
+  '''^.*\/build\/.*$''',
+  '''^.*\/out\/.*$'''
+]
+
+regexes = [
+  '''(?i)\bchangeme\b''',
+  '''(?i)\bdummy\b''',
+  '''(?i)\byour_(api_)?key_here\b''',
+  '''(?i)\bexample_(api_)?key\b'''
+]

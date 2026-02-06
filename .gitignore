@@ -15,12 +15,31 @@ out/
 # Environment
 .env
 .env.local
+.env.*
 .env.*.local
+.env.production
+!apps/web/.env.production
+!**/.env.example
 .dev.vars
+.envrc
+
+# Husky install artifacts
+.husky/_/
 
 # Wrangler
 .wrangler/
 wrangler.toml.local
+
+# Common credential files
+.npmrc
+.pypirc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
 
 # IDE
 .vscode/
