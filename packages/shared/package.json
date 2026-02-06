@@ -3,5 +3,24 @@
   "version": "0.1.0",
   "description": "DevSage shared utilities and types",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@devsage/config": "workspace:*",
+    "typescript": "^5.3.0"
+  }
 }
