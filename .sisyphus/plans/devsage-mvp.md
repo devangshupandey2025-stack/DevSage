@@ -80,18 +80,18 @@ Deliver a working MVP where organisers create hackathons with lifecycle phases, 
 - Vitest test suite using `@cloudflare/vitest-pool-workers`
 
 ### Definition of Done
-- [ ] `pnpm turbo build` succeeds with zero errors across all 5 packages
-- [ ] `pnpm turbo test` passes all test suites
-- [ ] `wrangler dev` starts the Worker locally with D1, KV, DO, and Queue bindings
-- [ ] OAuth login with Google redirects and returns a valid JWT cookie
-- [ ] OAuth login with GitHub redirects and returns a valid JWT cookie
-- [ ] Organiser can create a hackathon and transition it through phases
-- [ ] Participant can register for a hackathon and join a team
-- [ ] GitHub webhook with valid signature is accepted and queued
-- [ ] Queued webhook is processed and submission is recorded in SubmissionDO
-- [ ] React SPA loads at root URL with working client-side routing
-- [ ] Unauthenticated users are redirected to login
-- [ ] All timestamps are UTC ISO-8601
+- [x] `pnpm turbo build` succeeds with zero errors across all 5 packages
+- [x] `pnpm turbo test` passes all test suites
+- [x] `wrangler dev` starts the Worker locally with D1, KV, DO, and Queue bindings
+- [x] OAuth login with Google redirects and returns a valid JWT cookie
+- [x] OAuth login with GitHub redirects and returns a valid JWT cookie
+- [x] Organiser can create a hackathon and transition it through phases
+- [x] Participant can register for a hackathon and join a team
+- [x] GitHub webhook with valid signature is accepted and queued
+- [x] Queued webhook is processed and submission is recorded in SubmissionDO
+- [x] React SPA loads at root URL with working client-side routing
+- [x] Unauthenticated users are redirected to login
+- [x] All timestamps are UTC ISO-8601
 
 ### Must Have
 - OAuth 2.0 with Google and GitHub (manual implementation, not middleware)
@@ -1893,18 +1893,18 @@ wrangler dev --local      # Expected: Worker starts, all bindings available
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" features present and working
-- [ ] All "Must NOT Have" exclusions verified absent
-- [ ] All 13 tasks completed with passing acceptance criteria
-- [ ] `pnpm turbo build` succeeds across all packages
-- [ ] `pnpm turbo test` passes all suites
-- [ ] OAuth login works with both Google and GitHub
-- [ ] Hackathon lifecycle transitions work end-to-end
-- [ ] Team management works (create, join, leave)
-- [ ] GitHub webhooks accepted and processed
-- [ ] React SPA loads with role-aware dashboards
-- [ ] All timestamps are UTC ISO-8601
-- [ ] No direct D1 access from inside DO classes
-- [ ] wrangler.jsonc used (not .toml)
-- [ ] SQLite-backed DOs configured
-- [ ] Evidence screenshots saved in `.sisyphus/evidence/`
+- [x] All "Must Have" features present and working
+- [x] All "Must NOT Have" exclusions verified absent
+- [x] All 13 tasks completed with passing acceptance criteria
+- [x] `pnpm turbo build` succeeds across all packages
+- [x] `pnpm turbo test` passes all suites
+- [x] OAuth login works with both Google and GitHub
+- [x] Hackathon lifecycle transitions work end-to-end
+- [x] Team management works (create, join, leave)
+- [x] GitHub webhooks accepted and processed
+- [x] React SPA loads with role-aware dashboards
+- [x] All timestamps are UTC ISO-8601
+- [x] No direct D1 access from inside DO classes
+- [x] wrangler.jsonc used (not .toml)
+- [x] SQLite-backed DOs configured
+- [x] Evidence screenshots saved in `.sisyphus/evidence/`
