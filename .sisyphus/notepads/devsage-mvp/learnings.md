@@ -759,3 +759,18 @@ await db.select().from(users);
 
 ### Routing consistency
 - Hackathon-scoped submission endpoints are best mounted under `/api/hackathons` so route definitions like `/:id/submissions` resolve to `/api/hackathons/:id/submissions`.
+
+## Task 12: Frontend Dashboards & Team Management (2026-02-06)
+
+### Shadcn/UI Patterns
+- **Manual Component Creation**: Components like Tabs must be created manually in `components/ui/` using standard shadcn/ui patterns (wrapping Radix primitives, using `cn()`, `forwardRef`).
+- **Dependencies**: Primitives (e.g., `@radix-ui/react-tabs`) must be installed in `apps/web`, not root.
+
+### Frontend Data Patterns
+- **User Team Lookup**: API lacks a direct "my-team" endpoint. Pattern used: Fetch full team list for hackathon (`GET /hackathons/:id/teams`) -> filter client-side by `captain_id === user.id || members.includes(user.id)`.
+  - *Tech Debt*: This scales poorly. Future enhancement should add `GET /hackathons/:id/my-team`.
+- **Repo Linking**: "owner/repo" string format validation done client-side before POST.
+- **State Management**: Local state (`useState`) + `useEffect` fetcher + `useCallback` wrapper used for simple page data. No global store needed for this scale.
+
+### Build Verification
+- **Turbo Build**: `pnpm turbo build --filter=@devsage/web` ensures all components and pages compile correctly. This catches missing imports or type errors across the project.

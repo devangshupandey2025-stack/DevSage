@@ -1567,7 +1567,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 12. Frontend Dashboards — Participant + Organiser Views + Submission Visibility
+- [x] 12. Frontend Dashboards — Participant + Organiser Views + Submission Visibility
 
   **What to do**:
   - Implement **Participant Dashboard** (`apps/web/src/pages/dashboard.tsx`):
