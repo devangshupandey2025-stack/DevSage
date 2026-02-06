@@ -3,5 +3,25 @@
   "version": "0.1.0",
   "description": "DevSage database layer",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./schema": "./dist/schema/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "generate": "tsc && drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@devsage/config": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "drizzle-kit": "^0.30.1",
+    "typescript": "^5.7.2"
+  }
 }

@@ -1,0 +1,13 @@
+import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  avatar_url: text('avatar_url'),
+  provider: text('provider', { enum: ['google', 'github'] }).notNull(),
+  provider_id: text('provider_id').notNull(),
+  role: text('role', { enum: ['organiser', 'participant'] }).notNull().default('participant'),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+});
