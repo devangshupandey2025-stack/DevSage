@@ -609,3 +609,98 @@ await db.select().from(users);
 - OAuth upsert query uses provider isolation: `where(and(eq(users.email, email), eq(users.provider, provider)))`.
 - Existing user path updates identity fields (`name`, `avatar_url`, `provider_id`, `updated_at`); new user inserts UUID with default role `participant`.
 - JWT payload is sourced from upserted user (`sub`, `email`, `role`) and attached to request context in auth middleware.
+
+## Task 7: Hackathon CRUD Vertical Slice - API Routes, D1 Queries, Validation (2026-02-06)
+
+### Drizzle D1 query patterns
+- `.get()` returns single row or undefined; `.all()` returns array of rows
+- Conditional where: use ternary for type-safe condition assignment instead of `let` + `if/else`
+- Pagination: `limit(n).offset(n)` chainable on select queries
+- Total count: separate query without limit/offset (D1 doesn't have COUNT aggregation in Drizzle yet)
+- Join syntax: `.innerJoin(table, eq(table.col, otherTable.col))` with select shape: `{ user: users }`
+
+### Hono route patterns with AuthAppEnv
+- Route files must use `Hono<AuthAppEnv>` type (not `{ Bindings: Env }`) to access `c.get('user')`
+- `c.get('user')` returns `AuthenticatedUser` (JWT payload: `sub`, `email`, `role`)
+- Apply middleware: `hackathons.use('*', authMiddleware)` at top of route file
+- Combine middleware: `hackathons.post('/', requireRole('organiser'), zValidator(...), async (c) => ...)`
+
+### zValidator integration
+- Import: `import { zValidator } from '@hono/zod-validator'`
+- Usage: `zValidator('json', CreateHackathonRequestSchema)` as middleware before handler
+- Access validated data: `c.req.valid('json')` (fully typed from schema)
+- Validation errors return 400 with Zod error shape automatically
+
+### D1 database migrations with wrangler
+- Migrations path must be in `d1_databases[].migrations_dir` (not top-level)
+- Apply local migrations: `wrangler d1 migrations apply <db-name> --local` from API directory
+- Local D1 storage: `.wrangler/state/v3/d1/` (sqlite3 file)
+- Manual SQL: `wrangler d1 execute <db-name> --local --command "INSERT ..."`
+
+### Role-aware visibility pattern
+- Organisers: `where(eq(hackathons.organiser_id, user.sub))` (see only their own)
+- Participants: `where(ne(hackathons.status, 'DRAFT'))` (see all non-DRAFT)
+- Ternary assignment: `const whereCondition = role === 'organiser' ? eq(...) : ne(...)`
+
+### Update/Delete authorization pattern
+- Fetch hackathon first to check existence
+- Check ownership: `hackathon.organiser_id !== user.sub` → 403 Forbidden
+- Check status: `hackathon.status !== 'DRAFT'` → 400 Invalid Status
+- Only perform operation if both checks pass
+
+### Drizzle update with partial fields
+- Build update object conditionally: `if (body.title !== undefined) updateData.title = body.title`
+- Always include timestamp: `updateData.updated_at = new Date().toISOString()`
+- Type: `const updateData: Record<string, unknown> = {}`
+- Apply: `db.update(table).set(updateData).where(eq(table.id, id))`
+
+### Registration unique constraint handling
+- Drizzle throws `Error` with message containing "UNIQUE constraint failed" on duplicate insert
+- Catch error: `try { await insert } catch (error) { if (error instanceof Error && error.message.includes('UNIQUE')) ... }`
+- Return 409 Conflict with code `DUPLICATE_REGISTRATION`
+
+### HTTP status codes for CRUD
+- 201 Created: POST create operations (return created entity)
+- 200 OK: GET single/list, PATCH update (return data)
+- 204 No Content: DELETE operations (return `c.body(null, 204)`)
+- 404 Not Found: Entity doesn't exist
+- 403 Forbidden: Auth passed but insufficient permissions (wrong role, not owner)
+- 400 Bad Request: Invalid state (e.g., trying to modify non-DRAFT hackathon)
+- 409 Conflict: Duplicate resource (e.g., already registered)
+
+### Join queries with Drizzle
+- Select with join: `db.select({ user: users }).from(registrations).innerJoin(users, eq(registrations.user_id, users.id))`
+- Result shape: `[{ user: { id, email, name, ... } }]`
+- Extract nested data: `registrationList.map((r) => r.user)`
+
+### Testing workflow
+- Create D1 database: `wrangler d1 create <name>`
+- Apply migrations: `wrangler d1 migrations apply <name> --local`
+- Insert test users: `wrangler d1 execute <db> --local --command "INSERT INTO users ..."`
+- Generate JWT tokens: Node.js script using `crypto.subtle` + HS256 manual signing
+- Start dev server: `wrangler dev --local &`
+- Test with curl: `curl -H "Cookie: session=<JWT>" http://localhost:8787/api/...`
+
+### Critical fixes applied
+- Changed Hono type from `{ Bindings: Env }` to `AuthAppEnv` to enable `c.get('user')` type safety
+- Replaced `let` + `if/else` with ternary for `whereCondition` to avoid implicit `any` type error
+- Added `migrations_dir` to `d1_databases[]` in wrangler.jsonc (not top-level field)
+
+### Verification results
+- ✅ Build passes: `pnpm turbo build --filter=@devsage/api` (exit 0)
+- ✅ POST /hackathons as organiser → 201 with id and status='DRAFT'
+- ✅ POST /hackathons as participant → 403 Forbidden
+- ✅ GET /hackathons as organiser → only their hackathons
+- ✅ GET /hackathons as participant → only non-DRAFT hackathons
+- ✅ GET /hackathons/:id → 200 with hackathon
+- ✅ GET /hackathons/nonexistent → 404 Not Found
+- ✅ PATCH /hackathons/:id as owner in DRAFT → 200 with updated data
+- ✅ PATCH /hackathons/:id when status != DRAFT → 400 Invalid Status
+- ✅ DELETE /hackathons/:id as owner in DRAFT → 204, then 404 on GET
+- ✅ DELETE /hackathons/:id when status != DRAFT → 400 Invalid Status
+- ✅ POST /hackathons with title.length < 3 → 400 with Zod validation error
+- ✅ POST /hackathons/:id/register as participant → 201
+- ✅ POST /hackathons/:id/register duplicate → 409 Duplicate Registration
+- ✅ GET /hackathons/:id/registrations as organiser owner → 200 with user list
+- ✅ GET /hackathons/:id/registrations as non-owner → 403 Forbidden
+

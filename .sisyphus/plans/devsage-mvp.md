@@ -825,7 +825,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 7. Hackathon CRUD Vertical Slice — API Routes, D1 Queries, Validation
+- [x] 7. Hackathon CRUD Vertical Slice — API Routes, D1 Queries, Validation
 
   **What to do**:
   - Implement Hackathon API routes in `apps/api/src/routes/hackathons.ts`:
