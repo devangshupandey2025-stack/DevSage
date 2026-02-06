@@ -584,3 +584,28 @@ await db.select().from(users);
 2. Apply migration: `wrangler d1 migrations apply devsage-db --local` (for dev)
 3. Production: `wrangler d1 migrations apply devsage-db` (after deploy)
 
+
+## Task 6: Auth Vertical Slice - OAuth + JWT + Middleware (2026-02-06)
+
+### crypto.subtle JWT signing/verification pattern
+- Cloudflare Workers supports HS256 JWT via `crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])`.
+- JWT generation is manual: JSON header/payload -> UTF-8 bytes -> base64url encode -> sign `header.payload` -> base64url signature.
+- JWT verification must validate all pieces: token shape (3 parts), header (`alg=HS256`, `typ=JWT`), HMAC signature, payload fields (`sub`, `email`, `role`, `iat`, `exp`), and expiration (`exp > now`).
+
+### OAuth state CSRF protection pattern
+- Generate state with `crypto.randomUUID()` and store in KV as `oauth:state:{uuid}` with TTL 600 seconds.
+- Persist metadata in state value: `{ provider, redirectUri, createdAt }`.
+- On callback: require both `code` and `state`, fetch state entry, validate provider, and delete KV key immediately (one-time use).
+- Provider flow is manual fetch-based (no middleware): exchange code for access token, fetch provider profile, map to internal user shape.
+
+### Cookie settings (dev vs prod)
+- Session cookie is `session`, `HttpOnly`, `Path=/`, `Max-Age=7d`.
+- Dev mode uses `SameSite=Lax` and `Secure=false` for localhost HTTP.
+- Production mode uses `SameSite=Strict` and `Secure=true` (inferred from `FRONTEND_URL` using `https:` protocol).
+- Logout uses cookie deletion helper, returning `Set-Cookie` with `Max-Age=0`.
+
+### User upsert with Drizzle
+- DB client pattern: `const db = createDbClient(c.env.DB)` from `@devsage/db`.
+- OAuth upsert query uses provider isolation: `where(and(eq(users.email, email), eq(users.provider, provider)))`.
+- Existing user path updates identity fields (`name`, `avatar_url`, `provider_id`, `updated_at`); new user inserts UUID with default role `participant`.
+- JWT payload is sourced from upserted user (`sub`, `email`, `role`) and attached to request context in auth middleware.

@@ -694,7 +694,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 6. Auth Vertical Slice — OAuth Flows, JWT, Middleware, Protected Routes
+- [x] 6. Auth Vertical Slice — OAuth Flows, JWT, Middleware, Protected Routes
 
   **What to do**:
   - Implement manual OAuth 2.0 flow for **Google**:
