@@ -235,7 +235,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 1. Monorepo Scaffolding — Turborepo + pnpm Workspaces + 5 Packages
+- [x] 1. Monorepo Scaffolding — Turborepo + pnpm Workspaces + 5 Packages
 
   **What to do**:
   - Initialize git repository in `/home/srijan/DevSage`
@@ -316,7 +316,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 2. Shared Package — Zod Schemas, Types, and Constants
+- [x] 2. Shared Package — Zod Schemas, Types, and Constants
 
   **What to do**:
   - Install dependencies in `packages/shared`: `zod`, `typescript`
@@ -419,7 +419,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 3. Config Package — Shared TypeScript and ESLint Configuration
+- [x] 3. Config Package — Shared TypeScript and ESLint Configuration
 
   **What to do**:
   - Create `packages/config/package.json` with name `@devsage/config`
@@ -478,7 +478,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 4. DB Package — Drizzle Schema and D1 Migrations
+- [x] 4. DB Package — Drizzle Schema and D1 Migrations
 
   **What to do**:
   - Install in `packages/db`: `drizzle-orm`, `drizzle-kit`, `better-sqlite3` (dev, for local type generation)
@@ -564,7 +564,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 5. API Skeleton — Hono Router, wrangler.jsonc, Env Types, DO Stubs
+- [x] 5. API Skeleton — Hono Router, wrangler.jsonc, Env Types, DO Stubs
 
   **What to do**:
   - Install in `apps/api`: `hono`, `@hono/zod-validator`
