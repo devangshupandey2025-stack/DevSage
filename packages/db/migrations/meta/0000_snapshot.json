@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "798247d3-8d9a-4d10-8dce-7b853d0d578b",
+  "id": "98eaf161-ae75-4c07-bd8d-63e055baec81",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "hackathons": {
@@ -499,10 +499,11 @@
         }
       },
       "indexes": {
-        "users_email_unique": {
-          "name": "users_email_unique",
+        "users_email_provider_unique": {
+          "name": "users_email_provider_unique",
           "columns": [
-            "email"
+            "email",
+            "provider"
           ],
           "isUnique": true
         }

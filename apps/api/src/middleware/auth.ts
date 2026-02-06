@@ -1,15 +1,19 @@
-import type { Context, Next } from 'hono';
-import type { Env } from '../types/env.js';
+import type { MiddlewareHandler } from 'hono';
+import { getSessionCookie } from '../lib/cookies.js';
+import { verifyJWT } from '../lib/jwt.js';
+import type { AuthAppEnv } from '../types/auth.js';
 
-/**
- * Auth middleware stub - passes through all requests
- * Future: Verify JWT tokens, extract user from token
- */
-export async function authMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
-  // Future: Implement JWT verification
-  // const token = c.req.header('Authorization')?.replace('Bearer ', '');
-  // const user = await verifyJWT(token, c.env.JWT_SECRET);
-  // c.set('user', user);
-  
+export const authMiddleware: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
+  const token = getSessionCookie(c);
+  if (!token) {
+    return c.json({ error: 'Unauthorized', code: 'NO_TOKEN' }, 401);
+  }
+
+  const user = await verifyJWT(token, c.env.JWT_SECRET);
+  if (!user) {
+    return c.json({ error: 'Invalid token', code: 'INVALID_TOKEN' }, 401);
+  }
+
+  c.set('user', user);
   await next();
-}
+};

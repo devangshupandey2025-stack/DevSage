@@ -1,8 +1,8 @@
-import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
-  email: text('email').notNull().unique(),
+  email: text('email').notNull(),
   name: text('name').notNull(),
   avatar_url: text('avatar_url'),
   provider: text('provider', { enum: ['google', 'github'] }).notNull(),
@@ -10,4 +10,6 @@ export const users = sqliteTable('users', {
   role: text('role', { enum: ['organiser', 'participant'] }).notNull().default('participant'),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
-});
+}, (table) => ({
+  users_email_provider_unique: unique().on(table.email, table.provider),
+}));
