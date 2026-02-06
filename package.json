@@ -16,6 +16,11 @@
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
-    "turbo": "latest"
+    "@cloudflare/workers-types": "^4.20260206.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "turbo": "latest",
+    "typescript": "^5.9.3"
   }
 }
