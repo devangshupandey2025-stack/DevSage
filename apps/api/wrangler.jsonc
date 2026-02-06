@@ -1,0 +1,57 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "devsage-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "devsage-db",
+      "database_id": "placeholder"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "placeholder"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HACKATHON_LIFECYCLE",
+        "class_name": "HackathonLifecycleDO"
+      },
+      {
+        "name": "SUBMISSION",
+        "class_name": "SubmissionDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["HackathonLifecycleDO", "SubmissionDO"]
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "queue": "github-webhooks",
+        "binding": "WEBHOOK_QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "github-webhooks",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "github-webhooks-dlq"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

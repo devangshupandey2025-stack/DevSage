@@ -1,7 +1,22 @@
 {
   "name": "@devsage/api",
-  "version": "0.1.0",
-  "description": "DevSage API server",
+  "version": "0.0.0",
+  "type": "module",
   "private": true,
-  "type": "module"
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "@hono/zod-validator": "^0.4.1",
+    "@devsage/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@devsage/config": "workspace:*",
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@cloudflare/vitest-pool-workers": "^0.6.0",
+    "wrangler": "^3.102.0"
+  }
 }
