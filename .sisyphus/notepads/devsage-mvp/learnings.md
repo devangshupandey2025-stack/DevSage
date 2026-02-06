@@ -774,3 +774,20 @@ await db.select().from(users);
 
 ### Build Verification
 - **Turbo Build**: `pnpm turbo build --filter=@devsage/web` ensures all components and pages compile correctly. This catches missing imports or type errors across the project.
+
+
+## Task 13: Vitest Integration Across API/Web/Shared (2026-02-06)
+
+### Vitest + Cloudflare Workers pool compatibility
+- `@cloudflare/vitest-pool-workers@0.6.x` expects Vitest 2.x peer range. Using Vitest 3.x introduces peer/version friction; pinning `vitest@^2.1.9` across packages avoids mismatched runner/snapshot behavior.
+- Workers pool with wrangler 3.x and SQLite-backed Durable Objects can fail isolated storage cleanup when tests instantiate real DO sqlite files (`.sqlite-shm`). In this setup, DO-heavy test paths needed fallback unit harnesses to keep suite stable.
+- `defineWorkersConfig` with `wrangler.configPath: './wrangler.jsonc'` works for runtime-bound tests (`SELF`/`env`) and allows direct testing of auth middleware behavior and webhook signature handling.
+
+### D1 test setup behavior
+- In Workers pool runs, D1 migrations were not automatically available for tests; critical-path tests needed explicit schema bootstrap (`CREATE TABLE IF NOT EXISTS ...`) before inserts/deletes.
+- `env.DB.exec()` is most reliable with one complete SQL statement per call in this environment; batching multiline multi-statement SQL produced parser errors (`incomplete input`).
+
+### Frontend + shared test harness patterns
+- `apps/web` Vitest config requires `environment: 'jsdom'` and alias parity with Vite (`'@' -> ./src`) so component/context tests resolve correctly.
+- `@testing-library/jest-dom/vitest` should be imported in tests that use DOM matchers like `toBeInTheDocument`.
+- `packages/shared` can use a minimal Node Vitest config; schema tests should focus on key invariants (request validation, SHA regex, and transition map correctness).

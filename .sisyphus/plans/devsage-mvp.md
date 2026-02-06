@@ -1732,7 +1732,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 13. Vitest Integration — Test Harness + Critical Path Tests
+- [x] 13. Vitest Integration — Test Harness + Critical Path Tests
 
   **What to do**:
   - Set up Vitest in `apps/api/`:
