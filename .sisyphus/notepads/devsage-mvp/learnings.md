@@ -735,3 +735,27 @@ await db.select().from(users);
 - ✅ Full manual progression reaches `COMPLETED` at `version: 5`.
 - ✅ Alarm-driven progression auto-advanced `REGISTRATION_OPEN -> HACKING -> SUBMISSION_CLOSED` using near-term deadlines.
 - ✅ D1 status matched DO status after transitions (`GET /api/hackathons/:id` returned `COMPLETED`).
+
+
+## Task 10: GitHub Webhook + Queue + SubmissionDO (2026-02-06)
+
+### Webhook authenticity pattern for GitHub push ingestion
+- GitHub webhook route should read the raw request body (`await c.req.text()`) before parsing JSON so HMAC verification uses exact payload bytes.
+- Signature check uses `crypto.subtle.importKey(..., { name: 'HMAC', hash: 'SHA-256' })` + `crypto.subtle.sign`, then compare against `X-Hub-Signature-256` using a constant-time string comparison helper.
+- Webhook endpoint should acknowledge non-`push` events with 200 (`acknowledged` but not processed) and only enqueue `push` payloads to `WEBHOOK_QUEUE`.
+
+### SubmissionDO design for idempotent queue processing
+- Submission Durable Object should initialize SQLite tables inside `this.ctx.blockConcurrencyWhile()` and include:
+  - `submissions` (unique per `hackathon_id + team_id`)
+  - `deliveries` (dedup by `delivery_id`)
+  - `linked_repos` (repo mapping per hackathon/team)
+- Queue-driven submit path should first verify repo linkage, then short-circuit duplicate delivery IDs (200 already processed), then `INSERT OR REPLACE` submission rows for idempotent updates.
+- A locked submission status can be enforced by rejecting `/submit` when existing row has `status = 'locked'`.
+
+### Worker route + queue integration pattern
+- Authed submission routes should use `Hono<AuthAppEnv>` + `authMiddleware` and call SubmissionDO via `env.SUBMISSION.idFromName(hackathonId)`.
+- Repo linking endpoint should enforce captain-only authorization from D1 (`teams.captain_id === user.sub`), then update both SubmissionDO (`/link-repo`) and KV (`repo:{full_name}` -> `{ hackathonId, teamId }`).
+- Queue consumer flow: parse message -> KV repo mapping lookup -> LifecycleDO `/state` gate (`HACKING` only) -> forward to SubmissionDO `/submit` -> ack/retry per outcome.
+
+### Routing consistency
+- Hackathon-scoped submission endpoints are best mounted under `/api/hackathons` so route definitions like `/:id/submissions` resolve to `/api/hackathons/:id/submissions`.

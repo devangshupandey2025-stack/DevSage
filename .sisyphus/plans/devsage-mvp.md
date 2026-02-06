@@ -1112,7 +1112,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 9. Teams Vertical Slice — Create, Join, Leave, List
+- [x] 9. Teams Vertical Slice — Create, Join, Leave, List
 
   **What to do**:
   - Implement Team API routes in `apps/api/src/routes/teams.ts`:
@@ -1251,7 +1251,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 10. GitHub Webhook + Queue + SubmissionDO — Submission Pipeline
+- [x] 10. GitHub Webhook + Queue + SubmissionDO — Submission Pipeline
 
   **What to do**:
   - Implement GitHub webhook handler in `apps/api/src/routes/webhooks.ts`:
@@ -1418,7 +1418,7 @@ Task 13 runs last as it tests everything.
 
 ---
 
-- [ ] 11. React SPA Shell — Vite + React Router + Tailwind + shadcn/ui + Auth Pages
+- [x] 11. React SPA Shell — Vite + React Router + Tailwind + shadcn/ui + Auth Pages
 
   **What to do**:
   - Scaffold React app in `apps/web/`:
