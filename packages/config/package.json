@@ -1,0 +1,7 @@
+{
+  "name": "@devsage/config",
+  "version": "0.1.0",
+  "description": "DevSage shared configuration",
+  "private": true,
+  "type": "module"
+}

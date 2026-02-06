@@ -1,0 +1,7 @@
+{
+  "name": "@devsage/db",
+  "version": "0.1.0",
+  "description": "DevSage database layer",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@devsage/shared",
+  "version": "0.1.0",
+  "description": "DevSage shared utilities and types",
+  "private": true,
+  "type": "module"
+}

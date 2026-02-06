@@ -1,0 +1,7 @@
+{
+  "name": "@devsage/web",
+  "version": "0.1.0",
+  "description": "DevSage web application",
+  "private": true,
+  "type": "module"
+}
