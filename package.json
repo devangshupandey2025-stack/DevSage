@@ -10,15 +10,13 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "prepare": "husky",
     "secrets:staged": "lint-staged -q --allow-empty",
-    "secrets:scan": "secretlint --maskSecrets --format compact .",
-    "deploy:api": "pnpm --filter @devsage/api run deploy",
-    "deploy:web": "pnpm --filter @devsage/web run deploy"
+    "secrets:scan": "secretlint --maskSecrets --format compact ."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260206.0",

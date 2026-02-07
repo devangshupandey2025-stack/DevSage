@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { ProtectedRoute } from './components/protected-route';
 import { Skeleton } from './components/ui/skeleton';
 
 // Lazy imports with named exports handling
+const LandingPage = lazy(() => import('./pages/landing').then(module => ({ default: module.LandingPage })));
 const LoginPage = lazy(() => import('./pages/login').then(module => ({ default: module.LoginPage })));
 const AuthCallbackPage = lazy(() => import('./pages/auth-callback').then(module => ({ default: module.AuthCallbackPage })));
 const DashboardPage = lazy(() => import('./pages/dashboard').then(module => ({ default: module.DashboardPage })));
@@ -33,7 +34,7 @@ export const router = createBrowserRouter([
     children: [
       {
         path: '/',
-        element: <Navigate to="/login" replace />,
+        element: <LandingPage />,
       },
       {
         path: '/login',
