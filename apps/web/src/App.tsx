@@ -7,6 +7,9 @@ import { DashboardPage } from '@/pages/dashboard';
 import { OrganiserDashboardPage } from '@/pages/organiser-dashboard';
 import { HackathonDetailPage } from '@/pages/hackathon-detail';
 import { TeamManagementPage } from '@/pages/team-management';
+import { LeaderboardPage } from '@/pages/leaderboard';
+import { ProfilePage } from '@/pages/profile';
+import { AboutPage } from '@/pages/about';
 import { NotFoundPage } from '@/pages/not-found';
 import { LandingPage } from '@/pages/landing';
 
@@ -22,6 +25,9 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/hackathons/:id" element={<HackathonDetailPage />} />
           <Route path="/hackathons/:id/teams" element={<TeamManagementPage />} />
+          <Route path="/hackathons/:id/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/about" element={<AboutPage />} />
         </Route>
       </Route>
       

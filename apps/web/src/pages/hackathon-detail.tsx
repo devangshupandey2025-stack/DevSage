@@ -192,9 +192,14 @@ export function HackathonDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">{hackathon.title}</h2>
-        <Badge variant={hackathon.status === 'HACKING' ? 'default' : 'secondary'}>
-          {hackathon.status.replace('_', ' ')}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/hackathons/${id}/leaderboard`}>Leaderboard</Link>
+          </Button>
+          <Badge variant={hackathon.status === 'HACKING' ? 'default' : 'secondary'}>
+            {hackathon.status.replace('_', ' ')}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

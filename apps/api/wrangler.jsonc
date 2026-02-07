@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "devsage-api",
+  "account_id": "cf3386ad6d48a38a199781a39b2324ad",
   "main": "src/index.ts",
   "compatibility_date": "2025-12-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -8,14 +9,14 @@
     {
       "binding": "DB",
       "database_name": "devsage-db",
-      "database_id": "placeholder",
+      "database_id": "dddf6034-11ca-4d49-a838-cd45fbc6bd86",
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "placeholder"
+      "id": "716fbff3dd3d4374b11c69540a18dcf0"
     }
   ],
   "durable_objects": {
