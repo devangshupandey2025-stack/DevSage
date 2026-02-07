@@ -11,12 +11,12 @@ import { LeaderboardPage } from '@/pages/leaderboard';
 import { ProfilePage } from '@/pages/profile';
 import { AboutPage } from '@/pages/about';
 import { NotFoundPage } from '@/pages/not-found';
-import { LandingPage } from '@/pages/landing';
+import { HomePage } from '@/pages/home';
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       

@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "devsage-api",
+  "name": "api",
   "account_id": "cf3386ad6d48a38a199781a39b2324ad",
   "main": "src/index.ts",
   "compatibility_date": "2025-12-01",
