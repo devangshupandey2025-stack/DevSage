@@ -4,7 +4,7 @@ import { ProtectedRoute } from './components/protected-route';
 import { Skeleton } from './components/ui/skeleton';
 
 // Lazy imports with named exports handling
-const LandingPage = lazy(() => import('./pages/landing').then(module => ({ default: module.LandingPage })));
+const HomePage = lazy(() => import('./pages/home').then(module => ({ default: module.HomePage })));
 const LoginPage = lazy(() => import('./pages/login').then(module => ({ default: module.LoginPage })));
 const AuthCallbackPage = lazy(() => import('./pages/auth-callback').then(module => ({ default: module.AuthCallbackPage })));
 const DashboardPage = lazy(() => import('./pages/dashboard').then(module => ({ default: module.DashboardPage })));
@@ -32,10 +32,10 @@ export const router = createBrowserRouter([
   {
     element: <SuspenseLayout />,
     children: [
-      {
-        path: '/',
-        element: <LandingPage />,
-      },
+       {
+         path: '/',
+         element: <HomePage />,
+       },
       {
         path: '/login',
         element: <LoginPage />,
