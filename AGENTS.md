@@ -79,6 +79,9 @@ packages/config → (standalone, configs only)
 pnpm deploy:api
 # → pnpm --filter @devsage/api run deploy → wrangler deploy
 
+# Upload API production secrets (from repo root)
+pnpm deploy:api:secrets
+
 # Deploy Web (from repo root)
 pnpm deploy:web
 
@@ -86,8 +89,8 @@ pnpm deploy:web
 pnpm dev                    # All apps in parallel (turbo)
 
 # Set production secrets (from apps/api/)
-wrangler secret put KEY     # Individual
-wrangler secret bulk .env   # Bulk from file
+wrangler secret put KEY                 # Individual
+wrangler secret bulk .env.production    # Bulk from file
 
 # NEVER run wrangler from repo root — no wrangler.jsonc here
 # account_id is baked into apps/api/wrangler.jsonc — no env var needed
@@ -105,6 +108,7 @@ pnpm typecheck               # Type-check all
 pnpm secrets:scan            # Full repo secret scan
 pnpm secrets:staged          # Scan staged files only
 pnpm deploy:api              # Deploy API worker
+pnpm deploy:api:secrets       # Upload API secrets (.env.production)
 pnpm deploy:web              # Deploy web app
 ```
 
@@ -131,7 +135,8 @@ pnpm deploy:web              # Deploy web app
 
 - `apps/worker/` exists but is orphaned (no package.json) — leftover from earlier experiment
 - `apps/web/src/routes.tsx` exists but is unused — `App.tsx` defines all routes directly
-- Vite dev proxy: `/api` → `http://localhost:8787` (wrangler dev)
+- Vite dev proxy: `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (wrangler dev)
+- Production API is hosted at `https://api.devsage.org` (routes are `/auth/*`, `/hackathons/*`, `/webhooks/*`)
 - DB migrations path in wrangler.jsonc: `../../packages/db/migrations` (relative from apps/api)
 - Durable Objects MUST be re-exported from `apps/api/src/index.ts` or wrangler fails
 - Plan doc: `.sisyphus/plans/devsage-mvp.md` — full architecture decisions + task history

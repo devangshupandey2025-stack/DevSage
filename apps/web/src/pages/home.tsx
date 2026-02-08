@@ -7,6 +7,7 @@ import {
   AnimatePresence,
   useInView,
 } from 'framer-motion';
+import { CustomCursor } from '@/components/custom-cursor';
 import {
   Zap,
   GitBranch,
@@ -37,60 +38,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 /* ─────────────────────────────────────────────
-   CUSTOM CURSOR
-   ───────────────────────────────────────────── */
-const CustomCursor = () => {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isHovering, setIsHovering] = useState(false);
-
-  useEffect(() => {
-    const updatePosition = (e: MouseEvent) => {
-      setPosition({ x: e.clientX, y: e.clientY });
-    };
-
-    const handleMouseOver = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('a, button, [data-hover]')) {
-        setIsHovering(true);
-      } else {
-        setIsHovering(false);
-      }
-    };
-
-    window.addEventListener('mousemove', updatePosition);
-    window.addEventListener('mouseover', handleMouseOver);
-
-    return () => {
-      window.removeEventListener('mousemove', updatePosition);
-      window.removeEventListener('mouseover', handleMouseOver);
-    };
-  }, []);
-
-  return (
-    <>
-      <motion.div
-        className="fixed top-0 left-0 w-4 h-4 bg-[#CCFF00] rounded-full pointer-events-none z-9999 mix-blend-difference"
-        animate={{
-          x: position.x - 8,
-          y: position.y - 8,
-          scale: isHovering ? 2.5 : 1,
-        }}
-        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
-      />
-      <motion.div
-        className="fixed top-0 left-0 w-10 h-10 border border-white/30 rounded-full pointer-events-none z-9998"
-        animate={{
-          x: position.x - 20,
-          y: position.y - 20,
-          scale: isHovering ? 1.5 : 1,
-        }}
-        transition={{ type: 'spring', stiffness: 250, damping: 20 }}
-      />
-    </>
-  );
-};
-
-/* ─────────────────────────────────────────────
    NAVBAR
    ───────────────────────────────────────────── */
 const Navbar = () => {
@@ -114,7 +61,7 @@ const Navbar = () => {
           scrolled ? 'bg-black/90 backdrop-blur-xl' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-362.5 mx-auto px-6 md:px-12 h-20 md:h-24 flex items-center justify-between">
+        <div className="max-w-[1450px] mx-auto px-6 md:px-12 h-20 md:h-24 flex items-center justify-between">
           <motion.div className="relative z-10 cursor-pointer" whileHover={{ scale: 1.05 }}>
             <span className="text-2xl md:text-3xl font-black tracking-tighter text-white">
               DEV<span className="text-[#CCFF00]">SAGE</span>
@@ -221,7 +168,7 @@ const Hero = () => {
     >
       {/* Background grid */}
       <div className="absolute inset-0">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-size-[60px_60px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-[size:60px_60px]" />
         <motion.div
           className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#CCFF00]/10 rounded-full blur-[120px]"
           animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
@@ -236,7 +183,7 @@ const Hero = () => {
 
       <motion.div
         style={{ y, opacity, scale }}
-        className="relative z-10 max-w-362.5 mx-auto px-6 md:px-12 text-center"
+        className="relative z-10 max-w-[1450px] mx-auto px-6 md:px-12 text-center"
       >
         {/* Eyebrow */}
         <motion.div
@@ -353,7 +300,7 @@ interface MarqueeTextProps {
 
 const MarqueeText = ({ children, direction = 1 }: MarqueeTextProps) => {
   return (
-    <div className="overflow-hidden py-6 bg-[#CCFF00] -rotate-1 scale-105">
+    <div className="overflow-hidden py-6 bg-[#CCFF00] rotate-[-1deg] scale-105">
       <motion.div
         className="flex whitespace-nowrap gap-8"
         animate={{ x: direction > 0 ? [0, -1920] : [-1920, 0] }}
@@ -437,7 +384,7 @@ const BentoGrid = () => {
 
   return (
     <section className="py-32 bg-black relative" ref={ref}>
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12">
         {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -465,10 +412,10 @@ const BentoGrid = () => {
                 initial={{ opacity: 0, y: 40 }}
                 animate={isInView ? { opacity: 1, y: 0 } : {}}
                 transition={{ delay: i * 0.1, duration: 0.6 }}
-                className={`${card.span} group relative bg-white/3 border border-white/6 rounded-2xl p-8 hover:bg-white/6 transition-all duration-500 overflow-hidden`}
+                className={`${card.span} group relative bg-white/[0.03] border border-white/[0.06] rounded-2xl p-8 hover:bg-white/[0.06] transition-all duration-500 overflow-hidden`}
               >
                 <div
-                  className={`absolute inset-0 bg-linear-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
+                  className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
                 />
                 <div className="relative z-10">
                   <div className="w-12 h-12 rounded-xl bg-[#CCFF00]/10 flex items-center justify-center mb-6 group-hover:bg-[#CCFF00]/20 transition-colors">
@@ -627,7 +574,7 @@ const HackathonGallery = () => {
 
   return (
     <section className="py-32 bg-black relative" ref={containerRef}>
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 mb-12">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12 mb-12">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -677,12 +624,12 @@ const HackathonGallery = () => {
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ delay: i * 0.1, duration: 0.6 }}
-            className="shrink-0 w-87.5 md:w-105 group"
+            className="flex-shrink-0 w-[350px] md:w-[420px] group"
           >
-            <div className="relative h-125 rounded-2xl overflow-hidden">
+            <div className="relative h-[500px] rounded-2xl overflow-hidden">
               {/* Image */}
               <div
-                className={`absolute inset-0 bg-linear-to-br ${event.gradient}`}
+                className={`absolute inset-0 bg-gradient-to-br ${event.gradient}`}
               />
               <img
                 src={event.image}
@@ -733,9 +680,9 @@ const HackathonGallery = () => {
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ delay: 0.8, duration: 0.6 }}
-          className="shrink-0 w-87.5 md:w-105"
+          className="flex-shrink-0 w-[350px] md:w-[420px]"
         >
-          <div className="h-125 rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-6 hover:border-[#CCFF00]/50 transition-colors">
+          <div className="h-[500px] rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-6 hover:border-[#CCFF00]/50 transition-colors">
             <div className="w-20 h-20 rounded-full bg-[#CCFF00]/10 flex items-center justify-center">
               <Rocket className="w-10 h-10 text-[#CCFF00]" />
             </div>
@@ -743,7 +690,7 @@ const HackathonGallery = () => {
               <h3 className="text-2xl font-bold text-white mb-2">
                 Host Your Own
               </h3>
-              <p className="text-white/50 max-w-62.5">
+              <p className="text-white/50 max-w-[250px]">
                 Create and manage your hackathon in minutes
               </p>
             </div>
@@ -760,7 +707,7 @@ const HackathonGallery = () => {
       </div>
 
       {/* Scroll progress bar */}
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 mt-8">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12 mt-8">
         <div className="h-0.5 bg-white/10 rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-[#CCFF00]"
@@ -784,7 +731,7 @@ const SplitSection = () => {
       ref={ref}
       className="py-0 bg-black relative overflow-hidden"
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 min-h-150">
+      <div className="grid grid-cols-1 md:grid-cols-2 min-h-[600px]">
         {/* Left – dark */}
         <motion.div
           initial={{ opacity: 0, x: -60 }}
@@ -792,7 +739,7 @@ const SplitSection = () => {
           transition={{ duration: 0.8 }}
           className="relative bg-black p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-size-[40px_40px] group-hover:bg-size-[38px_38px] transition-all duration-700" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-[size:40px_40px] group-hover:bg-[size:38px_38px] transition-all duration-700" />
           <div className="relative z-10">
             <span className="text-[#CCFF00] text-sm font-bold tracking-widest uppercase">
               For Teams
@@ -810,7 +757,7 @@ const SplitSection = () => {
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={`avatar-${String(i)}`}
-                    className="w-10 h-10 rounded-full bg-linear-to-br from-[#CCFF00] to-green-600 border-2 border-black"
+                    className="w-10 h-10 rounded-full bg-gradient-to-br from-[#CCFF00] to-green-600 border-2 border-black"
                   />
                 ))}
               </div>
@@ -828,7 +775,7 @@ const SplitSection = () => {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative bg-[#CCFF00] p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] bg-size-[40px_40px] group-hover:bg-size-[38px_38px] transition-all duration-700" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] bg-[size:40px_40px] group-hover:bg-[size:38px_38px] transition-all duration-700" />
           <div className="relative z-10">
             <span className="text-black/60 text-sm font-bold tracking-widest uppercase">
               For Individuals
@@ -879,7 +826,7 @@ const PartnersSection = () => {
 
   return (
     <section ref={ref} className="py-32 bg-black relative">
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12">
         <motion.p
           initial={{ opacity: 0 }}
           animate={isInView ? { opacity: 1 } : {}}
@@ -896,7 +843,7 @@ const PartnersSection = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={isInView ? { opacity: 1, y: 0 } : {}}
                 transition={{ delay: i * 0.1 }}
-                className="flex flex-col items-center gap-3 py-6 px-4 rounded-xl hover:bg-white/3 transition-colors group"
+                className="flex flex-col items-center gap-3 py-6 px-4 rounded-xl hover:bg-white/[0.03] transition-colors group"
               >
                 <Icon className="w-8 h-8 text-white/30 group-hover:text-[#CCFF00] transition-colors" />
                 <span className="text-white/40 font-medium text-sm group-hover:text-white/70 transition-colors">
@@ -923,10 +870,10 @@ const CTASection = () => {
     <section ref={ref} className="py-32 bg-black relative overflow-hidden">
       {/* Glow background */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-150 h-150 bg-[#CCFF00]/10 rounded-full blur-[200px]" />
+        <div className="w-[600px] h-[600px] bg-[#CCFF00]/10 rounded-full blur-[200px]" />
       </div>
 
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 relative z-10">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -996,8 +943,8 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-black border-t border-white/6 pt-20 pb-8">
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
+    <footer className="bg-black border-t border-white/[0.06] pt-20 pb-8">
+      <div className="max-w-[1450px] mx-auto px-6 md:px-12">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-12 mb-16">
           {/* Brand */}
           <div className="col-span-2">
@@ -1014,7 +961,7 @@ const Footer = () => {
                 return (
                   <span
                     key={Icon.displayName ?? Icon.name}
-                    className="w-10 h-10 rounded-full bg-white/6 flex items-center justify-center hover:bg-[#CCFF00]/20 transition-colors group cursor-pointer"
+                    className="w-10 h-10 rounded-full bg-white/[0.06] flex items-center justify-center hover:bg-[#CCFF00]/20 transition-colors group cursor-pointer"
                   >
                     <Icon className="w-4 h-4 text-white/50 group-hover:text-[#CCFF00] transition-colors" />
                   </span>
@@ -1043,7 +990,7 @@ const Footer = () => {
         </div>
 
         {/* Bottom bar */}
-        <div className="border-t border-white/6 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="border-t border-white/[0.06] pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-white/30 text-sm">
             © {new Date().getFullYear()} DevSage. All rights reserved.
           </p>

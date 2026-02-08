@@ -26,7 +26,7 @@ pnpm secrets:scan
 ## Where to put secrets
 
 - API local dev secrets: `apps/api/.dev.vars` (gitignored)
-- API production secrets: `apps/api/.env.production` (gitignored; pushed to Cloudflare via `pnpm --filter @devsage/api deploy:secrets`)
+- API production secrets: `apps/api/.env.production` (gitignored; pushed to Cloudflare via `pnpm deploy:api:secrets`)
 - Web env vars: only `VITE_*` values (client-visible; do not put secrets in the web app)
 
 ## If you accidentally committed a secret

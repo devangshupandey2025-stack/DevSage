@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
+    "deploy:secrets": "wrangler secret bulk .env.production",
     "build": "tsc --noEmit",
     "test": "vitest run"
   },

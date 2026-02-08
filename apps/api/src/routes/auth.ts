@@ -74,7 +74,7 @@ async function upsertOAuthUser(c: { env: Env }, user: {
 }
 
 function callbackUrl(requestUrl: string, provider: 'google' | 'github'): string {
-  return new URL(`/api/auth/callback/${provider}`, requestUrl).toString();
+  return new URL(`/auth/callback/${provider}`, requestUrl).toString();
 }
 
 function authError(c: { json: (input: unknown, status?: number) => Response }, error: string, code: string, status = 400) {

@@ -36,7 +36,7 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('loading').textContent).toBe('true');
   });
 
-  it('handles unauthenticated state when /api/auth/me returns 401', async () => {
+  it('handles unauthenticated state when /auth/me returns 401', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,

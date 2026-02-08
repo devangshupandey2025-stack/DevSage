@@ -1,5 +1,8 @@
-import { env, SELF } from 'cloudflare:test';
+import { env as rawEnv, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import type { Env } from '../types/env.js';
+
+const env = rawEnv as Env;
 
 function toHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
@@ -30,7 +33,7 @@ describe('webhooks critical paths', () => {
     const body = JSON.stringify(payload);
     const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
 
-    const response = await SELF.fetch('http://localhost/api/webhooks/github', {
+    const response = await SELF.fetch('http://localhost/webhooks/github', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,7 +55,7 @@ describe('webhooks critical paths', () => {
       pusher: { name: 'srijan' },
     };
 
-    const response = await SELF.fetch('http://localhost/api/webhooks/github', {
+    const response = await SELF.fetch('http://localhost/webhooks/github', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,7 +77,7 @@ describe('webhooks critical paths', () => {
     const body = JSON.stringify(payload);
     const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
 
-    const response = await SELF.fetch('http://localhost/api/webhooks/github', {
+    const response = await SELF.fetch('http://localhost/webhooks/github', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -84,7 +87,7 @@ describe('webhooks critical paths', () => {
       },
       body,
     });
-    const responseBody = await response.json<{ acknowledged: boolean; processed: boolean }>();
+    const responseBody = (await response.json()) as { acknowledged: boolean; processed: boolean };
 
     expect(response.status).toBe(200);
     expect(responseBody.acknowledged).toBe(true);
@@ -92,7 +95,7 @@ describe('webhooks critical paths', () => {
   });
 
   it('rejects requests missing required headers', async () => {
-    const response = await SELF.fetch('http://localhost/api/webhooks/github', {
+    const response = await SELF.fetch('http://localhost/webhooks/github', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

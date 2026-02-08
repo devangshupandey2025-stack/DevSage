@@ -23,7 +23,7 @@ function buildHackathonsApp(): Hono<AuthAppEnv> {
   app.use('*', authMiddleware);
 
   app.post(
-    '/api/hackathons',
+    '/hackathons',
     requireRole('organiser'),
     zValidator('json', CreateHackathonRequestSchema),
     (c) => {
@@ -41,11 +41,11 @@ function buildHackathonsApp(): Hono<AuthAppEnv> {
     }
   );
 
-  app.get('/api/hackathons', (c) => {
+  app.get('/hackathons', (c) => {
     return c.json({ data: Array.from(records.values()) }, 200);
   });
 
-  app.get('/api/hackathons/:id', (c) => {
+  app.get('/hackathons/:id', (c) => {
     const id = c.req.param('id');
     const record = records.get(id);
     if (!record) {
@@ -80,7 +80,7 @@ async function appRequest(app: Hono<AuthAppEnv>, path: string, init: RequestInit
 describe('hackathons route critical paths (fallback unit harness)', () => {
   it('create hackathon with valid organiser JWT returns 201', async () => {
     const app = buildHackathonsApp();
-    const response = await appRequest(app, '/api/hackathons', {
+    const response = await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -94,7 +94,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
   it('create hackathon with invalid input returns 400', async () => {
     const app = buildHackathonsApp();
-    const response = await appRequest(app, '/api/hackathons', {
+    const response = await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -108,7 +108,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
   it('create hackathon with participant role returns 403', async () => {
     const app = buildHackathonsApp();
-    const response = await appRequest(app, '/api/hackathons', {
+    const response = await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -122,7 +122,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
   it('list hackathons returns array', async () => {
     const app = buildHackathonsApp();
-    await appRequest(app, '/api/hackathons', {
+    await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -131,12 +131,12 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
       body: JSON.stringify(validCreatePayload()),
     });
 
-    const response = await appRequest(app, '/api/hackathons', {
+    const response = await appRequest(app, '/hackathons', {
       headers: {
         Cookie: await sessionCookie(crypto.randomUUID(), 'org3@example.com', 'organiser'),
       },
     });
-    const body = await response.json<{ data: unknown[] }>();
+    const body = (await response.json()) as { data: unknown[] };
 
     expect(response.status).toBe(200);
     expect(Array.isArray(body.data)).toBe(true);
@@ -144,7 +144,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
   it('get hackathon by ID returns 200', async () => {
     const app = buildHackathonsApp();
-    const createResponse = await appRequest(app, '/api/hackathons', {
+    const createResponse = await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -152,9 +152,9 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
       },
       body: JSON.stringify(validCreatePayload()),
     });
-    const created = await createResponse.json<{ id: string }>();
+    const created = (await createResponse.json()) as { id: string };
 
-    const response = await appRequest(app, `/api/hackathons/${created.id}`, {
+    const response = await appRequest(app, `/hackathons/${created.id}`, {
       headers: {
         Cookie: await sessionCookie(crypto.randomUUID(), 'org4@example.com', 'organiser'),
       },
@@ -165,7 +165,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
   it('get nonexistent hackathon returns 404', async () => {
     const app = buildHackathonsApp();
-    const response = await appRequest(app, `/api/hackathons/${crypto.randomUUID()}`, {
+    const response = await appRequest(app, `/hackathons/${crypto.randomUUID()}`, {
       headers: {
         Cookie: await sessionCookie(crypto.randomUUID(), 'org5@example.com', 'organiser'),
       },
