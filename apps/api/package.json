@@ -20,8 +20,8 @@
   "devDependencies": {
     "@devsage/config": "workspace:*",
     "@cloudflare/workers-types": "^4.20241218.0",
-    "@cloudflare/vitest-pool-workers": "^0.6.0",
-    "vitest": "^2.1.9",
+    "@cloudflare/vitest-pool-workers": "^0.12.10",
+    "vitest": "^3.2.4",
     "wrangler": "4.63.0"
   }
 }

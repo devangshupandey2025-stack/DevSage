@@ -23,6 +23,6 @@
   "devDependencies": {
     "@devsage/config": "workspace:*",
     "typescript": "^5.3.0",
-    "vitest": "^2.1.9"
+    "vitest": "^3.2.4"
   }
 }
