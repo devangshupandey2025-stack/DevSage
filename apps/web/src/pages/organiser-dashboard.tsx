@@ -180,7 +180,7 @@ export function OrganiserDashboardPage() {
           <DialogTrigger asChild>
             <Button>Create Hackathon</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-125 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Hackathon</DialogTitle>
               <DialogDescription>
@@ -200,7 +200,7 @@ export function OrganiserDashboardPage() {
                   required 
                   value={formData.description} 
                   onChange={handleInputChange} 
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
