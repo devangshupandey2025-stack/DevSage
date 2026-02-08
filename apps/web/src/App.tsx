@@ -1,5 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/auth-context';
+import { Routes, Route } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/protected-route';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoginPage } from '@/pages/login';
@@ -8,19 +7,16 @@ import { DashboardPage } from '@/pages/dashboard';
 import { OrganiserDashboardPage } from '@/pages/organiser-dashboard';
 import { HackathonDetailPage } from '@/pages/hackathon-detail';
 import { TeamManagementPage } from '@/pages/team-management';
+import { LeaderboardPage } from '@/pages/leaderboard';
+import { ProfilePage } from '@/pages/profile';
+import { AboutPage } from '@/pages/about';
 import { NotFoundPage } from '@/pages/not-found';
-
-function RootRedirect() {
-  const { isAuthenticated, isLoading, user } = useAuth();
-  if (isLoading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <Navigate to={user?.role === 'organiser' ? '/organiser' : '/dashboard'} replace />;
-}
+import { HomePage } from '@/pages/home';
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<RootRedirect />} />
+      <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       
@@ -29,6 +25,9 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/hackathons/:id" element={<HackathonDetailPage />} />
           <Route path="/hackathons/:id/teams" element={<TeamManagementPage />} />
+          <Route path="/hackathons/:id/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/about" element={<AboutPage />} />
         </Route>
       </Route>
       

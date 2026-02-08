@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 export function DashboardLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
+
+  const navLinkClass = (path: string) =>
+    location.pathname === path ? 'font-semibold' : 'text-muted-foreground hover:text-foreground';
   
   return (
     <div className="min-h-screen bg-background">
@@ -16,18 +19,23 @@ export function DashboardLayout() {
             </Link>
             <nav className="flex items-center gap-4 text-sm">
               {user?.role === 'organiser' ? (
-                <Link to="/organiser" className={location.pathname === '/organiser' ? 'font-semibold' : 'text-muted-foreground hover:text-foreground'}>
+                <Link to="/organiser" className={navLinkClass('/organiser')}>
                   Dashboard
                 </Link>
               ) : (
-                <Link to="/dashboard" className={location.pathname === '/dashboard' ? 'font-semibold' : 'text-muted-foreground hover:text-foreground'}>
+                <Link to="/dashboard" className={navLinkClass('/dashboard')}>
                   Dashboard
                 </Link>
               )}
+              <Link to="/about" className={navLinkClass('/about')}>
+                About
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{user?.email}</span>
+            <Link to="/profile" className={`text-sm ${navLinkClass('/profile')}`}>
+              {user?.email}
+            </Link>
             <Button variant="outline" size="sm" onClick={() => logout()}>
               Logout
             </Button>

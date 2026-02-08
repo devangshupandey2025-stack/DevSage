@@ -7,6 +7,7 @@ node_modules/
 dist/
 build/
 out/
+*.tsbuildinfo
 
 # Turbo
 .turbo/
@@ -55,3 +56,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# TypeScript incremental build
+*.tsbuildinfo
