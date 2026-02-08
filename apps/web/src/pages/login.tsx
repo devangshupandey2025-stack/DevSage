@@ -47,7 +47,9 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   const handleLogin = (provider: 'google' | 'github') => {
-    window.location.href = `/api/auth/${provider}`;
+    const apiOriginRaw = import.meta.env.VITE_API_ORIGIN as string | undefined;
+    const apiOrigin = apiOriginRaw ? apiOriginRaw.replace(/\/$/, '') : '';
+    window.location.href = `${apiOrigin}/auth/${provider}`;
   };
 
   return (

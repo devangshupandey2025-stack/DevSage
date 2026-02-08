@@ -105,20 +105,20 @@ describe('auth critical paths', () => {
   });
 
   it('auth middleware rejects requests without session cookie', async () => {
-    const response = await SELF.fetch('http://localhost/api/hackathons');
-    const body = await response.json<{ code: string }>();
+    const response = await SELF.fetch('http://localhost/hackathons');
+    const body = (await response.json()) as { code: string };
 
     expect(response.status).toBe(401);
     expect(body.code).toBe('NO_TOKEN');
   });
 
   it('auth middleware rejects requests with invalid JWT', async () => {
-    const response = await SELF.fetch('http://localhost/api/hackathons', {
+    const response = await SELF.fetch('http://localhost/hackathons', {
       headers: {
         Cookie: 'session=invalid-token',
       },
     });
-    const body = await response.json<{ code: string }>();
+    const body = (await response.json()) as { code: string };
 
     expect(response.status).toBe(401);
     expect(body.code).toBe('INVALID_TOKEN');

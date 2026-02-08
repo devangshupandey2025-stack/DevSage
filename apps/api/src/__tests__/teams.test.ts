@@ -1,6 +1,9 @@
-import { env, SELF } from 'cloudflare:test';
+import { env as rawEnv, SELF } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { signJWT } from '../lib/jwt.js';
+import type { Env } from '../types/env.js';
+
+const env = rawEnv as Env;
 
 const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
 
@@ -97,7 +100,7 @@ describe('team routes critical paths', () => {
     await insertHackathon(hackathonId, organiserId);
     await insertRegistration(hackathonId, participantId);
 
-    const response = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams`, {
+    const response = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -108,7 +111,7 @@ describe('team routes critical paths', () => {
         hackathonId,
       }),
     });
-    const body = await response.json<{ join_code?: string }>();
+    const body = (await response.json()) as { join_code?: string };
 
     expect(response.status).toBe(201);
     expect(typeof body.join_code).toBe('string');
@@ -128,7 +131,7 @@ describe('team routes critical paths', () => {
     await insertRegistration(hackathonId, captainId);
     await insertRegistration(hackathonId, memberId);
 
-    const createTeamResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams`, {
+    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -136,9 +139,9 @@ describe('team routes critical paths', () => {
       },
       body: JSON.stringify({ name: 'Joinables', hackathonId }),
     });
-    const created = await createTeamResponse.json<{ join_code: string }>();
+    const created = (await createTeamResponse.json()) as { join_code: string };
 
-    const joinResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams/join`, {
+    const joinResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -160,7 +163,7 @@ describe('team routes critical paths', () => {
     await insertHackathon(hackathonId, organiserId);
     await insertRegistration(hackathonId, captainId);
 
-    const createTeamResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams`, {
+    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -168,9 +171,9 @@ describe('team routes critical paths', () => {
       },
       body: JSON.stringify({ name: 'Conflict Team', hackathonId }),
     });
-    const created = await createTeamResponse.json<{ join_code: string }>();
+    const created = (await createTeamResponse.json()) as { join_code: string };
 
-    const joinAgain = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams/join`, {
+    const joinAgain = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -195,7 +198,7 @@ describe('team routes critical paths', () => {
     await insertRegistration(hackathonId, captainId);
     await insertRegistration(hackathonId, memberId);
 
-    const createTeamResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams`, {
+    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -203,9 +206,9 @@ describe('team routes critical paths', () => {
       },
       body: JSON.stringify({ name: 'Leavers', hackathonId }),
     });
-    const team = await createTeamResponse.json<{ id: string; join_code: string }>();
+    const team = (await createTeamResponse.json()) as { id: string; join_code: string };
 
-    const joinResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams/join`, {
+    const joinResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -215,7 +218,7 @@ describe('team routes critical paths', () => {
     });
     expect(joinResponse.status).toBe(200);
 
-    const leaveResponse = await SELF.fetch(`http://localhost/api/teams/${hackathonId}/teams/${team.id}/leave`, {
+    const leaveResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/${team.id}/leave`, {
       method: 'POST',
       headers: {
         Cookie: await authCookie(memberId, 'member4@example.com', 'participant'),

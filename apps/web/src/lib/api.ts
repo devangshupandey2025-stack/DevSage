@@ -6,9 +6,11 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  // Use relative path since we have a proxy setup in vite.config.ts
-  const url = `/api${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  
+  const apiOriginRaw = import.meta.env.VITE_API_ORIGIN as string | undefined;
+  const apiOrigin = apiOriginRaw ? apiOriginRaw.replace(/\/$/, '') : undefined;
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = apiOrigin ? `${apiOrigin}${path}` : path;
+
   const isAuthCheck = endpoint === '/auth/me' || endpoint === 'auth/me';
 
   const response = await fetch(url, {
@@ -24,7 +26,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
     // Only redirect if not checking auth status to avoid loops
     const currentPath = window.location.pathname;
     if (currentPath !== '/login' && currentPath !== '/') {
-        window.location.href = '/login';
+      window.location.href = '/login';
     }
     throw new ApiError(401, 'Unauthorized');
   }

@@ -24,7 +24,7 @@ src/
 | Add shadcn component | `src/components/ui/` | Follow existing shadcn/ui pattern |
 | Change layout/nav | `src/components/dashboard-layout.tsx` | Shared layout wrapper |
 | Auth guard | `src/components/protected-route.tsx` | `allowedRoles` prop for role gates |
-| API calls | `src/lib/api.ts` | `apiRequest<T>(endpoint, options)` — auto-prepends `/api`, includes cookies |
+| API calls | `src/lib/api.ts` | `apiRequest<T>(endpoint, options)` — uses `VITE_API_ORIGIN` in prod, includes cookies |
 | Auth state | `src/contexts/auth-context.tsx` | `useAuth()` → `{ user, isAuthenticated, isLoading }` |
 | Styling | `src/index.css` | Tailwind v4 directives |
 
@@ -33,20 +33,22 @@ src/
 - **Routing**: `App.tsx` owns all routes. `routes.tsx` exists but is UNUSED.
 - **Path aliases**: `@/` → `src/` (configured in tsconfig + vite)
 - **API client**: All API calls go through `apiRequest()` — handles 401 → redirect to `/login`
-- **Auth flow**: OAuth buttons link to `/api/auth/google` or `/api/auth/github` (API handles redirect)
+- **Auth flow**: OAuth buttons link to `${VITE_API_ORIGIN}/auth/google` or `${VITE_API_ORIGIN}/auth/github` (API handles redirect)
 - **Role routing**: Root `/` redirects organiser → `/organiser`, participant → `/dashboard`
 - **Components**: shadcn/ui for primitives. Layouts in `components/`. Pages in `pages/`.
 - **Toast**: `sonner` (Toaster in main.tsx). Use `toast()` from sonner.
 
 ## DEV PROXY
 
-Vite proxies `/api/*` → `http://localhost:8787` (wrangler dev). No CORS config needed in dev.
+Vite proxies `/auth/*`, `/hackathons/*`, `/webhooks/*` → `http://localhost:8787` (wrangler dev). No CORS config needed in dev.
+
+In production, set `VITE_API_ORIGIN=https://api.devsage.org` (see `apps/web/.env.production`).
 
 ## ANTI-PATTERNS
 
 - Importing from `routes.tsx` (it's dead code)
 - Putting secrets in web env — only `VITE_*` vars allowed (client-visible)
-- Direct `fetch('/api/...')` without `apiRequest()` — loses cookie handling + 401 redirect
+- Direct `fetch('/...')` without `apiRequest()` — loses cookie handling + 401 redirect
 
 ## TESTING
 

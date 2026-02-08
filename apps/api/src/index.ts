@@ -14,6 +14,19 @@ export { SubmissionDO } from './durable-objects/submission.js';
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
+function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
+  if (origin === frontendUrl) {
+    return true;
+  }
+
+  // Local dev (when not using Vite proxy)
+  if (origin === 'http://localhost:5173') {
+    return true;
+  }
+
+  return false;
+}
+
 interface WebhookQueueMessage {
   repoFullName: string;
   commitSha: string;
@@ -73,12 +86,30 @@ async function readJson(response: Response): Promise<unknown> {
 // Global error handler
 app.onError(errorHandler);
 
+// CORS (needed when web is on devsage.org and API is on api.devsage.org)
+app.use('*', async (c, next) => {
+  const origin = c.req.header('Origin');
+  if (origin && isAllowedCorsOrigin(origin, c.env.FRONTEND_URL)) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Access-Control-Allow-Headers', 'Content-Type');
+    c.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    c.header('Vary', 'Origin');
+  }
+
+  if (c.req.method === 'OPTIONS') {
+    return c.body(null, 204);
+  }
+
+  await next();
+});
+
 // Mount route groups
-app.route('/api/auth', auth);
-app.route('/api/hackathons', hackathons);
-app.route('/api/teams', teams);
-app.route('/api/webhooks', webhooks);
-app.route('/api/hackathons', submissions);
+app.route('/auth', auth);
+app.route('/hackathons', hackathons);
+app.route('/hackathons', teams);
+app.route('/webhooks', webhooks);
+app.route('/hackathons', submissions);
 
 // Health check
 app.get('/', (c) => {
