@@ -52,11 +52,11 @@ export function LoginPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:80px_80px]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-size-[80px_80px]" />
       <div className="absolute inset-y-0 left-1/2 w-1/2 bg-[radial-gradient(circle_at_top,#CCFF00/25,transparent_65%)] blur-[60px]" />
       <div className="absolute -right-20 top-20 h-72 w-72 rounded-full bg-[#CCFF00]/20 blur-[120px]" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1200px] flex-col-reverse items-center gap-16 px-6 py-16 lg:flex-row lg:items-stretch lg:py-24">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-300 flex-col-reverse items-center gap-16 px-6 py-16 lg:flex-row lg:items-stretch lg:py-24">
         <motion.section
           initial={{ opacity: 0, x: -40 }}
           animate={{ opacity: 1, x: 0 }}
