@@ -105,7 +105,7 @@ export function LeaderboardPage() {
           <Skeleton className="h-10 w-10" />
           <Skeleton className="h-10 w-1/3" />
         </div>
-        <Skeleton className="h-[400px] w-full" />
+        <Skeleton className="h-100 w-full" />
       </div>
     );
   }
@@ -139,7 +139,7 @@ export function LeaderboardPage() {
               <table className="w-full caption-bottom text-sm">
                 <thead className="[&_tr]:border-b">
                   <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Rank</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-25">Rank</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Team</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Repository</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
