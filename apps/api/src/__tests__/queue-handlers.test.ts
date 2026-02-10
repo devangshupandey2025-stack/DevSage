@@ -4,6 +4,7 @@ import { handlePush } from '../queue/push-handler.js';
 import { handleTagCreate } from '../queue/tag-create-handler.js';
 import { handleTagDelete } from '../queue/tag-delete-handler.js';
 import { handleInstallation } from '../queue/installation-handler.js';
+import { matchSubmissionTag } from '../lib/submission-tag.js';
 import type { Env } from '../types/env.js';
 import type {
   NormalizedPushEvent,
@@ -388,17 +389,58 @@ describe('queue handlers', () => {
     });
   });
 
+  describe('matchSubmissionTag', () => {
+    it('matches default pattern submission_v%', () => {
+      const result = matchSubmissionTag('submission_v1', 'submission_v%');
+      expect(result.matches).toBe(true);
+      expect(result.version).toBe(1);
+    });
+
+    it('extracts multi-digit version numbers', () => {
+      const result = matchSubmissionTag('submission_v42', 'submission_v%');
+      expect(result.matches).toBe(true);
+      expect(result.version).toBe(42);
+    });
+
+    it('rejects non-matching tag names', () => {
+      expect(matchSubmissionTag('release-v1', 'submission_v%').matches).toBe(false);
+      expect(matchSubmissionTag('submission_v', 'submission_v%').matches).toBe(false);
+      expect(matchSubmissionTag('submission_vabc', 'submission_v%').matches).toBe(false);
+    });
+
+    it('rejects partial matches', () => {
+      expect(matchSubmissionTag('submission_v1-rc1', 'submission_v%').matches).toBe(false);
+      expect(matchSubmissionTag('prefix_submission_v1', 'submission_v%').matches).toBe(false);
+    });
+
+    it('handles custom patterns', () => {
+      const result = matchSubmissionTag('v3', 'v%');
+      expect(result.matches).toBe(true);
+      expect(result.version).toBe(3);
+    });
+
+    it('escapes regex special characters in pattern', () => {
+      const result = matchSubmissionTag('sub.v1', 'sub.v%');
+      expect(result.matches).toBe(true);
+      expect(result.version).toBe(1);
+
+      expect(matchSubmissionTag('subXv1', 'sub.v%').matches).toBe(false);
+    });
+  });
+
   describe('tag create handler', () => {
     function makeMockEnv(doResponse: { status: number; body: Record<string, unknown> }): Env {
       const mockStub = {
         fetch: async () => Response.json(doResponse.body, { status: doResponse.status }),
       };
+      const mockNotificationQueue = { send: async () => {} };
       return {
         ...env,
         HACKATHON_SM: {
           idFromName: () => ({ toString: () => 'mock-do-id' }),
           get: () => mockStub,
         } as unknown as DurableObjectNamespace,
+        NOTIFICATION_QUEUE: mockNotificationQueue as unknown as Queue,
       };
     }
 
@@ -406,8 +448,6 @@ describe('queue handlers', () => {
       await insertUser('user-1', 1001);
       await insertHackathon('hack-1', 'test-hack', 'user-1');
       await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
-
-      await env.KV.put('repo:org/repo', JSON.stringify({ hackathonId: 'hack-1', teamId: 'team-1' }));
 
       const event: NormalizedTagCreateEvent = {
         type: 'tag_created',
@@ -430,6 +470,7 @@ describe('queue handlers', () => {
       expect(subs.results[0].commit_sha).toBe('a'.repeat(40));
       expect(subs.results[0].webhook_delivery_id).toBe('delivery-tag-1');
       expect(subs.results[0].status).toBe('received');
+      expect(subs.results[0].version).toBe(1);
 
       const audits = await env.DB.prepare(
         "SELECT * FROM audit_events WHERE action = 'submission.received'"
@@ -437,7 +478,7 @@ describe('queue handlers', () => {
       expect(audits.results).toHaveLength(1);
     });
 
-    it('skips tag create for unmapped repo (no KV entry)', async () => {
+    it('skips tag create for untracked repo (no matching team)', async () => {
       const event: NormalizedTagCreateEvent = {
         type: 'tag_created',
         deliveryId: 'delivery-tag-unmapped',
@@ -454,11 +495,53 @@ describe('queue handlers', () => {
       expect(subs?.cnt).toBe(0);
     });
 
+    it('skips tag create for team with bot_active = 0', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 0);
+
+      const event: NormalizedTagCreateEvent = {
+        type: 'tag_created',
+        deliveryId: 'delivery-tag-inactive',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        tagName: 'submission_v1',
+        sha: 'a'.repeat(40),
+        senderLogin: 'alice',
+      };
+
+      await handleTagCreate(event, env);
+
+      const subs = await env.DB.prepare('SELECT COUNT(*) as cnt FROM submissions').first();
+      expect(subs?.cnt).toBe(0);
+    });
+
+    it('skips non-matching tag names', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      const event: NormalizedTagCreateEvent = {
+        type: 'tag_created',
+        deliveryId: 'delivery-tag-nomatch',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        tagName: 'release-v2.0',
+        sha: 'a'.repeat(40),
+        senderLogin: 'alice',
+      };
+
+      const mockEnv = makeMockEnv({ status: 201, body: { accepted: true } });
+      await handleTagCreate(event, mockEnv);
+
+      const subs = await env.DB.prepare('SELECT COUNT(*) as cnt FROM submissions').first();
+      expect(subs?.cnt).toBe(0);
+    });
+
     it('is idempotent — duplicate delivery_id does not create duplicate', async () => {
       await insertUser('user-1', 1001);
       await insertHackathon('hack-1', 'test-hack', 'user-1');
       await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
-      await env.KV.put('repo:org/repo', JSON.stringify({ hackathonId: 'hack-1', teamId: 'team-1' }));
 
       const event: NormalizedTagCreateEvent = {
         type: 'tag_created',
@@ -482,7 +565,6 @@ describe('queue handlers', () => {
       await insertUser('user-1', 1001);
       await insertHackathon('hack-1', 'test-hack', 'user-1');
       await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
-      await env.KV.put('repo:org/repo', JSON.stringify({ hackathonId: 'hack-1', teamId: 'team-1' }));
 
       const event: NormalizedTagCreateEvent = {
         type: 'tag_created',
@@ -504,6 +586,97 @@ describe('queue handlers', () => {
         "SELECT * FROM audit_events WHERE action = 'submission.rejected'"
       ).all();
       expect(audits.results).toHaveLength(1);
+    });
+
+    it('extracts version from tag name and stores it', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      const event: NormalizedTagCreateEvent = {
+        type: 'tag_created',
+        deliveryId: 'delivery-tag-v3',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        tagName: 'submission_v3',
+        sha: 'a'.repeat(40),
+        senderLogin: 'alice',
+      };
+
+      const mockEnv = makeMockEnv({ status: 201, body: { accepted: true, submissionId: 'mock-sub-id' } });
+      await handleTagCreate(event, mockEnv);
+
+      const sub = await env.DB.prepare('SELECT version FROM submissions LIMIT 1').first();
+      expect(sub?.version).toBe(3);
+    });
+
+    it('marks submission as late when submitted after deadline', async () => {
+      await insertUser('user-1', 1001);
+      const pastDeadline = '2025-01-01T00:00:00.000Z';
+      const afterDeadline = '2025-06-01T00:00:00.000Z';
+      await env.DB.prepare(
+        `INSERT INTO hackathons (id, slug, title, registration_opens, registration_closes, submission_deadline, status, created_by, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
+      ).bind('hack-late', 'late-hack', 'Late Hackathon', now, now, pastDeadline, 'active', 'user-1', now, now).run();
+      await insertTeam('team-late', 'hack-late', 'Team Late', 'org/late-repo', 1);
+
+      const event: NormalizedTagCreateEvent = {
+        type: 'tag_created',
+        deliveryId: 'delivery-tag-late',
+        timestamp: afterDeadline,
+        repoFullName: 'org/late-repo',
+        tagName: 'submission_v1',
+        sha: 'b'.repeat(40),
+        senderLogin: 'bob',
+      };
+
+      const mockEnv = makeMockEnv({ status: 201, body: { accepted: true, submissionId: 'mock-sub-id' } });
+      await handleTagCreate(event, mockEnv);
+
+      const sub = await env.DB.prepare('SELECT is_late FROM submissions LIMIT 1').first();
+      expect(sub?.is_late).toBe(1);
+    });
+
+    it('enqueues notification when submission is accepted', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      let queuedMessage: unknown = null;
+      const mockStub = {
+        fetch: async () => Response.json({ accepted: true, submissionId: 'mock-sub-id' }, { status: 201 }),
+      };
+      const mockNotificationQueue = {
+        send: async (msg: unknown) => { queuedMessage = msg; },
+      };
+      const mockEnv: Env = {
+        ...env,
+        HACKATHON_SM: {
+          idFromName: () => ({ toString: () => 'mock-do-id' }),
+          get: () => mockStub,
+        } as unknown as DurableObjectNamespace,
+        NOTIFICATION_QUEUE: mockNotificationQueue as unknown as Queue,
+      };
+
+      const event: NormalizedTagCreateEvent = {
+        type: 'tag_created',
+        deliveryId: 'delivery-tag-notif',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        tagName: 'submission_v2',
+        sha: 'c'.repeat(40),
+        senderLogin: 'charlie',
+      };
+
+      await handleTagCreate(event, mockEnv);
+
+      expect(queuedMessage).toBeDefined();
+      const msg = queuedMessage as Record<string, unknown>;
+      expect(msg.type).toBe('submission_received');
+      expect(msg.teamId).toBe('team-1');
+      expect(msg.hackathonId).toBe('hack-1');
+      expect(msg.tagName).toBe('submission_v2');
+      expect(msg.version).toBe(2);
     });
   });
 
