@@ -289,7 +289,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 0. Setup: Create dev branch, configure dev Worker environments, update AGENTS.md + conventions
+- [x] 0. Setup: Create dev branch, configure dev Worker environments, update AGENTS.md + conventions
 
   **What to do**:
   - Create `dev` branch from `main` HEAD: `git checkout -b dev`
@@ -413,7 +413,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 1. Shared package: Rewrite all Zod schemas for v2 entities
+- [x] 1. Shared package: Rewrite all Zod schemas for v2 entities
 
   **What to do**:
   - Rewrite `packages/shared/src/schemas/hackathon.ts`:
@@ -508,7 +508,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 2. DB package: Fresh Drizzle schema with ~15 tables + migration
+- [x] 2. DB package: Fresh Drizzle schema with ~15 tables + migration
 
   **What to do**:
   - Delete all existing schema files in `packages/db/src/schema/` (users.ts, hackathons.ts, registrations.ts, teams.ts, team_members.ts, submissions.ts)
@@ -596,7 +596,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 3. Response envelope utility
+- [x] 3. Response envelope utility
 
   **What to do**:
   - Create `apps/api/src/lib/response.ts`:
@@ -655,7 +655,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 4. JWT v2 + auth middleware rewrite
+- [x] 4. JWT v2 + auth middleware rewrite
 
   **What to do**:
   - Rewrite `apps/api/src/lib/jwt.ts`:
@@ -740,7 +740,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 5. Per-hackathon role resolution middleware
+- [x] 5. Per-hackathon role resolution middleware
 
   **What to do**:
   - Rewrite `apps/api/src/middleware/role.ts`:
@@ -810,7 +810,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 6. Audit event helper
+- [x] 6. Audit event helper
 
   **What to do**:
   - Create `apps/api/src/lib/audit.ts`:
@@ -988,7 +988,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 9. Webhook ingestion route (verify → normalize → enqueue)
+- [x] 9. Webhook ingestion route (verify → normalize → enqueue)
 
   **What to do**:
   - Rewrite `apps/api/src/routes/webhooks.ts`:
@@ -1045,7 +1045,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 10. Team routes (create, join, leave, list, detail, repo connection)
+- [x] 10. Team routes (create, join, leave, list, detail, repo connection)
 
   **What to do**:
   - Rewrite `apps/api/src/routes/teams.ts`:
@@ -1094,7 +1094,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 11. Queue consumer handlers (push, tag_create, tag_delete, installation)
+- [x] 11. Queue consumer handlers (push, tag_create, tag_delete, installation)
 
   **What to do**:
   - Create `apps/api/src/queue/` directory with handler files:
@@ -1145,7 +1145,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 12. Wrangler config update (DO migration, queue bindings, env types, dev environment)
+- [x] 12. Wrangler config update (DO migration, queue bindings, env types, dev environment)
 
   **What to do**:
   - Update `apps/api/wrangler.jsonc` **top-level** (shared/production config):
