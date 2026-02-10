@@ -8,6 +8,13 @@ const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
 const now = new Date().toISOString();
 
 let hackathonId: string;
+let hackathonSlug: string;
+let adminUserId: string;
+let adminToken: string;
+let judgeUserId: string;
+let judgeToken: string;
+
+async function ensureSchema() {
   const statements = [
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY NOT NULL, github_id INTEGER NOT NULL, google_id TEXT, github_username TEXT NOT NULL, display_name TEXT NOT NULL, email TEXT, avatar_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS users_github_id_unique ON users (github_id)`,

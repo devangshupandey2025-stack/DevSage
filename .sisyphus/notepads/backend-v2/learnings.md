@@ -71,3 +71,19 @@
 - All 10 judge tests passing (invite success, duplicate 409, non-admin 403, no auth 401, list with user details, accept, decline, wrong user 403, 404)
 - Total test count: 145 passing, 1 skipped (11 test files)
 - No type errors from LSP diagnostics
+
+## Task 15 — Force Push Detection Enhancement
+
+- Enhanced force push handler in `apps/api/src/queue/push-handler.ts`:
+  - Added `size` field (optional) to `NormalizedPushEvent` type to capture GitHub's `event.size` (total commits in push)
+  - Estimated lost commits: `Math.max(0, (event.size ?? 0) - event.commits.length)`
+  - Query affected submissions: `status IN ('received', 'validated', 'locked', 'under_review')` for the team
+  - When affected submissions exist: update `force_push_events` with `action_taken='flagged'` + `submissions_invalidated` JSON array of submission IDs
+  - Send to `NOTIFICATION_QUEUE`: `{ type: 'force_push_alert', hackathonId, teamId, forcePushId, affectedSubmissionCount }`
+  - Audit event: `force_push.detected` (existing, unchanged)
+- TDD approach: wrote 3 comprehensive failing tests first (flagged with submissions, logged without submissions, notification enqueued), then implemented
+- Test mocking: `NOTIFICATION_QUEUE` mock needs both `send()` and `sendBatch()` methods to satisfy `Queue<unknown>` interface type
+- Drizzle ORM pattern for conditional update: insert first, query affected rows, conditionally update the inserted row if needed
+- All 145 tests passing (1 skipped) — no regressions
+- Files modified: `webhook-normalize.ts` (added size field), `push-handler.ts` (enhanced force push section), `queue-handlers.test.ts` (+3 tests)
+- Commit: `feat(api): implement force push detection and commit logging`
