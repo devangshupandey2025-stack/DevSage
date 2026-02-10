@@ -22,12 +22,8 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "HACKATHON_LIFECYCLE",
-        "class_name": "HackathonLifecycleDO"
-      },
-      {
-        "name": "SUBMISSION",
-        "class_name": "SubmissionDO"
+        "name": "HACKATHON_SM",
+        "class_name": "HackathonStateMachine"
       }
     ]
   },
@@ -35,6 +31,11 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["HackathonLifecycleDO", "SubmissionDO"]
+    },
+    {
+      "tag": "v2",
+      "deleted_classes": ["HackathonLifecycleDO", "SubmissionDO"],
+      "new_sqlite_classes": ["HackathonStateMachine"]
     }
   ],
   "queues": {
@@ -42,6 +43,10 @@
       {
         "queue": "github-webhooks",
         "binding": "WEBHOOK_QUEUE"
+      },
+      {
+        "queue": "devsage-notifications",
+        "binding": "NOTIFICATION_QUEUE"
       }
     ],
     "consumers": [
@@ -50,8 +55,23 @@
         "max_batch_size": 10,
         "max_retries": 3,
         "dead_letter_queue": "github-webhooks-dlq"
+      },
+      {
+        "queue": "devsage-notifications",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "devsage-notifications-dlq"
       }
     ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "ASSETS",
+      "bucket_name": "devsage-assets"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
   },
   "observability": {
     "enabled": true
@@ -73,22 +93,38 @@
           "id": "00000000000000000000000000000000"
         }
       ],
-      "queues": {
-        "producers": [
-          {
-            "queue": "github-webhooks-dev",
-            "binding": "WEBHOOK_QUEUE"
-          }
-        ],
-        "consumers": [
-          {
-            "queue": "github-webhooks-dev",
-            "max_batch_size": 10,
-            "max_retries": 3,
-            "dead_letter_queue": "github-webhooks-dlq-dev"
-          }
-        ]
-      },
+       "queues": {
+         "producers": [
+           {
+             "queue": "github-webhooks-dev",
+             "binding": "WEBHOOK_QUEUE"
+           },
+           {
+             "queue": "devsage-notifications-dev",
+             "binding": "NOTIFICATION_QUEUE"
+           }
+         ],
+         "consumers": [
+           {
+             "queue": "github-webhooks-dev",
+             "max_batch_size": 10,
+             "max_retries": 3,
+             "dead_letter_queue": "github-webhooks-dlq-dev"
+           },
+           {
+             "queue": "devsage-notifications-dev",
+             "max_batch_size": 10,
+             "max_retries": 3,
+             "dead_letter_queue": "devsage-notifications-dlq-dev"
+           }
+         ]
+       },
+       "r2_buckets": [
+         {
+           "binding": "ASSETS",
+           "bucket_name": "devsage-assets-dev"
+         }
+       ],
       "vars": {
         "FRONTEND_URL": "http://localhost:5173"
       }

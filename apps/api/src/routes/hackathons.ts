@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, ne, desc } from 'drizzle-orm';
-import { createDbClient, hackathons as hackathonsTable, registrations, users } from '@devsage/db';
+import { eq, ne, desc, count } from 'drizzle-orm';
+import { createDbClient, hackathons as hackathonsTable, organizerRoles } from '@devsage/db';
 import {
   CreateHackathonRequestSchema,
   HACKATHON_STATUS_TRANSITIONS,
@@ -11,101 +11,20 @@ import {
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
+import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
+import { insertAuditEvent } from '../lib/audit.js';
 
 const hackathons = new Hono<AuthAppEnv>();
 
-type TransitionLifecycleAction = 'openRegistration' | 'startHacking' | 'closeSubmissions' | 'complete';
-
-interface TransitionLifecycleRequest {
-  action: TransitionLifecycleAction;
-  expectedVersion: number;
-}
-
-interface LifecycleStateResponse {
-  hackathonId: string;
-  status: HackathonStatus;
-  registrationStart: string;
-  hackingStart: string;
-  submissionDeadline: string;
-  transitionedAt: string;
-  version: number;
+function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function isHackathonStatus(value: unknown): value is HackathonStatus {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(HACKATHON_STATUS_TRANSITIONS, value);
-}
-
-function isTransitionLifecycleAction(value: unknown): value is TransitionLifecycleAction {
-  return (
-    value === 'openRegistration' ||
-    value === 'startHacking' ||
-    value === 'closeSubmissions' ||
-    value === 'complete'
-  );
-}
-
-function parseTransitionLifecycleRequest(value: unknown): TransitionLifecycleRequest | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const { action, expectedVersion } = value;
-  if (
-    !isTransitionLifecycleAction(action) ||
-    typeof expectedVersion !== 'number' ||
-    !Number.isInteger(expectedVersion) ||
-    expectedVersion <= 0
-  ) {
-    return null;
-  }
-
-  return {
-    action,
-    expectedVersion,
-  };
-}
-
-function parseLifecycleState(value: unknown): LifecycleStateResponse | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const {
-    hackathonId,
-    status,
-    registrationStart,
-    hackingStart,
-    submissionDeadline,
-    transitionedAt,
-    version,
-  } = value;
-
-  if (
-    typeof hackathonId !== 'string' ||
-    !isHackathonStatus(status) ||
-    typeof registrationStart !== 'string' ||
-    typeof hackingStart !== 'string' ||
-    typeof submissionDeadline !== 'string' ||
-    typeof transitionedAt !== 'string' ||
-    typeof version !== 'number' ||
-    !Number.isInteger(version)
-  ) {
-    return null;
-  }
-
-  return {
-    hackathonId,
-    status,
-    registrationStart,
-    hackingStart,
-    submissionDeadline,
-    transitionedAt,
-    version,
-  };
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -116,114 +35,17 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function getLifecycleStub(env: AuthAppEnv['Bindings'], hackathonId: string) {
-  const doId = env.HACKATHON_LIFECYCLE.idFromName(hackathonId);
-  return env.HACKATHON_LIFECYCLE.get(doId);
+function getStateMachineStub(env: AuthAppEnv['Bindings'], hackathonId: string) {
+  const doId = env.HACKATHON_SM.idFromName(hackathonId);
+  return env.HACKATHON_SM.get(doId);
 }
 
-async function syncHackathonStatus(
-  db: ReturnType<typeof createDbClient>,
-  hackathonId: string,
-  status: HackathonStatus
-): Promise<void> {
-  await db
-    .update(hackathonsTable)
-    .set({
-      status,
-      updated_at: new Date().toISOString(),
-    })
-    .where(eq(hackathonsTable.id, hackathonId));
-}
-
-// Apply auth middleware to all routes
-hackathons.use('*', authMiddleware);
-
-/**
- * POST /api/hackathons
- * Create a new hackathon (organizer only)
- */
-hackathons.post(
-  '/',
-  requireRole('organizer'),
-  zValidator('json', CreateHackathonRequestSchema),
-  async (c) => {
-    const user = c.get('user');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
-
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    await db.insert(hackathonsTable).values({
-      id,
-      title: body.title,
-      description: body.description,
-      organizer_id: user.sub,
-      status: 'draft',
-      max_team_size: body.maxTeamSize,
-      registration_start_date: body.registrationStartDate,
-      hacking_start_date: body.hackingStartDate,
-      submission_deadline: body.submissionDeadline,
-      created_at: now,
-      updated_at: now,
-    });
-
-    const lifecycleStub = getLifecycleStub(c.env, id);
-    const initializeResponse = await lifecycleStub.fetch('http://do/initialize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        hackathonId: id,
-        registrationStart: body.registrationStartDate,
-        hackingStart: body.hackingStartDate,
-        submissionDeadline: body.submissionDeadline,
-      }),
-    });
-
-    if (!initializeResponse.ok) {
-      const details = await readJson(initializeResponse);
-
-      await db.delete(hackathonsTable).where(eq(hackathonsTable.id, id));
-
-      return c.json(
-        {
-          error: 'Failed to initialize hackathon lifecycle',
-          code: 'LIFECYCLE_INIT_FAILED',
-          details,
-        },
-        500
-      );
-    }
-
-    const hackathon = await db
-      .select()
-      .from(hackathonsTable)
-      .where(eq(hackathonsTable.id, id))
-      .get();
-
-    return c.json(hackathon, 201);
-  }
-);
-
-/**
- * GET /api/hackathons
- * List hackathons (role-aware visibility)
- * - Organisers: see only their own hackathons
- * - Participants: see all non-DRAFT hackathons
- */
 hackathons.get('/', async (c) => {
-  const user = c.get('user');
   const db = createDbClient(c.env.DB);
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 10, 1), 100);
+  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
 
-  const limit = Number(c.req.query('limit')) || 10;
-  const offset = Number(c.req.query('offset')) || 0;
-
-  const whereCondition =
-    user.role === 'organizer'
-      ? eq(hackathonsTable.organizer_id, user.sub)
-      : ne(hackathonsTable.status, 'draft');
+  const whereCondition = ne(hackathonsTable.status, 'draft');
 
   const data = await db
     .select()
@@ -235,229 +57,150 @@ hackathons.get('/', async (c) => {
     .all();
 
   const totalResult = await db
-    .select()
+    .select({ value: count() })
     .from(hackathonsTable)
     .where(whereCondition)
-    .all();
+    .get();
 
-  return c.json({ data, total: totalResult.length });
+  const total = totalResult?.value ?? 0;
+  return paginatedResponse(c, data, total, limit, offset);
 });
 
-/**
- * GET /api/hackathons/:id
- * Get a single hackathon by ID
- */
-hackathons.get('/:id', async (c) => {
-  const id = c.req.param('id');
+hackathons.get('/:slug', async (c) => {
+  const slug = c.req.param('slug');
   const db = createDbClient(c.env.DB);
 
   const hackathon = await db
     .select()
     .from(hackathonsTable)
-    .where(eq(hackathonsTable.id, id))
+    .where(eq(hackathonsTable.slug, slug))
     .get();
 
   if (!hackathon) {
-    return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
+    return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
   }
 
-  return c.json(hackathon);
+  return successResponse(c, hackathon);
 });
 
-/**
- * GET /api/hackathons/:id/lifecycle
- * Get durable lifecycle state for a hackathon
- */
-hackathons.get('/:id/lifecycle', async (c) => {
-  const hackathonId = c.req.param('id');
-  const db = createDbClient(c.env.DB);
-
-  const hackathon = await db
-    .select()
-    .from(hackathonsTable)
-    .where(eq(hackathonsTable.id, hackathonId))
-    .get();
-
-  if (!hackathon) {
-    return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-  }
-
-  const lifecycleStub = getLifecycleStub(c.env, hackathonId);
-  const lifecycleResponse = await lifecycleStub.fetch('http://do/state');
-  const payload = await readJson(lifecycleResponse);
-
-  if (!lifecycleResponse.ok) {
-    return Response.json(
-      isRecord(payload)
-        ? payload
-        : {
-            error: 'Failed to fetch lifecycle state',
-            code: 'LIFECYCLE_FETCH_FAILED',
-          },
-      { status: lifecycleResponse.status }
-    );
-  }
-
-  const state = parseLifecycleState(payload);
-  if (!state) {
-    return c.json(
-      {
-        error: 'Lifecycle service returned invalid payload',
-        code: 'LIFECYCLE_INVALID_RESPONSE',
-      },
-      502
-    );
-  }
-
-  if (state.hackathonId !== hackathonId) {
-    return c.json(
-      {
-        error: 'Lifecycle state does not match hackathon id',
-        code: 'LIFECYCLE_ID_MISMATCH',
-      },
-      502
-    );
-  }
-
-  if (hackathon.status !== state.status) {
-    await syncHackathonStatus(db, hackathonId, state.status);
-  }
-
-  return c.json(state);
-});
-
-/**
- * POST /api/hackathons/:id/transition
- * Transition hackathon lifecycle state (organizer owner only)
- */
 hackathons.post(
-  '/:id/transition',
-  requireRole('organizer'),
+  '/',
+  authMiddleware,
+  zValidator('json', CreateHackathonRequestSchema),
   async (c) => {
-    const hackathonId = c.req.param('id');
-    const user = c.get('user');
-    const db = createDbClient(c.env.DB);
-
-    let bodyPayload: unknown;
-    try {
-      bodyPayload = await c.req.json();
-    } catch {
-      return c.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, 400);
-    }
-
-    const body = parseTransitionLifecycleRequest(bodyPayload);
-    if (!body) {
-      return c.json(
-        {
-          error: 'Expected { action, expectedVersion } with a valid action and positive integer expectedVersion',
-          code: 'INVALID_BODY',
-        },
-        400
-      );
-    }
-
-    const hackathon = await db
-      .select()
-      .from(hackathonsTable)
-      .where(eq(hackathonsTable.id, hackathonId))
-      .get();
-
-    if (!hackathon) {
-      return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-    }
-
-    if (hackathon.organizer_id !== user.sub) {
-      return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
-    }
-
-    const lifecycleStub = getLifecycleStub(c.env, hackathonId);
-    const transitionResponse = await lifecycleStub.fetch('http://do/transition', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: body.action,
-        expectedVersion: body.expectedVersion,
-      }),
-    });
-
-    const payload = await readJson(transitionResponse);
-
-    if (!transitionResponse.ok) {
-      return Response.json(
-        isRecord(payload)
-          ? payload
-          : {
-              error: 'Lifecycle transition failed',
-              code: 'LIFECYCLE_TRANSITION_FAILED',
-            },
-        { status: transitionResponse.status }
-      );
-    }
-
-    const state = parseLifecycleState(payload);
-    if (!state) {
-      return c.json(
-        {
-          error: 'Lifecycle service returned invalid payload',
-          code: 'LIFECYCLE_INVALID_RESPONSE',
-        },
-        502
-      );
-    }
-
-    if (state.hackathonId !== hackathonId) {
-      return c.json(
-        {
-          error: 'Lifecycle state does not match hackathon id',
-          code: 'LIFECYCLE_ID_MISMATCH',
-        },
-        502
-      );
-    }
-
-    await syncHackathonStatus(db, hackathonId, state.status);
-
-    return c.json(state);
-  }
-);
-
-/**
- * PATCH /api/hackathons/:id
- * Update a hackathon (organizer owner only, DRAFT status only)
- */
-hackathons.patch(
-  '/:id',
-  zValidator('json', UpdateHackathonRequestSchema),
-  async (c) => {
-    const id = c.req.param('id');
     const user = c.get('user');
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
 
-    // Check if hackathon exists
+    const slug = body.slug || generateSlug(body.title);
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const existingSlug = await db
+      .select({ id: hackathonsTable.id })
+      .from(hackathonsTable)
+      .where(eq(hackathonsTable.slug, slug))
+      .get();
+
+    if (existingSlug) {
+      return errorResponse(c, 409, 'SLUG_TAKEN', `Slug "${slug}" is already in use`);
+    }
+
+    await db.insert(hackathonsTable).values({
+      id,
+      slug,
+      title: body.title,
+      description: body.description ?? null,
+      rules_md: body.rulesMd ?? null,
+      registration_opens: body.registrationOpens,
+      registration_closes: body.registrationCloses,
+      submission_deadline: body.submissionDeadline,
+      judging_starts: body.judgingStarts ?? null,
+      judging_ends: body.judgingEnds ?? null,
+      min_team_size: body.minTeamSize ?? 1,
+      max_team_size: body.maxTeamSize ?? 5,
+      max_teams: body.maxTeams ?? null,
+      submission_tag_pattern: body.submissionTagPattern ?? 'submission_v%',
+      max_submissions_per_team: body.maxSubmissionsPerTeam ?? null,
+      allow_late_submissions: body.allowLateSubmissions ?? 0,
+      primary_color: body.primaryColor ?? '#6366f1',
+      status: 'draft',
+      created_by: user.sub,
+      created_at: now,
+      updated_at: now,
+    });
+
+    await db.insert(organizerRoles).values({
+      id: crypto.randomUUID(),
+      hackathon_id: id,
+      user_id: user.sub,
+      role: 'owner',
+      created_at: now,
+    });
+
+    const smStub = getStateMachineStub(c.env, id);
+    const initResponse = await smStub.fetch('http://do/initialize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hackathonId: id,
+        config: {
+          registrationOpens: body.registrationOpens,
+          registrationCloses: body.registrationCloses,
+          submissionDeadline: body.submissionDeadline,
+          judgingStarts: body.judgingStarts ?? null,
+          judgingEnds: body.judgingEnds ?? null,
+          maxTeams: body.maxTeams ?? null,
+          maxSubmissionsPerTeam: body.maxSubmissionsPerTeam ?? null,
+          allowLateSubmissions: body.allowLateSubmissions ?? 0,
+          submissionTagPattern: body.submissionTagPattern ?? 'submission_v%',
+        },
+      }),
+    });
+
+    if (!initResponse.ok) {
+      await db.delete(hackathonsTable).where(eq(hackathonsTable.id, id));
+      await db.delete(organizerRoles).where(eq(organizerRoles.hackathon_id, id));
+      const details = await readJson(initResponse);
+      return errorResponse(
+        c, 500, 'LIFECYCLE_INIT_FAILED', 'Failed to initialize hackathon state machine',
+        isRecord(details) ? details as Record<string, unknown> : undefined,
+      );
+    }
+
+    await insertAuditEvent(db, {
+      hackathonId: id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.create',
+      entityType: 'hackathon',
+      entityId: id,
+      details: { slug, title: body.title },
+    });
+
     const hackathon = await db
       .select()
       .from(hackathonsTable)
       .where(eq(hackathonsTable.id, id))
       .get();
 
-    if (!hackathon) {
-      return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-    }
+    return successResponse(c, hackathon, undefined, 201);
+  },
+);
 
-    // Check ownership
-    if (hackathon.organizer_id !== user.sub) {
-      return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
-    }
+hackathons.put(
+  '/:slug',
+  authMiddleware,
+  requireRole('admin'),
+  zValidator('json', UpdateHackathonRequestSchema),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const body = c.req.valid('json');
+    const db = createDbClient(c.env.DB);
 
-    // Check status is DRAFT
     if (hackathon.status !== 'draft') {
-      return c.json(
-        { error: 'Cannot modify non-draft hackathon', code: 'INVALID_STATUS' },
-        400
-      );
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only modify hackathons in draft status');
     }
 
     const updateData: Record<string, unknown> = {
@@ -466,161 +209,147 @@ hackathons.patch(
 
     if (body.title !== undefined) updateData.title = body.title;
     if (body.description !== undefined) updateData.description = body.description;
-    if (body.registrationStartDate !== undefined) {
-      updateData.registration_start_date = body.registrationStartDate;
-    }
-    if (body.hackingStartDate !== undefined) {
-      updateData.hacking_start_date = body.hackingStartDate;
-    }
-    if (body.submissionDeadline !== undefined) {
-      updateData.submission_deadline = body.submissionDeadline;
-    }
-    if (body.maxTeamSize !== undefined) {
-      updateData.max_team_size = body.maxTeamSize;
-    }
+    if (body.rulesMd !== undefined) updateData.rules_md = body.rulesMd;
+    if (body.registrationOpens !== undefined) updateData.registration_opens = body.registrationOpens;
+    if (body.registrationCloses !== undefined) updateData.registration_closes = body.registrationCloses;
+    if (body.submissionDeadline !== undefined) updateData.submission_deadline = body.submissionDeadline;
+    if (body.judgingStarts !== undefined) updateData.judging_starts = body.judgingStarts;
+    if (body.judgingEnds !== undefined) updateData.judging_ends = body.judgingEnds;
+    if (body.minTeamSize !== undefined) updateData.min_team_size = body.minTeamSize;
+    if (body.maxTeamSize !== undefined) updateData.max_team_size = body.maxTeamSize;
+    if (body.maxTeams !== undefined) updateData.max_teams = body.maxTeams;
+    if (body.submissionTagPattern !== undefined) updateData.submission_tag_pattern = body.submissionTagPattern;
+    if (body.maxSubmissionsPerTeam !== undefined) updateData.max_submissions_per_team = body.maxSubmissionsPerTeam;
+    if (body.allowLateSubmissions !== undefined) updateData.allow_late_submissions = body.allowLateSubmissions;
+    if (body.primaryColor !== undefined) updateData.primary_color = body.primaryColor;
+    if (body.logoR2Key !== undefined) updateData.logo_r2_key = body.logoR2Key;
+    if (body.bannerR2Key !== undefined) updateData.banner_r2_key = body.bannerR2Key;
+    if (body.customSubdomain !== undefined) updateData.custom_subdomain = body.customSubdomain;
 
     await db
       .update(hackathonsTable)
       .set(updateData)
-      .where(eq(hackathonsTable.id, id));
+      .where(eq(hackathonsTable.id, hackathon.id));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.update',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+      details: { updatedFields: Object.keys(body) },
+    });
 
     const updated = await db
       .select()
       .from(hackathonsTable)
-      .where(eq(hackathonsTable.id, id))
+      .where(eq(hackathonsTable.id, hackathon.id))
       .get();
 
-    return c.json(updated);
-  }
+    return successResponse(c, updated);
+  },
 );
 
-/**
- * DELETE /api/hackathons/:id
- * Delete a hackathon (organizer owner only, DRAFT status only)
- */
-hackathons.delete('/:id', async (c) => {
-  const id = c.req.param('id');
-  const user = c.get('user');
-  const db = createDbClient(c.env.DB);
+hackathons.patch(
+  '/:slug/status',
+  authMiddleware,
+  requireRole('admin'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
 
-  // Check if hackathon exists
-  const hackathon = await db
-    .select()
-    .from(hackathonsTable)
-    .where(eq(hackathonsTable.id, id))
-    .get();
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return errorResponse(c, 400, 'INVALID_BODY', 'Invalid JSON body');
+    }
 
-  if (!hackathon) {
-    return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-  }
+    if (!isRecord(body) || typeof body.targetStatus !== 'string') {
+      return errorResponse(c, 400, 'INVALID_BODY', 'Expected { targetStatus }');
+    }
 
-  // Check ownership
-  if (hackathon.organizer_id !== user.sub) {
-    return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
-  }
+    const targetStatus = body.targetStatus as string;
+    if (!Object.prototype.hasOwnProperty.call(HACKATHON_STATUS_TRANSITIONS, targetStatus)) {
+      return errorResponse(c, 400, 'INVALID_STATUS', `Unknown status: ${targetStatus}`);
+    }
 
-  // Check status is DRAFT
-    if (hackathon.status !== 'draft') {
-      return c.json(
-        { error: 'Cannot delete non-draft hackathon', code: 'INVALID_STATUS' },
-      400
-    );
-  }
-
-  await db.delete(hackathonsTable).where(eq(hackathonsTable.id, id));
-
-  return c.body(null, 204);
-});
-
-/**
- * POST /api/hackathons/:id/register
- * Register for a hackathon (participant role, REGISTRATION_OPEN status)
- */
-hackathons.post('/:id/register', requireRole('participant'), async (c) => {
-  const hackathonId = c.req.param('id');
-  const user = c.get('user');
-  const db = createDbClient(c.env.DB);
-
-  // Check hackathon exists
-  const hackathon = await db
-    .select()
-    .from(hackathonsTable)
-    .where(eq(hackathonsTable.id, hackathonId))
-    .get();
-
-  if (!hackathon) {
-    return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-  }
-
-  // Check status is REGISTRATION_OPEN
-  if (hackathon.status !== 'registration_open') {
-    return c.json(
-      { error: 'Registration not open', code: 'REGISTRATION_CLOSED' },
-      400
-    );
-  }
-
-  // Insert registration
-  try {
-    const registrationId = crypto.randomUUID();
-    await db.insert(registrations).values({
-      id: registrationId,
-      hackathon_id: hackathonId,
-      user_id: user.sub,
-      registered_at: new Date().toISOString(),
+    const smStub = getStateMachineStub(c.env, hackathon.id);
+    const transitionResponse = await smStub.fetch('http://do/transition', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetStatus,
+        expectedVersion: typeof body.expectedVersion === 'number' ? body.expectedVersion : undefined,
+      }),
     });
 
-    return c.body(null, 201);
-  } catch (error) {
-    // Check for unique constraint violation (duplicate registration)
-    if (
-      error instanceof Error &&
-      error.message.includes('UNIQUE constraint failed')
-    ) {
-      return c.json(
-        { error: 'Already registered', code: 'DUPLICATE_REGISTRATION' },
-        409
+    const payload = await readJson(transitionResponse);
+
+    if (!transitionResponse.ok) {
+      const errPayload = isRecord(payload) ? payload : {};
+      return errorResponse(
+        c,
+        transitionResponse.status as 400,
+        String(errPayload.code ?? 'TRANSITION_FAILED'),
+        String(errPayload.error ?? 'Transition failed'),
       );
     }
-    throw error;
-  }
-});
 
-/**
- * GET /api/hackathons/:id/registrations
- * List registrations for a hackathon (organizer owner only)
- */
-hackathons.get('/:id/registrations', async (c) => {
-  const hackathonId = c.req.param('id');
-  const user = c.get('user');
-  const db = createDbClient(c.env.DB);
+    const newStatus = (isRecord(payload) && typeof payload.status === 'string' ? payload.status : targetStatus) as HackathonStatus;
+    await db
+      .update(hackathonsTable)
+      .set({ status: newStatus, updated_at: new Date().toISOString() })
+      .where(eq(hackathonsTable.id, hackathon.id));
 
-  // Check hackathon exists and ownership
-  const hackathon = await db
-    .select()
-    .from(hackathonsTable)
-    .where(eq(hackathonsTable.id, hackathonId))
-    .get();
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.transition',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+      details: { from: hackathon.status, to: newStatus },
+    });
 
-  if (!hackathon) {
-    return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
-  }
+    const updated = await db
+      .select()
+      .from(hackathonsTable)
+      .where(eq(hackathonsTable.id, hackathon.id))
+      .get();
 
-  if (hackathon.organizer_id !== user.sub) {
-    return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
-  }
+    return successResponse(c, updated);
+  },
+);
 
-  // Fetch registrations with user details
-  const registrationList = await db
-    .select({
-      user: users,
-    })
-    .from(registrations)
-    .innerJoin(users, eq(registrations.user_id, users.id))
-    .where(eq(registrations.hackathon_id, hackathonId))
-    .all();
+hackathons.delete(
+  '/:slug',
+  authMiddleware,
+  requireRole('owner'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
 
-  return c.json(registrationList.map((r) => r.user));
-});
+    if (hackathon.status !== 'draft') {
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only delete hackathons in draft status');
+    }
+
+    await db.delete(hackathonsTable).where(eq(hackathonsTable.id, hackathon.id));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.delete',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+    });
+
+    return c.body(null, 204);
+  },
+);
 
 export default hackathons;

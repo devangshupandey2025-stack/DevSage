@@ -105,10 +105,10 @@ app.use('*', async (c, next) => {
 
 // Mount route groups
 app.route('/auth', auth);
-app.route('/hackathons', hackathons);
-app.route('/hackathons', teams);
+app.route('/api/v1/hackathons', hackathons);
+app.route('/api/v1/hackathons', teams);
 app.route('/webhooks', webhooks);
-app.route('/hackathons', submissions);
+app.route('/api/v1/hackathons', submissions);
 
 // Health check
 app.get('/', (c) => {
@@ -134,8 +134,8 @@ export default {
           continue;
         }
 
-        const lifecycleId = env.HACKATHON_LIFECYCLE.idFromName(mapping.hackathonId);
-        const lifecycleStub = env.HACKATHON_LIFECYCLE.get(lifecycleId);
+        const lifecycleId = env.HACKATHON_SM.idFromName(mapping.hackathonId);
+        const lifecycleStub = env.HACKATHON_SM.get(lifecycleId);
         const lifecycleResponse = await lifecycleStub.fetch('http://do/state');
         if (!lifecycleResponse.ok) {
           msg.ack();
@@ -149,34 +149,7 @@ export default {
           continue;
         }
 
-        const submissionId = env.SUBMISSION.idFromName(mapping.hackathonId);
-        const submissionStub = env.SUBMISSION.get(submissionId);
-        const submissionResponse = await submissionStub.fetch('http://do/submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            hackathonId: mapping.hackathonId,
-            teamId: mapping.teamId,
-            repoFullName: payload.repoFullName,
-            commitSha: payload.commitSha,
-            deliveryId: payload.deliveryId,
-          }),
-        });
-
-        if (!submissionResponse.ok) {
-          const reason = await submissionResponse.text();
-          console.error('SubmissionDO rejected webhook submission', {
-            repoFullName: payload.repoFullName,
-            hackathonId: mapping.hackathonId,
-            teamId: mapping.teamId,
-            deliveryId: payload.deliveryId,
-            status: submissionResponse.status,
-            reason,
-          });
-        }
-
+        // Submission handling consolidated into HackathonStateMachine
         msg.ack();
       } catch (error) {
         console.error('Queue processing error', error);
