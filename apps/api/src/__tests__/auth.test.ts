@@ -107,25 +107,34 @@ describe('auth critical paths', () => {
     expect(missingFields).toBeNull();
   });
 
-  it('auth middleware rejects requests without session cookie', async () => {
-    const response = await SELF.fetch('http://localhost/hackathons');
-    const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+   it('auth middleware rejects requests without session cookie', async () => {
+      const response = await SELF.fetch('http://localhost/api/v1/hackathons', {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify({ title: 'Test' }),
+     });
+     const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
 
-    expect(response.status).toBe(401);
-    expect(body.ok).toBe(false);
-    expect(body.error.code).toBe('NO_TOKEN');
-  });
+     expect(response.status).toBe(401);
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('NO_TOKEN');
+   });
 
-  it('auth middleware rejects requests with invalid JWT', async () => {
-    const response = await SELF.fetch('http://localhost/hackathons', {
-      headers: {
-        Cookie: 'session=invalid-token',
-      },
-    });
-    const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+   it('auth middleware rejects requests with invalid JWT', async () => {
+      const response = await SELF.fetch('http://localhost/api/v1/hackathons', {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: 'session=invalid-token',
+       },
+       body: JSON.stringify({ title: 'Test' }),
+     });
+     const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
 
-    expect(response.status).toBe(401);
-    expect(body.ok).toBe(false);
-    expect(body.error.code).toBe('INVALID_TOKEN');
-  });
+     expect(response.status).toBe(401);
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('INVALID_TOKEN');
+   });
 });

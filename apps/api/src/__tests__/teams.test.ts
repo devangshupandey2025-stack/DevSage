@@ -1,230 +1,696 @@
-import { env as rawEnv, SELF } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { SELF, env as rawEnv } from 'cloudflare:test';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { signJWT } from '../lib/jwt.js';
 import type { Env } from '../types/env.js';
 
 const env = rawEnv as Env;
 
 const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
+const now = new Date().toISOString();
+
+async function authCookie(userId: string, ghid: number, ghu: string): Promise<string> {
+  const token = await signJWT({ sub: userId, ghid, ghu }, JWT_SECRET);
+  return `session=${token}`;
+}
 
 async function ensureSchema() {
   const statements = [
-    'CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, provider TEXT NOT NULL, provider_id TEXT NOT NULL, role TEXT DEFAULT "participant" NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)',
-    'CREATE UNIQUE INDEX IF NOT EXISTS users_email_provider_unique ON users (email, provider)',
-    'CREATE TABLE IF NOT EXISTS hackathons (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, organizer_id TEXT NOT NULL, status TEXT DEFAULT "draft" NOT NULL, max_team_size INTEGER DEFAULT 4 NOT NULL, registration_start_date TEXT NOT NULL, hacking_start_date TEXT NOT NULL, submission_deadline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (organizer_id) REFERENCES users(id))',
-    'CREATE TABLE IF NOT EXISTS registrations (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, registered_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id), FOREIGN KEY (user_id) REFERENCES users(id))',
-    'CREATE UNIQUE INDEX IF NOT EXISTS registrations_hackathon_id_user_id_unique ON registrations (hackathon_id, user_id)',
-    'CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, join_code TEXT NOT NULL, captain_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id), FOREIGN KEY (captain_id) REFERENCES users(id))',
-    'CREATE UNIQUE INDEX IF NOT EXISTS teams_join_code_unique ON teams (join_code)',
-    'CREATE TABLE IF NOT EXISTS team_members (team_id TEXT NOT NULL, user_id TEXT NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY (team_id, user_id), FOREIGN KEY (team_id) REFERENCES teams(id), FOREIGN KEY (user_id) REFERENCES users(id))',
-    'CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, team_id TEXT NOT NULL, repo_full_name TEXT NOT NULL, commit_sha TEXT NOT NULL, submitted_at TEXT NOT NULL, status TEXT DEFAULT "pending" NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id), FOREIGN KEY (team_id) REFERENCES teams(id))',
-    'CREATE UNIQUE INDEX IF NOT EXISTS submissions_hackathon_id_team_id_unique ON submissions (hackathon_id, team_id)',
+    `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY NOT NULL, github_id INTEGER NOT NULL, google_id TEXT, github_username TEXT NOT NULL, display_name TEXT NOT NULL, email TEXT, avatar_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_github_id_unique ON users (github_id)`,
+    `CREATE TABLE IF NOT EXISTS hackathons (id TEXT PRIMARY KEY NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT, rules_md TEXT, registration_opens TEXT NOT NULL, registration_closes TEXT NOT NULL, submission_deadline TEXT NOT NULL, judging_starts TEXT, judging_ends TEXT, min_team_size INTEGER DEFAULT 1 NOT NULL, max_team_size INTEGER DEFAULT 5 NOT NULL, max_teams INTEGER, submission_tag_pattern TEXT DEFAULT 'submission_v%' NOT NULL, max_submissions_per_team INTEGER, allow_late_submissions INTEGER DEFAULT 0 NOT NULL, primary_color TEXT DEFAULT '#6366f1', logo_r2_key TEXT, banner_r2_key TEXT, custom_subdomain TEXT, status TEXT DEFAULT 'draft' NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (created_by) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS hackathons_slug_unique ON hackathons (slug)`,
+    `CREATE TABLE IF NOT EXISTS organizer_roles (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'admin' NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
+    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS judges (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, invite_status TEXT DEFAULT 'pending' NOT NULL, invited_at TEXT NOT NULL, accepted_at TEXT, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_id_user_id_unique ON judges (hackathon_id, user_id)`,
+    `CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, repo_full_name TEXT, repo_url TEXT, github_installation_id INTEGER, bot_active INTEGER DEFAULT 0 NOT NULL, invite_code TEXT, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS teams_invite_code_unique ON teams (invite_code)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS teams_hackathon_name_unique ON teams (hackathon_id, name)`,
+    `CREATE INDEX IF NOT EXISTS idx_teams_hackathon ON teams (hackathon_id)`,
+    `CREATE TABLE IF NOT EXISTS team_members (id TEXT PRIMARY KEY NOT NULL, team_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'member' NOT NULL, joined_at TEXT NOT NULL, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS team_members_team_id_user_id_unique ON team_members (team_id, user_id)`,
   ];
 
-  for (const statement of statements) {
-    await env.DB.exec(statement);
+  for (const sql of statements) {
+    await env.DB.prepare(sql).run();
   }
 }
 
 async function resetDb() {
-  await env.DB.exec('DELETE FROM team_members;');
-  await env.DB.exec('DELETE FROM submissions;');
-  await env.DB.exec('DELETE FROM teams;');
-  await env.DB.exec('DELETE FROM registrations;');
-  await env.DB.exec('DELETE FROM hackathons;');
-  await env.DB.exec('DELETE FROM users;');
+  await env.DB.prepare('DELETE FROM audit_events').run();
+  await env.DB.prepare('DELETE FROM team_members').run();
+  await env.DB.prepare('DELETE FROM teams').run();
+  await env.DB.prepare('DELETE FROM organizer_roles').run();
+  await env.DB.prepare('DELETE FROM judges').run();
+  await env.DB.prepare('DELETE FROM hackathons').run();
+  await env.DB.prepare('DELETE FROM users').run();
 }
 
-async function insertUser(id: string, email: string, role: 'organizer' | 'participant') {
-  const now = new Date().toISOString();
+async function insertUser(id: string, githubId: number) {
   await env.DB
     .prepare(
-      `INSERT INTO users (id, email, name, avatar_url, provider, provider_id, role, created_at, updated_at)
-       VALUES (?1, ?2, ?3, NULL, 'github', ?4, ?5, ?6, ?7)`
+      `INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
     )
-    .bind(id, email, email.split('@')[0], `provider-${id}`, role, now, now)
+    .bind(id, githubId, `user-${githubId}`, `User ${githubId}`, now, now)
     .run();
 }
 
-async function insertHackathon(id: string, organizerId: string) {
-  const now = new Date().toISOString();
+async function insertHackathon(params: {
+  id: string;
+  slug: string;
+  createdBy: string;
+  status?: string;
+  maxTeamSize?: number;
+  minTeamSize?: number;
+}) {
   await env.DB
     .prepare(
-      `INSERT INTO hackathons (
-        id, title, description, organizer_id, status, max_team_size,
-        registration_start_date, hacking_start_date, submission_deadline,
-        created_at, updated_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+      `INSERT INTO hackathons (id, slug, title, registration_opens, registration_closes, submission_deadline, status, max_team_size, min_team_size, created_by, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
     )
     .bind(
-      id,
-      'Team Hackathon',
-      'Hackathon used for testing team create and join flows.',
-      organizerId,
-      'registration_open',
-      4,
+      params.id,
+      params.slug,
+      'Test Hackathon',
       now,
-      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
       now,
-      now
+      now,
+      params.status ?? 'registration_open',
+      params.maxTeamSize ?? 5,
+      params.minTeamSize ?? 1,
+      params.createdBy,
+      now,
+      now,
     )
     .run();
 }
 
-async function insertRegistration(hackathonId: string, userId: string) {
+async function insertOrganizerRole(hackathonId: string, userId: string, role: 'owner' | 'admin' | 'moderator') {
   await env.DB
-    .prepare('INSERT INTO registrations (id, hackathon_id, user_id, registered_at) VALUES (?1, ?2, ?3, ?4)')
-    .bind(crypto.randomUUID(), hackathonId, userId, new Date().toISOString())
+    .prepare(
+      `INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5)`
+    )
+    .bind(crypto.randomUUID(), hackathonId, userId, role, now)
     .run();
 }
 
-async function authCookie(userId: string, email: string, role: 'organizer' | 'participant') {
-  const token = await signJWT({ sub: userId, email, role }, JWT_SECRET);
-  return `session=${token}`;
+interface TeamData {
+  id: string;
+  name: string;
+  invite_code: string;
+  hackathon_id: string;
+  created_at: string;
 }
 
-describe('team routes critical paths', () => {
-  beforeEach(async () => {
+interface TeamResponse {
+  ok: boolean;
+  data: TeamData;
+}
+
+interface ErrorResponse {
+  ok: boolean;
+  error: { code: string; message: string };
+}
+
+interface ListResponse {
+  ok: boolean;
+  data: Array<Record<string, unknown>>;
+  meta: { total: number; limit: number; offset: number };
+}
+
+interface TeamDetailResponse {
+  ok: boolean;
+  data: {
+    id: string;
+    name: string;
+    invite_code: string;
+    members: Array<{
+      user_id: string;
+      role: string;
+      display_name: string;
+    }>;
+  };
+}
+
+const BASE = 'http://localhost/api/v1/hackathons';
+
+describe('team routes v2', () => {
+  beforeAll(async () => {
     await ensureSchema();
+  });
+
+  beforeEach(async () => {
     await resetDb();
   });
 
-  it('creates team and returns join code', async () => {
-    const organizerId = crypto.randomUUID();
+  // ─── CREATE TEAM ─────────────────────────────────────────
+
+  it('POST /:slug/teams — creates team with invite_code', async () => {
+    const ownerId = crypto.randomUUID();
     const participantId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
+    const slug = 'create-team-hack';
 
-    await insertUser(organizerId, 'org@example.com', 'organizer');
-    await insertUser(participantId, 'captain@example.com', 'participant');
-    await insertHackathon(hackathonId, organizerId);
-    await insertRegistration(hackathonId, participantId);
+    await insertUser(ownerId, 1001);
+    await insertUser(participantId, 1002);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, participantId, 'admin');
 
-    const response = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
+    const response = await SELF.fetch(`${BASE}/${slug}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(participantId, 'captain@example.com', 'participant'),
+        Cookie: await authCookie(participantId, 1002, 'user-1002'),
       },
-      body: JSON.stringify({
-        name: 'Builders',
-        hackathonId,
-      }),
+      body: JSON.stringify({ name: 'Builders' }),
     });
-    const body = (await response.json()) as { join_code?: string };
 
     expect(response.status).toBe(201);
-    expect(typeof body.join_code).toBe('string');
-    expect(body.join_code?.length).toBe(8);
+    const body = (await response.json()) as TeamResponse;
+    expect(body.ok).toBe(true);
+    expect(typeof body.data.invite_code).toBe('string');
+    expect(body.data.invite_code.length).toBe(8);
+
+    // Verify creator is team_leader
+    const member = await env.DB
+      .prepare(`SELECT role FROM team_members WHERE team_id = ?1 AND user_id = ?2`)
+      .bind(body.data.id, participantId)
+      .first();
+    expect(member?.role).toBe('leader');
+
+    // Verify audit event
+    const audit = await env.DB
+      .prepare(`SELECT action FROM audit_events WHERE entity_id = ?1`)
+      .bind(body.data.id)
+      .first();
+    expect(audit?.action).toBe('team.create');
   });
 
-  it('joins team by join code', async () => {
-    const organizerId = crypto.randomUUID();
-    const captainId = crypto.randomUUID();
+  it('POST /:slug/teams — rejects when hackathon not in registration_open', async () => {
+    const ownerId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'draft-hack';
+
+    await insertUser(ownerId, 2001);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId, status: 'draft' });
+    await insertOrganizerRole(hackathonId, ownerId, 'owner');
+
+    const response = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(ownerId, 2001, 'user-2001'),
+      },
+      body: JSON.stringify({ name: 'Draft Team' }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('INVALID_STATUS');
+  });
+
+  it('POST /:slug/teams — rejects without auth', async () => {
+    const ownerId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'noauth-hack';
+
+    await insertUser(ownerId, 2002);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+
+    const response = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'No Auth Team' }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('POST /:slug/teams — rejects if user already on a team', async () => {
+    const ownerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'dup-team-hack';
+
+    await insertUser(ownerId, 3001);
+    await insertUser(userId, 3002);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, userId, 'admin');
+
+    // Create first team
+    const resp1 = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(userId, 3002, 'user-3002'),
+      },
+      body: JSON.stringify({ name: 'Team One' }),
+    });
+    expect(resp1.status).toBe(201);
+
+    // Try to create second team
+    const resp2 = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(userId, 3002, 'user-3002'),
+      },
+      body: JSON.stringify({ name: 'Team Two' }),
+    });
+
+    expect(resp2.status).toBe(409);
+    const body = (await resp2.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('ALREADY_ON_TEAM');
+  });
+
+  // ─── LIST TEAMS ──────────────────────────────────────────
+
+  it('GET /:slug/teams — lists teams with pagination', async () => {
+    const ownerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'list-teams-hack';
+
+    await insertUser(ownerId, 4001);
+    await insertUser(userId, 4002);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, ownerId, 'owner');
+    await insertOrganizerRole(hackathonId, userId, 'admin');
+
+    // Create a team
+    await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(userId, 4002, 'user-4002'),
+      },
+      body: JSON.stringify({ name: 'Listers' }),
+    });
+
+    const response = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      headers: {
+        Cookie: await authCookie(ownerId, 4001, 'user-4001'),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as ListResponse;
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.meta.total).toBe(1);
+  });
+
+  // ─── GET TEAM DETAIL ─────────────────────────────────────
+
+  it('GET /:slug/teams/:teamId — returns team with members', async () => {
+    const ownerId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'detail-hack';
+
+    await insertUser(ownerId, 5001);
+    await insertUser(userId, 5002);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, userId, 'admin');
+
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(userId, 5002, 'user-5002'),
+      },
+      body: JSON.stringify({ name: 'Detailers' }),
+    });
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+
+    const response = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}`, {
+      headers: {
+        Cookie: await authCookie(userId, 5002, 'user-5002'),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as TeamDetailResponse;
+    expect(body.ok).toBe(true);
+    expect(body.data.id).toBe(teamId);
+    expect(Array.isArray(body.data.members)).toBe(true);
+    expect(body.data.members.length).toBe(1);
+    expect(body.data.members[0].role).toBe('leader');
+  });
+
+  it('GET /:slug/teams/:teamId — returns 404 for nonexistent team', async () => {
+    const ownerId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'no-team-hack';
+
+    await insertUser(ownerId, 5003);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, ownerId, 'owner');
+
+    const response = await SELF.fetch(`${BASE}/${slug}/teams/nonexistent-id`, {
+      headers: {
+        Cookie: await authCookie(ownerId, 5003, 'user-5003'),
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  // ─── JOIN TEAM ───────────────────────────────────────────
+
+  it('POST /:slug/teams/:teamId/join — joins team via invite code', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
+    const joinerId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'join-hack';
+
+    await insertUser(ownerId, 6001);
+    await insertUser(leaderId, 6002);
+    await insertUser(joinerId, 6003);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, joinerId, 'admin');
+
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(leaderId, 6002, 'user-6002'),
+      },
+      body: JSON.stringify({ name: 'Joinables' }),
+    });
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+    const inviteCode = created.data.invite_code;
+
+    // Join team
+    const joinResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(joinerId, 6003, 'user-6003'),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+
+    expect(joinResp.status).toBe(200);
+    const joinBody = (await joinResp.json()) as TeamResponse;
+    expect(joinBody.ok).toBe(true);
+
+    // Verify member was added with 'member' role
+    const member = await env.DB
+      .prepare(`SELECT role FROM team_members WHERE team_id = ?1 AND user_id = ?2`)
+      .bind(teamId, joinerId)
+      .first();
+    expect(member?.role).toBe('member');
+
+    // Verify audit event
+    const audit = await env.DB
+      .prepare(`SELECT action FROM audit_events WHERE action = 'team.join' AND entity_id = ?1`)
+      .bind(teamId)
+      .first();
+    expect(audit?.action).toBe('team.join');
+  });
+
+  it('POST /:slug/teams/:teamId/join — rejects invalid invite code', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
+    const joinerId = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'bad-code-hack';
+
+    await insertUser(ownerId, 6101);
+    await insertUser(leaderId, 6102);
+    await insertUser(joinerId, 6103);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, joinerId, 'admin');
+
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(leaderId, 6102, 'user-6102'),
+      },
+      body: JSON.stringify({ name: 'BadCode' }),
+    });
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+
+    const joinResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(joinerId, 6103, 'user-6103'),
+      },
+      body: JSON.stringify({ inviteCode: 'WRONGCOD' }),
+    });
+
+    expect(joinResp.status).toBe(403);
+    const body = (await joinResp.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('INVALID_INVITE_CODE');
+  });
+
+  // ─── TEAM SIZE ENFORCEMENT ───────────────────────────────
+
+  it('POST /:slug/teams/:teamId/join — rejects when team is full', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
+    const member1Id = crypto.randomUUID();
+    const member2Id = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'full-team-hack';
+
+    await insertUser(ownerId, 7001);
+    await insertUser(leaderId, 7002);
+    await insertUser(member1Id, 7003);
+    await insertUser(member2Id, 7004);
+    // max_team_size = 2 (leader + 1 member = full)
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId, maxTeamSize: 2 });
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, member1Id, 'admin');
+    await insertOrganizerRole(hackathonId, member2Id, 'admin');
+
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(leaderId, 7002, 'user-7002'),
+      },
+      body: JSON.stringify({ name: 'SmallTeam' }),
+    });
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+    const inviteCode = created.data.invite_code;
+
+    // First join — should succeed (size = 2, max = 2)
+    const join1 = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(member1Id, 7003, 'user-7003'),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+    expect(join1.status).toBe(200);
+
+    // Second join — should be rejected (team full: size would be 3, max = 2)
+    const join2 = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(member2Id, 7004, 'user-7004'),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+
+    expect(join2.status).toBe(409);
+    const body = (await join2.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('TEAM_FULL');
+  });
+
+  // ─── REMOVE MEMBER ──────────────────────────────────────
+
+  it('DELETE /:slug/teams/:teamId/members/:userId — leader removes member', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
+    const slug = 'remove-hack';
 
-    await insertUser(organizerId, 'org2@example.com', 'organizer');
-    await insertUser(captainId, 'captain2@example.com', 'participant');
-    await insertUser(memberId, 'member2@example.com', 'participant');
-    await insertHackathon(hackathonId, organizerId);
-    await insertRegistration(hackathonId, captainId);
-    await insertRegistration(hackathonId, memberId);
+    await insertUser(ownerId, 8001);
+    await insertUser(leaderId, 8002);
+    await insertUser(memberId, 8003);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, memberId, 'admin');
 
-    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(captainId, 'captain2@example.com', 'participant'),
+        Cookie: await authCookie(leaderId, 8002, 'user-8002'),
       },
-      body: JSON.stringify({ name: 'Joinables', hackathonId }),
+      body: JSON.stringify({ name: 'Removers' }),
     });
-    const created = (await createTeamResponse.json()) as { join_code: string };
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+    const inviteCode = created.data.invite_code;
 
-    const joinResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
+    // Add member
+    await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(memberId, 'member2@example.com', 'participant'),
+        Cookie: await authCookie(memberId, 8003, 'user-8003'),
       },
-      body: JSON.stringify({ joinCode: created.join_code }),
+      body: JSON.stringify({ inviteCode }),
     });
 
-    expect(joinResponse.status).toBe(200);
+    // Leader removes member
+    const removeResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/members/${memberId}`, {
+      method: 'DELETE',
+      headers: {
+        Cookie: await authCookie(leaderId, 8002, 'user-8002'),
+      },
+    });
+
+    expect(removeResp.status).toBe(200);
+    const removeBody = (await removeResp.json()) as { ok: boolean };
+    expect(removeBody.ok).toBe(true);
+
+    // Verify member is gone
+    const remaining = await env.DB
+      .prepare(`SELECT COUNT(*) as cnt FROM team_members WHERE team_id = ?1`)
+      .bind(teamId)
+      .first();
+    expect(remaining?.cnt).toBe(1); // Only leader remains
   });
 
-  it('returns 409 when user is already on a team', async () => {
-    const organizerId = crypto.randomUUID();
-    const captainId = crypto.randomUUID();
-    const hackathonId = crypto.randomUUID();
-
-    await insertUser(organizerId, 'org3@example.com', 'organizer');
-    await insertUser(captainId, 'captain3@example.com', 'participant');
-    await insertHackathon(hackathonId, organizerId);
-    await insertRegistration(hackathonId, captainId);
-
-    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Cookie: await authCookie(captainId, 'captain3@example.com', 'participant'),
-      },
-      body: JSON.stringify({ name: 'Conflict Team', hackathonId }),
-    });
-    const created = (await createTeamResponse.json()) as { join_code: string };
-
-    const joinAgain = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Cookie: await authCookie(captainId, 'captain3@example.com', 'participant'),
-      },
-      body: JSON.stringify({ joinCode: created.join_code }),
-    });
-
-    expect(joinAgain.status).toBe(409);
-  });
-
-  it('allows a user to leave team', async () => {
-    const organizerId = crypto.randomUUID();
-    const captainId = crypto.randomUUID();
+  it('DELETE /:slug/teams/:teamId/members/:userId — admin can remove member', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
+    const slug = 'admin-remove-hack';
 
-    await insertUser(organizerId, 'org4@example.com', 'organizer');
-    await insertUser(captainId, 'captain4@example.com', 'participant');
-    await insertUser(memberId, 'member4@example.com', 'participant');
-    await insertHackathon(hackathonId, organizerId);
-    await insertRegistration(hackathonId, captainId);
-    await insertRegistration(hackathonId, memberId);
+    await insertUser(ownerId, 8101);
+    await insertUser(leaderId, 8102);
+    await insertUser(memberId, 8103);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, ownerId, 'owner');
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, memberId, 'admin');
 
-    const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(captainId, 'captain4@example.com', 'participant'),
+        Cookie: await authCookie(leaderId, 8102, 'user-8102'),
       },
-      body: JSON.stringify({ name: 'Leavers', hackathonId }),
+      body: JSON.stringify({ name: 'AdminRemove' }),
     });
-    const team = (await createTeamResponse.json()) as { id: string; join_code: string };
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+    const inviteCode = created.data.invite_code;
 
-    const joinResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/join`, {
+    // Add member
+    await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(memberId, 'member4@example.com', 'participant'),
+        Cookie: await authCookie(memberId, 8103, 'user-8103'),
       },
-      body: JSON.stringify({ joinCode: team.join_code }),
+      body: JSON.stringify({ inviteCode }),
     });
-    expect(joinResponse.status).toBe(200);
 
-    const leaveResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams/${team.id}/leave`, {
+    // Owner (admin+) removes member
+    const removeResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/members/${memberId}`, {
+      method: 'DELETE',
+      headers: {
+        Cookie: await authCookie(ownerId, 8101, 'user-8101'),
+      },
+    });
+
+    expect(removeResp.status).toBe(200);
+  });
+
+  it('DELETE /:slug/teams/:teamId/members/:userId — non-leader member cannot remove others', async () => {
+    const ownerId = crypto.randomUUID();
+    const leaderId = crypto.randomUUID();
+    const member1Id = crypto.randomUUID();
+    const member2Id = crypto.randomUUID();
+    const hackathonId = crypto.randomUUID();
+    const slug = 'no-remove-hack';
+
+    await insertUser(ownerId, 8201);
+    await insertUser(leaderId, 8202);
+    await insertUser(member1Id, 8203);
+    await insertUser(member2Id, 8204);
+    await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+    await insertOrganizerRole(hackathonId, leaderId, 'admin');
+    await insertOrganizerRole(hackathonId, member1Id, 'moderator');
+    await insertOrganizerRole(hackathonId, member2Id, 'moderator');
+
+    // Create team
+    const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
       method: 'POST',
       headers: {
-        Cookie: await authCookie(memberId, 'member4@example.com', 'participant'),
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(leaderId, 8202, 'user-8202'),
+      },
+      body: JSON.stringify({ name: 'NoRemove' }),
+    });
+    const created = (await createResp.json()) as TeamResponse;
+    const teamId = created.data.id;
+    const inviteCode = created.data.invite_code;
+
+    // Add member1 and member2
+    await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(member1Id, 8203, 'user-8203'),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+    await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: await authCookie(member2Id, 8204, 'user-8204'),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+
+    // member1 (not leader) tries to remove member2
+    const removeResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/members/${member2Id}`, {
+      method: 'DELETE',
+      headers: {
+        Cookie: await authCookie(member1Id, 8203, 'user-8203'),
       },
     });
 
-    expect(leaveResponse.status).toBe(200);
+    expect(removeResp.status).toBe(403);
+    const body = (await removeResp.json()) as ErrorResponse;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('FORBIDDEN');
   });
 });
