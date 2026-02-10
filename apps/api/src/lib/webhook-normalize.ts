@@ -14,6 +14,7 @@ export interface NormalizedPushEvent {
   headSha: string;
   beforeSha: string;
   pusherName: string;
+  size?: number;
 }
 
 export interface NormalizedTagCreateEvent {
@@ -150,6 +151,7 @@ function normalizePushEvent(
     headSha: headCommit.id,
     beforeSha: before,
     pusherName: pusher.name,
+    size: typeof payload.size === 'number' ? payload.size : undefined,
   };
 }
 

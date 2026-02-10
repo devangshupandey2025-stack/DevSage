@@ -267,6 +267,125 @@ describe('queue handlers', () => {
       const rows = await env.DB.prepare('SELECT COUNT(*) as cnt FROM commit_log').first();
       expect(rows?.cnt).toBe(0);
     });
+
+    it('force push with affected submissions flags them for review', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      await env.DB.prepare(
+        `INSERT INTO submissions (id, team_id, hackathon_id, tag_name, commit_sha, submitted_at, received_at, is_late, is_final, version, status, webhook_delivery_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+      ).bind('sub-1', 'team-1', 'hack-1', 'submission_v1', 'a'.repeat(40), now, now, 0, 0, 1, 'received', 'delivery-sub-1').run();
+      
+      await env.DB.prepare(
+        `INSERT INTO submissions (id, team_id, hackathon_id, tag_name, commit_sha, submitted_at, received_at, is_late, is_final, version, status, webhook_delivery_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+      ).bind('sub-2', 'team-1', 'hack-1', 'submission_v2', 'b'.repeat(40), now, now, 0, 0, 2, 'validated', 'delivery-sub-2').run();
+
+      const mockQueue = { send: async () => {} };
+      const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
+
+      const event: NormalizedPushEvent = {
+        type: 'push',
+        deliveryId: 'delivery-force-flagged',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        branch: 'main',
+        forced: true,
+        commits: [{ sha: 'c'.repeat(40), message: 'Force push', author: 'alice', timestamp: now }],
+        headSha: 'c'.repeat(40),
+        beforeSha: 'b'.repeat(40),
+        pusherName: 'alice',
+        size: 10,
+      };
+
+      await handlePush(event, mockEnv);
+
+      const forceEvents = await env.DB.prepare('SELECT * FROM force_push_events').all();
+      expect(forceEvents.results).toHaveLength(1);
+      expect(forceEvents.results[0].action_taken).toBe('flagged');
+      expect(forceEvents.results[0].commits_lost_count).toBe(9);
+      
+      const submissionsInvalidated = JSON.parse(forceEvents.results[0].submissions_invalidated as string);
+      expect(submissionsInvalidated).toHaveLength(2);
+      expect(submissionsInvalidated).toContain('sub-1');
+      expect(submissionsInvalidated).toContain('sub-2');
+    });
+
+    it('force push without affected submissions keeps default action_taken', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      const mockQueue = { send: async () => {} };
+      const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
+
+      const event: NormalizedPushEvent = {
+        type: 'push',
+        deliveryId: 'delivery-force-no-subs',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        branch: 'main',
+        forced: true,
+        commits: [{ sha: 'd'.repeat(40), message: 'Force push', author: 'bob', timestamp: now }],
+        headSha: 'd'.repeat(40),
+        beforeSha: 'e'.repeat(40),
+        pusherName: 'bob',
+        size: 5,
+      };
+
+      await handlePush(event, mockEnv);
+
+      const forceEvents = await env.DB.prepare('SELECT * FROM force_push_events').all();
+      expect(forceEvents.results).toHaveLength(1);
+      expect(forceEvents.results[0].action_taken).toBe('logged');
+      expect(forceEvents.results[0].commits_lost_count).toBe(4);
+      expect(forceEvents.results[0].submissions_invalidated).toBeNull();
+    });
+
+    it('force push enqueues notification to NOTIFICATION_QUEUE', async () => {
+      await insertUser('user-1', 1001);
+      await insertHackathon('hack-1', 'test-hack', 'user-1');
+      await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
+
+      await env.DB.prepare(
+        `INSERT INTO submissions (id, team_id, hackathon_id, tag_name, commit_sha, submitted_at, received_at, is_late, is_final, version, status, webhook_delivery_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+      ).bind('sub-1', 'team-1', 'hack-1', 'submission_v1', 'a'.repeat(40), now, now, 0, 0, 1, 'locked', 'delivery-sub-1').run();
+
+      let queuedMessage: unknown = null;
+      const mockQueue = { 
+        send: async (msg: unknown) => { 
+          queuedMessage = msg; 
+        } 
+      };
+      const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
+
+      const event: NormalizedPushEvent = {
+        type: 'push',
+        deliveryId: 'delivery-force-notif',
+        timestamp: now,
+        repoFullName: 'org/repo',
+        branch: 'main',
+        forced: true,
+        commits: [{ sha: 'f'.repeat(40), message: 'Force', author: 'alice', timestamp: now }],
+        headSha: 'f'.repeat(40),
+        beforeSha: 'g'.repeat(40),
+        pusherName: 'alice',
+        size: 3,
+      };
+
+      await handlePush(event, mockEnv);
+
+      expect(queuedMessage).toBeDefined();
+      const msg = queuedMessage as Record<string, unknown>;
+      expect(msg.type).toBe('force_push_alert');
+      expect(msg.hackathonId).toBe('hack-1');
+      expect(msg.teamId).toBe('team-1');
+      expect(msg.affectedSubmissionCount).toBe(1);
+      expect(typeof msg.forcePushId).toBe('string');
+    });
   });
 
   describe('tag create handler', () => {

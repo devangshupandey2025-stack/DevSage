@@ -14,3 +14,11 @@ export const JudgeSchema = z.object({
 });
 
 export type Judge = z.infer<typeof JudgeSchema>;
+
+export const InviteJudgeRequestSchema = z.object({
+  userId: z.string().uuid(),
+});
+
+export const RespondToJudgeInviteRequestSchema = z.object({
+  accept: z.boolean(),
+});

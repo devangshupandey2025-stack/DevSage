@@ -1,4 +1,5 @@
-import { createDbClient, commitLog, forcePushEvents } from '@devsage/db';
+import { createDbClient, commitLog, forcePushEvents, submissions } from '@devsage/db';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { NormalizedPushEvent } from '../lib/webhook-normalize.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import type { Env } from '../types/env.js';
@@ -45,16 +46,47 @@ export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<
   }
 
   if (event.forced) {
+    const forcePushId = crypto.randomUUID();
+    const estimatedLost = Math.max(0, (event.size ?? 0) - event.commits.length);
+
     await db.insert(forcePushEvents).values({
-      id: crypto.randomUUID(),
+      id: forcePushId,
       team_id: team.id,
       hackathon_id: team.hackathon_id,
       before_sha: event.beforeSha,
       after_sha: event.headSha,
       branch: event.branch,
-      commits_lost_count: 0,
+      commits_lost_count: estimatedLost,
       detected_at: now,
       webhook_delivery_id: event.deliveryId,
+    });
+
+    const affectedSubmissions = await db
+      .select({ id: submissions.id })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.team_id, team.id),
+          inArray(submissions.status, ['received', 'validated', 'locked', 'under_review'])
+        )
+      );
+
+    if (affectedSubmissions.length > 0) {
+      await db
+        .update(forcePushEvents)
+        .set({
+          action_taken: 'flagged',
+          submissions_invalidated: JSON.stringify(affectedSubmissions.map((s) => s.id)),
+        })
+        .where(eq(forcePushEvents.id, forcePushId));
+    }
+
+    await env.NOTIFICATION_QUEUE.send({
+      type: 'force_push_alert',
+      hackathonId: team.hackathon_id,
+      teamId: team.id,
+      forcePushId,
+      affectedSubmissionCount: affectedSubmissions.length,
     });
 
     await insertAuditEvent(db, {

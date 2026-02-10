@@ -6,6 +6,7 @@ import hackathons from './routes/hackathons.js';
 import teams from './routes/teams.js';
 import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
+import judging from './routes/judging.js';
 import { processWebhookBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 
@@ -52,6 +53,7 @@ app.route('/api/v1/hackathons', hackathons);
 app.route('/api/v1/hackathons', teams);
 app.route('/webhooks', webhooks);
 app.route('/api/v1/hackathons', submissions);
+app.route('/api/v1/hackathons', judging);
 
 // Health check
 app.get('/', (c) => {

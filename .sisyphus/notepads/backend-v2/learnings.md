@@ -45,3 +45,29 @@
 - Tests confirm error responses use `{ ok: false, error: { code, message } }` envelope format
 - Kept existing HMAC-SHA256 signature verification logic (battle-tested, working correctly)
 - TDD approach: wrote comprehensive failing tests first, then implemented normalizer + route rewrite
+
+## Task 18 — Rubric Criteria CRUD
+
+- Implemented GET + POST routes for rubric criteria in `/apps/api/src/routes/judging.ts`
+- GET `/:slug/rubric`: returns all criteria for a hackathon, ordered by `sort_order`. Open to all (requireRole 'anonymous').
+- POST `/:slug/rubric`: bulk upsert criteria (delete all existing + insert new). Admin+ only. Status check: only allows draft or registration_open.
+- Schema: `name` (required, min 1 char), `description` (optional), `max_score` (positive int), `weight` (0-1 float), `sort_order` (nonnegative int)
+- Validation: required fields, max_score > 0, weight in [0, 1] via Zod schemas in @devsage/shared
+- Audit events: recorded on POST via `insertAuditEvent(db, { ...hackatohnId, entity_type: 'rubric_criteria', action: 'update', ... })`
+- TDD: 14 comprehensive tests covering empty rubric, role checks, status validation, bulk upsert, sorting, validation errors, 404 on missing hackathon
+- All 160 tests passing (12 test files, 1 skipped)
+- Commit: `feat(api): implement rubric criteria CRUD` (a7e4b9b)
+
+## Task 17 — Judge Invite + Accept/Decline Routes
+
+- Routes already implemented in `/apps/api/src/routes/judging.ts` as a Hono sub-app with authMiddleware
+- Tests already updated in `/apps/api/src/__tests__/judging.test.ts` following v2 pattern (SELF.fetch, inline schema setup, JWT v2 payload)
+- Route already mounted in `apps/api/src/index.ts` at line 56: `app.route('/api/v1/hackathons', judging)`
+- POST `/:slug/judges`: admin+ invites judge by userId, checks UNIQUE(hackathon_id, user_id) → 409 on duplicate, inserts with invite_status='pending', returns 201
+- GET `/:slug/judges`: admin+ lists all judges with JOIN to users table for display_name/email/avatar
+- POST `/:slug/judges/:id/respond`: authenticated user responds to own invite (checks judges.user_id === user.sub), accepts/declines, updates invite_status + accepted_at, returns 200
+- Audit events: 'judge.invite', 'judge.accept', 'judge.decline' recorded via insertAuditEvent
+- Error codes: 409 DUPLICATE_INVITE (not ALREADY_INVITED), 403 FORBIDDEN (non-invited user), 404 NOT_FOUND (missing judge record)
+- All 10 judge tests passing (invite success, duplicate 409, non-admin 403, no auth 401, list with user details, accept, decline, wrong user 403, 404)
+- Total test count: 145 passing, 1 skipped (11 test files)
+- No type errors from LSP diagnostics

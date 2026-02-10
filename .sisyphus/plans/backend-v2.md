@@ -1226,7 +1226,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 13. Repo connection flow
+- [x] 13. Repo connection flow
 
   **What to do**:
   - Implement team → repo linking in `apps/api/src/routes/teams.ts` (or `submissions.ts`):
