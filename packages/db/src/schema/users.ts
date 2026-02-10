@@ -7,7 +7,7 @@ export const users = sqliteTable('users', {
   avatar_url: text('avatar_url'),
   provider: text('provider', { enum: ['google', 'github'] }).notNull(),
   provider_id: text('provider_id').notNull(),
-  role: text('role', { enum: ['organiser', 'participant'] }).notNull().default('participant'),
+  role: text('role', { enum: ['organizer', 'participant'] }).notNull().default('participant'),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
 }, (table) => ({

@@ -20,10 +20,10 @@ interface InitializeLifecycleRequest {
 }
 
 const ACTION_MAP = {
-  openRegistration: { from: 'DRAFT', to: 'REGISTRATION_OPEN' },
-  startHacking: { from: 'REGISTRATION_OPEN', to: 'HACKING' },
-  closeSubmissions: { from: 'HACKING', to: 'SUBMISSION_CLOSED' },
-  complete: { from: 'SUBMISSION_CLOSED', to: 'COMPLETED' },
+  openRegistration: { from: 'draft', to: 'registration_open' },
+  startHacking: { from: 'registration_open', to: 'registration_closed' },
+  closeSubmissions: { from: 'registration_closed', to: 'active' },
+  complete: { from: 'active', to: 'judging' },
 } as const;
 
 type LifecycleAction = keyof typeof ACTION_MAP;
@@ -126,7 +126,7 @@ export class HackathonLifecycleDO extends DurableObject<Env> {
       return;
     }
 
-    if (state.status === 'REGISTRATION_OPEN') {
+    if (state.status === 'registration_open') {
       const hackingStartTimestamp = Date.parse(state.hackingStart);
       if (!Number.isFinite(hackingStartTimestamp)) {
         return;
@@ -149,7 +149,7 @@ export class HackathonLifecycleDO extends DurableObject<Env> {
       return;
     }
 
-    if (state.status === 'HACKING') {
+    if (state.status === 'registration_closed') {
       const submissionDeadlineTimestamp = Date.parse(state.submissionDeadline);
       if (!Number.isFinite(submissionDeadlineTimestamp)) {
         return;
@@ -259,12 +259,12 @@ export class HackathonLifecycleDO extends DurableObject<Env> {
   }
 
   private async scheduleAlarmForState(state: LifecycleState): Promise<void> {
-    if (state.status === 'REGISTRATION_OPEN') {
+    if (state.status === 'registration_open') {
       await this.ctx.storage.setAlarm(toAlarmTimestamp(state.hackingStart));
       return;
     }
 
-    if (state.status === 'HACKING') {
+    if (state.status === 'registration_closed') {
       await this.ctx.storage.setAlarm(toAlarmTimestamp(state.submissionDeadline));
       return;
     }
@@ -423,7 +423,7 @@ export class HackathonLifecycleDO extends DurableObject<Env> {
         ) VALUES (?, ?, ?, ?, ?, ?, 1)
       `,
       payload.hackathonId,
-      'DRAFT',
+      'draft',
       payload.registrationStart,
       payload.hackingStart,
       payload.submissionDeadline,

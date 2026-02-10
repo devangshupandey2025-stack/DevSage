@@ -11,7 +11,7 @@ async function ensureSchema() {
   const statements = [
     'CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, provider TEXT NOT NULL, provider_id TEXT NOT NULL, role TEXT DEFAULT "participant" NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)',
     'CREATE UNIQUE INDEX IF NOT EXISTS users_email_provider_unique ON users (email, provider)',
-    'CREATE TABLE IF NOT EXISTS hackathons (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, organiser_id TEXT NOT NULL, status TEXT DEFAULT "DRAFT" NOT NULL, max_team_size INTEGER DEFAULT 4 NOT NULL, registration_start_date TEXT NOT NULL, hacking_start_date TEXT NOT NULL, submission_deadline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (organiser_id) REFERENCES users(id))',
+    'CREATE TABLE IF NOT EXISTS hackathons (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, organizer_id TEXT NOT NULL, status TEXT DEFAULT "draft" NOT NULL, max_team_size INTEGER DEFAULT 4 NOT NULL, registration_start_date TEXT NOT NULL, hacking_start_date TEXT NOT NULL, submission_deadline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (organizer_id) REFERENCES users(id))',
     'CREATE TABLE IF NOT EXISTS registrations (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, registered_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id), FOREIGN KEY (user_id) REFERENCES users(id))',
     'CREATE UNIQUE INDEX IF NOT EXISTS registrations_hackathon_id_user_id_unique ON registrations (hackathon_id, user_id)',
     'CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, join_code TEXT NOT NULL, captain_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id), FOREIGN KEY (captain_id) REFERENCES users(id))',
@@ -35,7 +35,7 @@ async function resetDb() {
   await env.DB.exec('DELETE FROM users;');
 }
 
-async function insertUser(id: string, email: string, role: 'organiser' | 'participant') {
+async function insertUser(id: string, email: string, role: 'organizer' | 'participant') {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
@@ -46,12 +46,12 @@ async function insertUser(id: string, email: string, role: 'organiser' | 'partic
     .run();
 }
 
-async function insertHackathon(id: string, organiserId: string) {
+async function insertHackathon(id: string, organizerId: string) {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
       `INSERT INTO hackathons (
-        id, title, description, organiser_id, status, max_team_size,
+        id, title, description, organizer_id, status, max_team_size,
         registration_start_date, hacking_start_date, submission_deadline,
         created_at, updated_at
       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
@@ -60,8 +60,8 @@ async function insertHackathon(id: string, organiserId: string) {
       id,
       'Team Hackathon',
       'Hackathon used for testing team create and join flows.',
-      organiserId,
-      'REGISTRATION_OPEN',
+      organizerId,
+      'registration_open',
       4,
       now,
       new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -79,7 +79,7 @@ async function insertRegistration(hackathonId: string, userId: string) {
     .run();
 }
 
-async function authCookie(userId: string, email: string, role: 'organiser' | 'participant') {
+async function authCookie(userId: string, email: string, role: 'organizer' | 'participant') {
   const token = await signJWT({ sub: userId, email, role }, JWT_SECRET);
   return `session=${token}`;
 }
@@ -91,13 +91,13 @@ describe('team routes critical paths', () => {
   });
 
   it('creates team and returns join code', async () => {
-    const organiserId = crypto.randomUUID();
+    const organizerId = crypto.randomUUID();
     const participantId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
 
-    await insertUser(organiserId, 'org@example.com', 'organiser');
+    await insertUser(organizerId, 'org@example.com', 'organizer');
     await insertUser(participantId, 'captain@example.com', 'participant');
-    await insertHackathon(hackathonId, organiserId);
+    await insertHackathon(hackathonId, organizerId);
     await insertRegistration(hackathonId, participantId);
 
     const response = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
@@ -119,15 +119,15 @@ describe('team routes critical paths', () => {
   });
 
   it('joins team by join code', async () => {
-    const organiserId = crypto.randomUUID();
+    const organizerId = crypto.randomUUID();
     const captainId = crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
 
-    await insertUser(organiserId, 'org2@example.com', 'organiser');
+    await insertUser(organizerId, 'org2@example.com', 'organizer');
     await insertUser(captainId, 'captain2@example.com', 'participant');
     await insertUser(memberId, 'member2@example.com', 'participant');
-    await insertHackathon(hackathonId, organiserId);
+    await insertHackathon(hackathonId, organizerId);
     await insertRegistration(hackathonId, captainId);
     await insertRegistration(hackathonId, memberId);
 
@@ -154,13 +154,13 @@ describe('team routes critical paths', () => {
   });
 
   it('returns 409 when user is already on a team', async () => {
-    const organiserId = crypto.randomUUID();
+    const organizerId = crypto.randomUUID();
     const captainId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
 
-    await insertUser(organiserId, 'org3@example.com', 'organiser');
+    await insertUser(organizerId, 'org3@example.com', 'organizer');
     await insertUser(captainId, 'captain3@example.com', 'participant');
-    await insertHackathon(hackathonId, organiserId);
+    await insertHackathon(hackathonId, organizerId);
     await insertRegistration(hackathonId, captainId);
 
     const createTeamResponse = await SELF.fetch(`http://localhost/hackathons/${hackathonId}/teams`, {
@@ -186,15 +186,15 @@ describe('team routes critical paths', () => {
   });
 
   it('allows a user to leave team', async () => {
-    const organiserId = crypto.randomUUID();
+    const organizerId = crypto.randomUUID();
     const captainId = crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const hackathonId = crypto.randomUUID();
 
-    await insertUser(organiserId, 'org4@example.com', 'organiser');
+    await insertUser(organizerId, 'org4@example.com', 'organizer');
     await insertUser(captainId, 'captain4@example.com', 'participant');
     await insertUser(memberId, 'member4@example.com', 'participant');
-    await insertHackathon(hackathonId, organiserId);
+    await insertHackathon(hackathonId, organizerId);
     await insertRegistration(hackathonId, captainId);
     await insertRegistration(hackathonId, memberId);
 

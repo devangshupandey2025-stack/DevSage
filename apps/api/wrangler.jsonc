@@ -55,5 +55,43 @@
   },
   "observability": {
     "enabled": true
+  },
+  "env": {
+    "dev": {
+      "name": "api-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "devsage-db-dev",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV",
+          "id": "00000000000000000000000000000000"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "queue": "github-webhooks-dev",
+            "binding": "WEBHOOK_QUEUE"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "github-webhooks-dev",
+            "max_batch_size": 10,
+            "max_retries": 3,
+            "dead_letter_queue": "github-webhooks-dlq-dev"
+          }
+        ]
+      },
+      "vars": {
+        "FRONTEND_URL": "http://localhost:5173"
+      }
+    }
   }
 }

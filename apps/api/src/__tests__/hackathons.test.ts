@@ -13,7 +13,7 @@ interface HackathonRecord {
   id: string;
   title: string;
   description: string;
-  organiserId: string;
+  organizerId: string;
 }
 
 function buildHackathonsApp(): Hono<AuthAppEnv> {
@@ -24,7 +24,7 @@ function buildHackathonsApp(): Hono<AuthAppEnv> {
 
   app.post(
     '/hackathons',
-    requireRole('organiser'),
+    requireRole('organizer'),
     zValidator('json', CreateHackathonRequestSchema),
     (c) => {
       const user = c.get('user');
@@ -34,7 +34,7 @@ function buildHackathonsApp(): Hono<AuthAppEnv> {
         id,
         title: body.title,
         description: body.description,
-        organiserId: user.sub,
+        organizerId: user.sub,
       };
       records.set(id, record);
       return c.json(record, 201);
@@ -68,7 +68,7 @@ function validCreatePayload() {
   };
 }
 
-async function sessionCookie(userId: string, email: string, role: 'organiser' | 'participant'): Promise<string> {
+async function sessionCookie(userId: string, email: string, role: 'organizer' | 'participant'): Promise<string> {
   const token = await signJWT({ sub: userId, email, role }, JWT_SECRET);
   return `session=${token}`;
 }
@@ -78,13 +78,13 @@ async function appRequest(app: Hono<AuthAppEnv>, path: string, init: RequestInit
 }
 
 describe('hackathons route critical paths (fallback unit harness)', () => {
-  it('create hackathon with valid organiser JWT returns 201', async () => {
+  it('create hackathon with valid organizer JWT returns 201', async () => {
     const app = buildHackathonsApp();
     const response = await appRequest(app, '/hackathons', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org1@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org1@example.com', 'organizer'),
       },
       body: JSON.stringify(validCreatePayload()),
     });
@@ -98,7 +98,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org2@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org2@example.com', 'organizer'),
       },
       body: JSON.stringify({ title: 'x' }),
     });
@@ -126,14 +126,14 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org3@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org3@example.com', 'organizer'),
       },
       body: JSON.stringify(validCreatePayload()),
     });
 
     const response = await appRequest(app, '/hackathons', {
       headers: {
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org3@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org3@example.com', 'organizer'),
       },
     });
     const body = (await response.json()) as { data: unknown[] };
@@ -148,7 +148,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org4@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org4@example.com', 'organizer'),
       },
       body: JSON.stringify(validCreatePayload()),
     });
@@ -156,7 +156,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
 
     const response = await appRequest(app, `/hackathons/${created.id}`, {
       headers: {
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org4@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org4@example.com', 'organizer'),
       },
     });
 
@@ -167,7 +167,7 @@ describe('hackathons route critical paths (fallback unit harness)', () => {
     const app = buildHackathonsApp();
     const response = await appRequest(app, `/hackathons/${crypto.randomUUID()}`, {
       headers: {
-        Cookie: await sessionCookie(crypto.randomUUID(), 'org5@example.com', 'organiser'),
+        Cookie: await sessionCookie(crypto.randomUUID(), 'org5@example.com', 'organizer'),
       },
     });
 

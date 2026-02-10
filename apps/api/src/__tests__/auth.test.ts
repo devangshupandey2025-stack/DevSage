@@ -35,8 +35,8 @@ describe('auth critical paths', () => {
     const token = await signJWT(
       {
         sub: crypto.randomUUID(),
-        email: 'organiser@example.com',
-        role: 'organiser',
+        email: 'organizer@example.com',
+        role: 'organizer',
       },
       JWT_SECRET
     );
@@ -49,8 +49,8 @@ describe('auth critical paths', () => {
     const token = await signJWT(
       {
         sub: userId,
-        email: 'organiser@example.com',
-        role: 'organiser',
+        email: 'organizer@example.com',
+        role: 'organizer',
       },
       JWT_SECRET
     );
@@ -58,8 +58,8 @@ describe('auth critical paths', () => {
     const verified = await verifyJWT(token, JWT_SECRET);
 
     expect(verified?.sub).toBe(userId);
-    expect(verified?.email).toBe('organiser@example.com');
-    expect(verified?.role).toBe('organiser');
+    expect(verified?.email).toBe('organizer@example.com');
+    expect(verified?.role).toBe('organizer');
   });
 
   it('verifyJWT rejects token signed with different secret', async () => {

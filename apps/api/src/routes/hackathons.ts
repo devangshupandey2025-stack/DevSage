@@ -140,11 +140,11 @@ hackathons.use('*', authMiddleware);
 
 /**
  * POST /api/hackathons
- * Create a new hackathon (organiser only)
+ * Create a new hackathon (organizer only)
  */
 hackathons.post(
   '/',
-  requireRole('organiser'),
+  requireRole('organizer'),
   zValidator('json', CreateHackathonRequestSchema),
   async (c) => {
     const user = c.get('user');
@@ -158,8 +158,8 @@ hackathons.post(
       id,
       title: body.title,
       description: body.description,
-      organiser_id: user.sub,
-      status: 'DRAFT',
+      organizer_id: user.sub,
+      status: 'draft',
       max_team_size: body.maxTeamSize,
       registration_start_date: body.registrationStartDate,
       hacking_start_date: body.hackingStartDate,
@@ -221,9 +221,9 @@ hackathons.get('/', async (c) => {
   const offset = Number(c.req.query('offset')) || 0;
 
   const whereCondition =
-    user.role === 'organiser'
-      ? eq(hackathonsTable.organiser_id, user.sub)
-      : ne(hackathonsTable.status, 'DRAFT');
+    user.role === 'organizer'
+      ? eq(hackathonsTable.organizer_id, user.sub)
+      : ne(hackathonsTable.status, 'draft');
 
   const data = await db
     .select()
@@ -328,11 +328,11 @@ hackathons.get('/:id/lifecycle', async (c) => {
 
 /**
  * POST /api/hackathons/:id/transition
- * Transition hackathon lifecycle state (organiser owner only)
+ * Transition hackathon lifecycle state (organizer owner only)
  */
 hackathons.post(
   '/:id/transition',
-  requireRole('organiser'),
+  requireRole('organizer'),
   async (c) => {
     const hackathonId = c.req.param('id');
     const user = c.get('user');
@@ -366,7 +366,7 @@ hackathons.post(
       return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
     }
 
-    if (hackathon.organiser_id !== user.sub) {
+    if (hackathon.organizer_id !== user.sub) {
       return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
@@ -425,7 +425,7 @@ hackathons.post(
 
 /**
  * PATCH /api/hackathons/:id
- * Update a hackathon (organiser owner only, DRAFT status only)
+ * Update a hackathon (organizer owner only, DRAFT status only)
  */
 hackathons.patch(
   '/:id',
@@ -448,14 +448,14 @@ hackathons.patch(
     }
 
     // Check ownership
-    if (hackathon.organiser_id !== user.sub) {
+    if (hackathon.organizer_id !== user.sub) {
       return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
     // Check status is DRAFT
-    if (hackathon.status !== 'DRAFT') {
+    if (hackathon.status !== 'draft') {
       return c.json(
-        { error: 'Cannot modify non-DRAFT hackathon', code: 'INVALID_STATUS' },
+        { error: 'Cannot modify non-draft hackathon', code: 'INVALID_STATUS' },
         400
       );
     }
@@ -496,7 +496,7 @@ hackathons.patch(
 
 /**
  * DELETE /api/hackathons/:id
- * Delete a hackathon (organiser owner only, DRAFT status only)
+ * Delete a hackathon (organizer owner only, DRAFT status only)
  */
 hackathons.delete('/:id', async (c) => {
   const id = c.req.param('id');
@@ -515,14 +515,14 @@ hackathons.delete('/:id', async (c) => {
   }
 
   // Check ownership
-  if (hackathon.organiser_id !== user.sub) {
+  if (hackathon.organizer_id !== user.sub) {
     return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
   }
 
   // Check status is DRAFT
-  if (hackathon.status !== 'DRAFT') {
-    return c.json(
-      { error: 'Cannot delete non-DRAFT hackathon', code: 'INVALID_STATUS' },
+    if (hackathon.status !== 'draft') {
+      return c.json(
+        { error: 'Cannot delete non-draft hackathon', code: 'INVALID_STATUS' },
       400
     );
   }
@@ -553,7 +553,7 @@ hackathons.post('/:id/register', requireRole('participant'), async (c) => {
   }
 
   // Check status is REGISTRATION_OPEN
-  if (hackathon.status !== 'REGISTRATION_OPEN') {
+  if (hackathon.status !== 'registration_open') {
     return c.json(
       { error: 'Registration not open', code: 'REGISTRATION_CLOSED' },
       400
@@ -588,7 +588,7 @@ hackathons.post('/:id/register', requireRole('participant'), async (c) => {
 
 /**
  * GET /api/hackathons/:id/registrations
- * List registrations for a hackathon (organiser owner only)
+ * List registrations for a hackathon (organizer owner only)
  */
 hackathons.get('/:id/registrations', async (c) => {
   const hackathonId = c.req.param('id');
@@ -606,7 +606,7 @@ hackathons.get('/:id/registrations', async (c) => {
     return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
   }
 
-  if (hackathon.organiser_id !== user.sub) {
+  if (hackathon.organizer_id !== user.sub) {
     return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
   }
 

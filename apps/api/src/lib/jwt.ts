@@ -1,4 +1,4 @@
-export type UserRole = 'organiser' | 'participant';
+export type UserRole = 'organizer' | 'participant';
 
 export interface JWTPayload {
   sub: string;
@@ -102,7 +102,7 @@ export async function verifyJWT(token: string, secret: string): Promise<JWTPaylo
     if (
       typeof payload.sub !== 'string' ||
       typeof payload.email !== 'string' ||
-      (payload.role !== 'organiser' && payload.role !== 'participant') ||
+      (payload.role !== 'organizer' && payload.role !== 'participant') ||
       typeof payload.iat !== 'number' ||
       typeof payload.exp !== 'number'
     ) {

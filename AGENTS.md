@@ -56,10 +56,10 @@ packages/config → (standalone, configs only)
 - **no-explicit-any**: Warn, not error — but never use `as any` / `@ts-ignore` / `@ts-expect-error`
 - **Timestamps**: All UTC ISO-8601 (`new Date().toISOString()`)
 - **UUIDs**: `crypto.randomUUID()` (Workers-native)
-- **Roles**: Exactly 2 hardcoded: `organiser` | `participant`. No more.
+- **Roles**: 7 per-hackathon roles (`anonymous` | `participant` | `team_leader` | `judge` | `moderator` | `admin` | `owner`). Resolved per-request, NOT in JWT.
 - **Auth**: Manual OAuth 2.0 (Google + GitHub) → JWT in HttpOnly cookie. NOT `@hono/oauth-providers` (broken on Workers)
 - **JWT**: Custom HMAC SHA-256 via `crypto.subtle`. No external JWT lib.
-- **State machine**: `DRAFT → REGISTRATION_OPEN → HACKING → SUBMISSION_CLOSED → COMPLETED`. No backward/skip transitions.
+- **State machine**: `DRAFT → REGISTRATION_OPEN → REGISTRATION_CLOSED → ACTIVE → JUDGING → COMPLETED → ARCHIVED`. Forward-only, no backward/skip.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -69,8 +69,7 @@ packages/config → (standalone, configs only)
 - Direct D1 access from inside DO classes — Worker mediates all D1 writes
 - Separate Workers for queue consumer — same Worker handles producer + consumer
 - Legacy KV-backed DOs — use SQLite-backed (`new_sqlite_classes`)
-- WebSocket / email / R2 / full-text search — not in scope
-- More than 2 roles — only organiser + participant
+- No `console.log` — use `console.warn`/`console.error` for structured logs
 
 ## WRANGLER / DEPLOY
 
@@ -135,8 +134,9 @@ pnpm deploy:web              # Deploy web app
 
 - `apps/worker/` exists but is orphaned (no package.json) — leftover from earlier experiment
 - `apps/web/src/routes.tsx` exists but is unused — `App.tsx` defines all routes directly
-- Vite dev proxy: `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (wrangler dev)
-- Production API is hosted at `https://api.devsage.org` (routes are `/auth/*`, `/hackathons/*`, `/webhooks/*`)
+- Vite dev proxy: `/api/v1/*`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (wrangler dev)
+- Production API is hosted at `https://api.devsage.org`. v2 routes use `/api/v1/` prefix with slug-based hackathon addressing
+- Response envelope: `{ ok, data, meta }` / `{ ok, error }` on all v2 routes
 - DB migrations path in wrangler.jsonc: `../../packages/db/migrations` (relative from apps/api)
 - Durable Objects MUST be re-exported from `apps/api/src/index.ts` or wrangler fails
 - Plan doc: `.sisyphus/plans/devsage-mvp.md` — full architecture decisions + task history

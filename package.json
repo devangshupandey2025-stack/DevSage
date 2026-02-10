@@ -17,6 +17,8 @@
     "deploy:api": "pnpm --filter @devsage/api run deploy",
     "deploy:api:secrets": "pnpm --filter @devsage/api run deploy:secrets",
     "deploy:web": "pnpm --filter @devsage/web run deploy",
+    "deploy:api:dev": "pnpm --filter @devsage/api run deploy:dev",
+    "deploy:web:dev": "pnpm --filter @devsage/web run deploy:dev",
     "prepare": "husky",
     "secrets:staged": "lint-staged -q --allow-empty",
     "secrets:scan": "secretlint --maskSecrets --format compact ."

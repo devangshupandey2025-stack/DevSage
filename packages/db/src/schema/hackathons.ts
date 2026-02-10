@@ -5,10 +5,10 @@ export const hackathons = sqliteTable('hackathons', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull(),
-  organiser_id: text('organiser_id').notNull().references(() => users.id),
+  organizer_id: text('organizer_id').notNull().references(() => users.id),
   status: text('status', { 
-    enum: ['DRAFT', 'REGISTRATION_OPEN', 'HACKING', 'SUBMISSION_CLOSED', 'COMPLETED'] 
-  }).notNull().default('DRAFT'),
+    enum: ['draft', 'registration_open', 'registration_closed', 'active', 'judging', 'completed', 'archived'] 
+  }).notNull().default('draft'),
   max_team_size: integer('max_team_size').notNull().default(4),
   registration_start_date: text('registration_start_date').notNull(),
   hacking_start_date: text('hacking_start_date').notNull(),

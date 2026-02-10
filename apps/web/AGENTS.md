@@ -1,6 +1,6 @@
 # apps/web — React SPA
 
-Vite + React 18 + React Router + Tailwind CSS v4 + shadcn/ui. Participant and organiser dashboards.
+Vite + React 18 + React Router + Tailwind CSS v4 + shadcn/ui. Participant and organizer dashboards.
 
 ## STRUCTURE
 
@@ -34,7 +34,7 @@ src/
 - **Path aliases**: `@/` → `src/` (configured in tsconfig + vite)
 - **API client**: All API calls go through `apiRequest()` — handles 401 → redirect to `/login`
 - **Auth flow**: OAuth buttons link to `${VITE_API_ORIGIN}/auth/google` or `${VITE_API_ORIGIN}/auth/github` (API handles redirect)
-- **Role routing**: Root `/` redirects organiser → `/organiser`, participant → `/dashboard`
+- **Role routing**: Root `/` redirects organizer → `/organizer`, participant → `/dashboard`
 - **Components**: shadcn/ui for primitives. Layouts in `components/`. Pages in `pages/`.
 - **Toast**: `sonner` (Toaster in main.tsx). Use `toast()` from sonner.
 

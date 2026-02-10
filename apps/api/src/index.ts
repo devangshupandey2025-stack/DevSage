@@ -145,7 +145,7 @@ export default {
 
         const lifecyclePayload = await readJson(lifecycleResponse);
         const lifecycle = parseLifecycleState(lifecyclePayload);
-        if (!lifecycle || lifecycle.status !== 'HACKING') {
+        if (!lifecycle || lifecycle.status !== 'active') {
           msg.ack();
           continue;
         }

@@ -56,7 +56,7 @@ teamsRouter.post(
     }
 
     // Check hackathon status allows team creation
-    if (hackathon.status !== 'REGISTRATION_OPEN' && hackathon.status !== 'HACKING') {
+    if (hackathon.status !== 'registration_open' && hackathon.status !== 'active') {
       return c.json(
         {
           error: 'Team creation not allowed in current hackathon status',
@@ -187,7 +187,7 @@ teamsRouter.post(
     }
 
     // Check hackathon status allows team joining
-    if (hackathon.status !== 'REGISTRATION_OPEN' && hackathon.status !== 'HACKING') {
+    if (hackathon.status !== 'registration_open' && hackathon.status !== 'active') {
       return c.json(
         {
           error: 'Team joining not allowed in current hackathon status',
@@ -365,9 +365,9 @@ teamsRouter.get('/:hackathonId/teams', async (c) => {
   // Get all teams for this hackathon
   const allTeams = await db.select().from(teams).where(eq(teams.hackathon_id, hackathonId)).all();
 
-  if (user.role === 'organiser') {
-    // Check if user is the organiser of this hackathon
-    if (hackathon.organiser_id !== user.sub) {
+  if (user.role === 'organizer') {
+    // Check if user is the organizer of this hackathon
+    if (hackathon.organizer_id !== user.sub) {
       return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
@@ -419,7 +419,7 @@ teamsRouter.get('/:hackathonId/teams', async (c) => {
 
 /**
  * GET /api/hackathons/:hackathonId/teams/:teamId
- * Get team details with all members (team members or organiser only)
+ * Get team details with all members (team members or organizer only)
  */
 teamsRouter.get('/:hackathonId/teams/:teamId', async (c) => {
   const hackathonId = c.req.param('hackathonId');
@@ -449,14 +449,14 @@ teamsRouter.get('/:hackathonId/teams/:teamId', async (c) => {
     return c.json({ error: 'Hackathon not found', code: 'NOT_FOUND' }, 404);
   }
 
-  // Check authorization: must be team member or hackathon organiser
+  // Check authorization: must be team member or hackathon organizer
   const isMember = await db
     .select()
     .from(teamMembers)
     .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
     .get();
 
-  const isOrganiser = user.role === 'organiser' && hackathon.organiser_id === user.sub;
+  const isOrganiser = user.role === 'organizer' && hackathon.organizer_id === user.sub;
 
   if (!isMember && !isOrganiser) {
     return c.json({ error: 'Forbidden', code: 'FORBIDDEN' }, 403);

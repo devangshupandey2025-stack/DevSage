@@ -84,10 +84,12 @@ describe('shared schemas', () => {
   });
 
   it('HACKATHON_STATUS_TRANSITIONS has correct transitions', () => {
-    expect(HACKATHON_STATUS_TRANSITIONS.DRAFT).toEqual(['REGISTRATION_OPEN']);
-    expect(HACKATHON_STATUS_TRANSITIONS.REGISTRATION_OPEN).toEqual(['HACKING']);
-    expect(HACKATHON_STATUS_TRANSITIONS.HACKING).toEqual(['SUBMISSION_CLOSED']);
-    expect(HACKATHON_STATUS_TRANSITIONS.SUBMISSION_CLOSED).toEqual(['COMPLETED']);
-    expect(HACKATHON_STATUS_TRANSITIONS.COMPLETED).toEqual([]);
+    expect(HACKATHON_STATUS_TRANSITIONS.draft).toEqual(['registration_open']);
+    expect(HACKATHON_STATUS_TRANSITIONS.registration_open).toEqual(['registration_closed']);
+    expect(HACKATHON_STATUS_TRANSITIONS.registration_closed).toEqual(['active']);
+    expect(HACKATHON_STATUS_TRANSITIONS.active).toEqual(['judging']);
+    expect(HACKATHON_STATUS_TRANSITIONS.judging).toEqual(['completed']);
+    expect(HACKATHON_STATUS_TRANSITIONS.completed).toEqual(['archived']);
+    expect(HACKATHON_STATUS_TRANSITIONS.archived).toEqual([]);
   });
 });

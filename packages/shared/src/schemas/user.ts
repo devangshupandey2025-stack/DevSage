@@ -7,7 +7,7 @@ export const UserSchema = z.object({
   avatarUrl: z.string().url().nullable(),
   provider: z.enum(['google', 'github']),
   providerId: z.string().min(1),
-  role: z.enum(['organiser', 'participant']),
+  role: z.enum(['organizer', 'participant']),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
