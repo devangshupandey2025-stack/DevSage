@@ -1,57 +1,9 @@
 import { Hono } from 'hono';
 import type { Env } from '../types/env.js';
+import { errorResponse, successResponse } from '../lib/response.js';
+import { normalizeGitHubEvent } from '../lib/webhook-normalize.js';
 
 const webhooks = new Hono<{ Bindings: Env }>();
-
-interface GitHubPushPayload {
-  repository: {
-    full_name: string;
-  };
-  head_commit: {
-    id: string;
-  };
-  ref: string;
-  pusher: {
-    name: string;
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function parsePushPayload(value: unknown): GitHubPushPayload | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const { repository, head_commit: headCommit, ref, pusher } = value;
-  if (!isRecord(repository) || !isRecord(pusher) || !isRecord(headCommit)) {
-    return null;
-  }
-
-  if (
-    typeof repository.full_name !== 'string' ||
-    typeof headCommit.id !== 'string' ||
-    typeof ref !== 'string' ||
-    typeof pusher.name !== 'string'
-  ) {
-    return null;
-  }
-
-  return {
-    repository: {
-      full_name: repository.full_name,
-    },
-    head_commit: {
-      id: headCommit.id,
-    },
-    ref,
-    pusher: {
-      name: pusher.name,
-    },
-  };
-}
 
 function toHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
@@ -79,12 +31,14 @@ webhooks.post('/github', async (c) => {
   const body = await c.req.text();
   const signature = c.req.header('X-Hub-Signature-256');
   const deliveryId = c.req.header('X-GitHub-Delivery');
-  const event = c.req.header('X-GitHub-Event');
+  const eventType = c.req.header('X-GitHub-Event');
 
-  if (!signature || !deliveryId || !event) {
-    return c.json(
-      { error: 'Missing required GitHub webhook headers', code: 'MISSING_WEBHOOK_HEADERS' },
-      400
+  if (!signature || !deliveryId || !eventType) {
+    return errorResponse(
+      c,
+      400,
+      'MISSING_WEBHOOK_HEADERS',
+      'Missing required GitHub webhook headers'
     );
   }
 
@@ -99,34 +53,35 @@ webhooks.post('/github', async (c) => {
   const expected = `sha256=${toHex(signedBody)}`;
 
   if (!timingSafeEqual(signature, expected)) {
-    return c.json({ error: 'Invalid webhook signature', code: 'INVALID_SIGNATURE' }, 401);
+    return errorResponse(c, 401, 'INVALID_SIGNATURE', 'Invalid webhook signature');
   }
 
-  if (event !== 'push') {
-    return c.json({ acknowledged: true, processed: false }, 200);
-  }
-
-  let payloadRaw: unknown;
+  let payload: unknown;
   try {
-    payloadRaw = JSON.parse(body);
+    payload = JSON.parse(body);
   } catch {
-    return c.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, 400);
+    return errorResponse(c, 400, 'INVALID_BODY', 'Invalid JSON body');
   }
 
-  const payload = parsePushPayload(payloadRaw);
-  if (!payload) {
-    return c.json({ error: 'Invalid push payload', code: 'INVALID_PUSH_PAYLOAD' }, 400);
+  const normalizedEvent = normalizeGitHubEvent(eventType, payload, deliveryId);
+
+  if (!normalizedEvent) {
+    return successResponse(
+      c,
+      { message: 'Event acknowledged but not processed (unknown or irrelevant event type)' },
+      {},
+      200
+    );
   }
 
-  await c.env.WEBHOOK_QUEUE.send({
-    repoFullName: payload.repository.full_name,
-    commitSha: payload.head_commit.id,
-    ref: payload.ref,
-    deliveryId,
-    pusherName: payload.pusher.name,
-  });
+  await c.env.WEBHOOK_QUEUE.send(normalizedEvent);
 
-  return c.json({ accepted: true }, 202);
+  return successResponse(
+    c,
+    { message: `Event accepted and enqueued: ${normalizedEvent.type}` },
+    {},
+    202
+  );
 });
 
 export default webhooks;
