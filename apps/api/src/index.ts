@@ -8,8 +8,7 @@ import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
 
 // Re-export Durable Object classes (CRITICAL: wrangler requires this)
-export { HackathonLifecycleDO } from './durable-objects/hackathon-lifecycle.js';
-export { SubmissionDO } from './durable-objects/submission.js';
+export { HackathonStateMachine } from './durable-objects/hackathon-state-machine.js';
 
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
