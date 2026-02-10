@@ -1,6 +1,14 @@
 export { users } from './users.js';
 export { hackathons } from './hackathons.js';
-export { registrations } from './registrations.js';
+export { organizerRoles } from './organizer-roles.js';
 export { teams } from './teams.js';
-export { teamMembers } from './team_members.js';
+export { teamMembers } from './team-members.js';
 export { submissions } from './submissions.js';
+export { commitLog } from './commit-log.js';
+export { forcePushEvents } from './force-push-events.js';
+export { judges } from './judges.js';
+export { rubricCriteria } from './rubric-criteria.js';
+export { judgeAssignments } from './judge-assignments.js';
+export { scores } from './scores.js';
+export { aiReviews } from './ai-reviews.js';
+export { auditEvents } from './audit-events.js';
