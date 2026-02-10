@@ -1258,7 +1258,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 14. Tag-based submission handling via DO (exactly-once locking)
+- [x] 14. Tag-based submission handling via DO (exactly-once locking)
 
   **What to do**:
   - Implement full tag-create submission flow:
@@ -1385,7 +1385,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 18. Rubric criteria CRUD
+- [x] 18. Rubric criteria CRUD
 
   **What to do**:
   - Add to `apps/api/src/routes/judging.ts`:

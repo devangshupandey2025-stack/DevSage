@@ -87,3 +87,30 @@
 - All 145 tests passing (1 skipped) — no regressions
 - Files modified: `webhook-normalize.ts` (added size field), `push-handler.ts` (enhanced force push section), `queue-handlers.test.ts` (+3 tests)
 - Commit: `feat(api): implement force push detection and commit logging`
+
+## Task 18 — Rubric Criteria CRUD Routes
+
+- Implemented GET + POST routes for rubric criteria management in `/apps/api/src/routes/judging.ts`
+- GET `/:slug/rubric`: returns all criteria for hackathon, ordered by sort_order. Uses `optionalAuth` + `requireRole('anonymous')` for true anonymous access (unauthenticated users can view).
+- POST `/:slug/rubric`: bulk upsert (delete all + insert new) with Zod validation. Admin+ only, status-gated to draft/registration_open.
+- Created `BulkRubricRequestSchema` in `@devsage/shared/src/schemas/rubric.ts` with validation: name required, maxScore > 0, weight ∈ [0,1], sortOrder ≥ 0
+- Added 26 comprehensive tests covering empty rubric, sorting, role checks, status validation, bulk upsert, and 404 scenarios
+- Critical auth pattern: anonymous routes MUST use `optionalAuth` (not `authMiddleware`) to allow unauthenticated requests. `authMiddleware` rejects all requests without tokens; `optionalAuth` allows missing tokens.
+- Refactored global authMiddleware removal: each route explicitly declares its auth needs (authMiddleware for admin routes, optionalAuth for anonymous-accessible routes)
+- Audit events: 'rubric.bulk_update' recorded on POST with criteria count detail
+- All 161 tests passing, 1 skipped (11 test files)
+- Commit: `feat(api): implement rubric criteria CRUD` (6d523ba)
+
+## Task 16 — Tag-Based Submission Handling with DO Locking
+
+- Rewrote `tag-create-handler.ts` to use D1 team lookup instead of KV: `SELECT id, hackathon_id FROM teams WHERE repo_full_name = ? AND bot_active = 1`
+- Looks up `submission_tag_pattern` + `submission_deadline` from hackathons table
+- Created `apps/api/src/lib/submission-tag.ts` — `matchSubmissionTag(tagName, pattern)` converts `%` wildcard to `(\d+)` regex capture for version extraction
+- Flow: team lookup → pattern match → idempotency check → DO call → D1 write → notification → audit
+- `is_late` determined by comparing `event.timestamp` to `hackathon.submission_deadline`
+- `version` extracted from tag name via pattern match (e.g., `submission_v3` → version 3)
+- Notification enqueued to `NOTIFICATION_QUEUE` only when DO accepts the submission
+- Tests mock `HACKATHON_SM` DO binding and `NOTIFICATION_QUEUE` (not available in test env): `{ idFromName: () => ..., get: () => mockStub }` cast as `unknown as DurableObjectNamespace`
+- 11 new tests added: 6 for `matchSubmissionTag` pure function, 5 new tag handler tests (bot_active=0, non-matching tags, version extraction, late detection, notification)
+- All 172 tests passing, 1 skipped (11 test files)
+- Commit: `feat(api): implement tag-based submission handling with exactly-once DO locking` (7961df5)

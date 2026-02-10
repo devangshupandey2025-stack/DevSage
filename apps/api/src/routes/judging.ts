@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and, desc } from 'drizzle-orm';
-import { createDbClient, judges, users, rubricCriteria } from '@devsage/db';
+import { eq, and, desc, isNotNull } from 'drizzle-orm';
+import { createDbClient, judges, users, rubricCriteria, judgeAssignments, teams, submissions } from '@devsage/db';
 import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware, optionalAuth } from '../middleware/auth.js';
@@ -250,6 +250,141 @@ judging.post(
       .from(rubricCriteria)
       .where(eq(rubricCriteria.hackathon_id, hackathon.id))
       .orderBy(rubricCriteria.sort_order)
+      .all();
+
+    return successResponse(c, inserted);
+  },
+);
+
+/**
+ * POST /:slug/judges/assign — auto-assign judges to teams with submissions (round-robin)
+ * Requires: admin+ role
+ */
+judging.post(
+  '/:slug/judges/assign',
+  authMiddleware,
+  requireRole('admin'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
+
+    // Get all accepted judges for this hackathon
+    const acceptedJudges = await db
+      .select()
+      .from(judges)
+      .where(
+        and(
+          eq(judges.hackathon_id, hackathon.id),
+          eq(judges.invite_status, 'accepted'),
+        ),
+      )
+      .all();
+
+    if (acceptedJudges.length === 0) {
+      return errorResponse(c, 400, 'NO_JUDGES', 'No accepted judges available for assignment');
+    }
+
+    // Get all teams with at least one submission
+    // Prefer is_final=1, else latest by submitted_at
+    const teamsWithSubmissions = await db
+      .select({
+        teamId: teams.id,
+        submissionId: submissions.id,
+        isFinal: submissions.is_final,
+        submittedAt: submissions.submitted_at,
+      })
+      .from(teams)
+      .innerJoin(submissions, eq(submissions.team_id, teams.id))
+      .where(
+        and(
+          eq(teams.hackathon_id, hackathon.id),
+          eq(submissions.hackathon_id, hackathon.id),
+        ),
+      )
+      .all();
+
+    if (teamsWithSubmissions.length === 0) {
+      return errorResponse(c, 400, 'NO_SUBMISSIONS', 'No teams with submissions to assign judges to');
+    }
+
+    // Group by team and pick the final submission or the latest one
+    const teamSubmissionMap = new Map<string, string>();
+    const teamData = new Map<string, { teamId: string; submissionId: string; isFinal: number; submittedAt: string }>();
+
+    for (const row of teamsWithSubmissions) {
+      const existing = teamData.get(row.teamId);
+      if (!existing) {
+        teamData.set(row.teamId, row);
+      } else {
+        // Prefer is_final=1, else latest by submitted_at
+        if (row.isFinal === 1 && existing.isFinal === 0) {
+          teamData.set(row.teamId, row);
+        } else if (row.isFinal === existing.isFinal && row.submittedAt > existing.submittedAt) {
+          teamData.set(row.teamId, row);
+        }
+      }
+    }
+
+    for (const [teamId, data] of teamData) {
+      teamSubmissionMap.set(teamId, data.submissionId);
+    }
+
+    const teamIds = Array.from(teamSubmissionMap.keys());
+
+    // Round-robin assignment: each team gets min(3, judges.length) judges
+    const reviewsPerTeam = Math.min(3, acceptedJudges.length);
+    const assignmentRecords: Array<{
+      id: string;
+      judge_id: string;
+      team_id: string;
+      hackathon_id: string;
+      submission_id: string;
+      status: 'pending';
+      assigned_at: string;
+    }> = [];
+
+    const now = new Date().toISOString();
+
+    for (let i = 0; i < teamIds.length; i++) {
+      const teamId = teamIds[i];
+      const submissionId = teamSubmissionMap.get(teamId);
+
+      if (!submissionId) continue;
+
+      for (let j = 0; j < reviewsPerTeam; j++) {
+        const judgeIndex = (i + j) % acceptedJudges.length;
+        assignmentRecords.push({
+          id: crypto.randomUUID(),
+          judge_id: acceptedJudges[judgeIndex].id,
+          team_id: teamId,
+          hackathon_id: hackathon.id,
+          submission_id: submissionId,
+          status: 'pending',
+          assigned_at: now,
+        });
+      }
+    }
+
+    // Insert assignments (INSERT OR IGNORE handles duplicates via UNIQUE constraint on judge_id + team_id)
+    if (assignmentRecords.length > 0) {
+      await db.insert(judgeAssignments).values(assignmentRecords).onConflictDoNothing();
+    }
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'judges.assign',
+      entityType: 'judge_assignment',
+      entityId: hackathon.id,
+      details: { count: assignmentRecords.length },
+    });
+
+    const inserted = await db
+      .select()
+      .from(judgeAssignments)
+      .where(eq(judgeAssignments.hackathon_id, hackathon.id))
       .all();
 
     return successResponse(c, inserted);

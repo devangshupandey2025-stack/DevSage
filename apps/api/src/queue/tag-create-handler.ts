@@ -2,6 +2,7 @@ import { createDbClient, submissions } from '@devsage/db';
 import type { NormalizedTagCreateEvent } from '../lib/webhook-normalize.js';
 import { matchSubmissionTag } from '../lib/submission-tag.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { postCommitStatus } from '../services/github.js';
 import type { Env } from '../types/env.js';
 
 interface TeamRow {
@@ -62,18 +63,25 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   const doResult = await doResponse.json();
   if (!isRecord(doResult)) return;
 
-  const accepted = doResult.accepted === true;
-  if (!accepted) {
-    await insertAuditEvent(db, {
-      hackathonId: team.hackathon_id,
-      actorType: 'bot',
-      action: 'submission.rejected',
-      entityType: 'submission',
-      entityId: submissionId,
-      details: { tagName: event.tagName, reason: doResult.reason },
-    });
-    return;
-  }
+   const accepted = doResult.accepted === true;
+   if (!accepted) {
+     await insertAuditEvent(db, {
+       hackathonId: team.hackathon_id,
+       actorType: 'bot',
+       action: 'submission.rejected',
+       entityType: 'submission',
+       entityId: submissionId,
+       details: { tagName: event.tagName, reason: doResult.reason },
+     });
+     await postCommitStatus(env, {
+       repoFullName: event.repoFullName,
+       sha: event.sha,
+       state: 'failure',
+       description: `Submission rejected: ${doResult.reason}`,
+       context: 'devsage/submission',
+     });
+     return;
+   }
 
   const deadlineMs = Date.parse(hackathon.submission_deadline);
   const submittedMs = Date.parse(event.timestamp);
@@ -103,18 +111,26 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
     version: tagMatch.version ?? 1,
   });
 
-  await insertAuditEvent(db, {
-    hackathonId: team.hackathon_id,
-    actorType: 'bot',
-    action: 'submission.received',
-    entityType: 'submission',
-    entityId: submissionId,
-    details: {
-      tagName: event.tagName,
-      commitSha: event.sha,
-      teamId: team.id,
-      version: tagMatch.version,
-      isLate: isLate === 1,
-    },
-  });
+   await insertAuditEvent(db, {
+     hackathonId: team.hackathon_id,
+     actorType: 'bot',
+     action: 'submission.received',
+     entityType: 'submission',
+     entityId: submissionId,
+     details: {
+       tagName: event.tagName,
+       commitSha: event.sha,
+       teamId: team.id,
+       version: tagMatch.version,
+       isLate: isLate === 1,
+     },
+   });
+
+   await postCommitStatus(env, {
+     repoFullName: event.repoFullName,
+     sha: event.sha,
+     state: 'success',
+     description: `Submission ${event.tagName} received by DevSage`,
+     context: 'devsage/submission',
+   });
 }
