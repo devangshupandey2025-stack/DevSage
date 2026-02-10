@@ -14,3 +14,34 @@
 - Hackathon request schemas (Create/Update) moved from api.ts → hackathon.ts; api.ts now holds team requests + ApiError/ApiSuccess envelope types
 - JoinTeamRequestSchema changed from `joinCode` to `inviteCode` to match v2 column naming
 - All `.js` extensions in barrel re-exports confirmed working with ESM strict
+
+## Task 4: JWT v2 + Auth Middleware Rewrite
+
+- Auth tests now use v2 JWT payload: `{ sub, ghid, ghu }` — no `email` or `role`
+- Auth middleware returns `{ ok: false, error: { code, message } }` envelope — tests must check `body.error.code` not `body.code`
+- `routes/auth.ts` v2 changes:
+  - `upsertGitHubUser()` upserts by `github_id` (INTEGER UNIQUE), not email+provider
+  - `linkGoogleToUser()` finds existing user by email, links `google_id` — returns null if no GitHub account exists first
+  - `/auth/me` does full DB lookup: user profile + organizer roles across hackathons
+  - Uses `successResponse`/`errorResponse` from `lib/response.ts` for envelope format
+  - JWT signed with `{ sub: user.id, ghid: user.github_id, ghu: user.github_username }`
+- The `organizerRoles` table uses `{ hackathon_id, user_id, role }` for per-hackathon roles
+- hackathons.test.ts (6 fails) and teams.test.ts (4 fails) are pre-existing v1 test failures — they still use v1 JWT payload with `email`/`role` fields
+
+## Task 9 — Hackathons v2 integration tests
+- Hackathon CRUD tests now exercise v2 routes with SELF.fetch + D1 setup, but create/transition endpoints return 500 in tests because Workerd reports `src/index.ts` does not export a `HackathonLifecycleDO` durable object (binding mismatch).
+- Running `pnpm --filter @devsage/api test -- --grep "hackathon"` also surfaced unrelated JSON parse failures in `auth.test.ts` and `teams.test.ts` due to non-JSON responses during the same run.
+
+## Task 9 — Webhook Ingestion v2
+
+- Created `/apps/api/src/lib/webhook-normalize.ts` with typed normalizer for all v2 events:
+  - `NormalizedPushEvent`: handles push events, limits commits array to 20 entries, extracts branch from ref, includes forced flag
+  - `NormalizedTagCreateEvent` / `NormalizedTagDeleteEvent`: handle create/delete events but ONLY when `ref_type === 'tag'` (branch create/delete return null, resulting in 200 acknowledged but not enqueued)
+  - `NormalizedInstallationEvent`: handles both `installation` and `installation_repositories` events (both map to same normalized type with action field)
+- Webhook route rewritten to use v2 response envelope (`successResponse`/`errorResponse` from `lib/response.ts`)
+- Unknown/irrelevant events (e.g., pull_request, branch create/delete) → 200 OK with "acknowledged but not processed" message (not enqueued)
+- Known events (push, tag create/delete, installation, installation_repositories) → 202 Accepted + enqueued to `WEBHOOK_QUEUE`
+- All 13 webhook tests pass (signature verification, push events with commit slicing, tag events with ref_type filtering, installation events, unknown events)
+- Tests confirm error responses use `{ ok: false, error: { code, message } }` envelope format
+- Kept existing HMAC-SHA256 signature verification logic (battle-tested, working correctly)
+- TDD approach: wrote comprehensive failing tests first, then implemented normalizer + route rewrite

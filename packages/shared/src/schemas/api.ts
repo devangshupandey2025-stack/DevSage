@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 export const CreateTeamRequestSchema = z.object({
   name: z.string().min(2).max(50),
-  hackathonId: z.string(),
 });
 
 export type CreateTeamRequest = z.infer<typeof CreateTeamRequestSchema>;

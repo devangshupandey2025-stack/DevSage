@@ -9,10 +9,11 @@ import { describe, expect, it } from 'vitest';
 describe('shared schemas', () => {
   it('CreateHackathonRequestSchema accepts valid data', () => {
     const result = CreateHackathonRequestSchema.safeParse({
+      slug: 'global-hackathon-2026',
       title: 'Global Hackathon 2026',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationStartDate: '2026-01-01T00:00:00.000Z',
-      hackingStartDate: '2026-01-10T00:00:00.000Z',
+      registrationOpens: '2026-01-01T00:00:00.000Z',
+      registrationCloses: '2026-01-09T00:00:00.000Z',
       submissionDeadline: '2026-01-20T00:00:00.000Z',
       maxTeamSize: 4,
     });
@@ -22,19 +23,21 @@ describe('shared schemas', () => {
 
   it('CreateHackathonRequestSchema rejects invalid data', () => {
     const shortTitle = CreateHackathonRequestSchema.safeParse({
+      slug: 'global-hackathon-2026',
       title: 'Hi',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationStartDate: '2026-01-01T00:00:00.000Z',
-      hackingStartDate: '2026-01-10T00:00:00.000Z',
+      registrationOpens: '2026-01-01T00:00:00.000Z',
+      registrationCloses: '2026-01-09T00:00:00.000Z',
       submissionDeadline: '2026-01-20T00:00:00.000Z',
       maxTeamSize: 4,
     });
 
     const missingField = CreateHackathonRequestSchema.safeParse({
+      slug: 'global-hackathon-2026',
       title: 'Global Hackathon 2026',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationStartDate: '2026-01-01T00:00:00.000Z',
-      hackingStartDate: '2026-01-10T00:00:00.000Z',
+      registrationOpens: '2026-01-01T00:00:00.000Z',
+      registrationCloses: '2026-01-09T00:00:00.000Z',
       maxTeamSize: 4,
     });
 
@@ -45,12 +48,11 @@ describe('shared schemas', () => {
   it('UserSchema validates correctly', () => {
     const result = UserSchema.safeParse({
       id: '523e4567-e89b-12d3-a456-426614174000',
+      githubId: 12345,
+      githubUsername: 'alexdev',
+      displayName: 'Alex',
       email: 'alex@example.com',
-      name: 'Alex',
       avatarUrl: null,
-      provider: 'github',
-      providerId: '12345',
-      role: 'participant',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
@@ -58,24 +60,35 @@ describe('shared schemas', () => {
     expect(result.success).toBe(true);
   });
 
-  it('SubmissionSchema validates commit SHA format', () => {
+  it('SubmissionSchema validates required fields and status enum', () => {
     const valid = SubmissionSchema.safeParse({
       id: '223e4567-e89b-12d3-a456-426614174000',
       hackathonId: '323e4567-e89b-12d3-a456-426614174000',
       teamId: '423e4567-e89b-12d3-a456-426614174000',
-      repoFullName: 'devsage/platform',
+      tagName: 'submission_v1',
       commitSha: 'a'.repeat(40),
+      commitMessage: 'Initial submission',
+      commitAuthor: 'alex',
+      branch: 'main',
       submittedAt: '2026-01-02T00:00:00.000Z',
-      status: 'pending',
+      receivedAt: '2026-01-02T00:00:00.000Z',
+      isLate: 0,
+      isFinal: 0,
+      version: 1,
+      status: 'received',
     });
 
     const invalid = SubmissionSchema.safeParse({
       id: '223e4567-e89b-12d3-a456-426614174000',
       hackathonId: '323e4567-e89b-12d3-a456-426614174000',
       teamId: '423e4567-e89b-12d3-a456-426614174000',
-      repoFullName: 'devsage/platform',
-      commitSha: 'not-a-sha',
+      tagName: 'submission_v1',
+      commitSha: 'a'.repeat(40),
       submittedAt: '2026-01-02T00:00:00.000Z',
+      receivedAt: '2026-01-02T00:00:00.000Z',
+      isLate: 0,
+      isFinal: 0,
+      version: 1,
       status: 'pending',
     });
 

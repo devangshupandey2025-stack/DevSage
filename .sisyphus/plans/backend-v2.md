@@ -856,7 +856,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 7. HackathonStateMachine Durable Object (lifecycle + submission locking)
+- [x] 7. HackathonStateMachine Durable Object (lifecycle + submission locking)
 
   **What to do**:
   - Delete `apps/api/src/durable-objects/hackathon-lifecycle.ts` and `apps/api/src/durable-objects/submission.ts`
@@ -931,7 +931,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 8. Hackathon CRUD routes (slug-based, /api/v1/)
+- [x] 8. Hackathon CRUD routes (slug-based, /api/v1/)
 
   **What to do**:
   - Rewrite `apps/api/src/routes/hackathons.ts`:
