@@ -1,0 +1,15 @@
+import { z } from 'zod';
+
+export const OrganizerRoleEnum = z.enum(['owner', 'admin', 'moderator']);
+
+export type OrganizerRoleType = z.infer<typeof OrganizerRoleEnum>;
+
+export const OrganizerRoleSchema = z.object({
+  id: z.string(),
+  hackathonId: z.string(),
+  userId: z.string(),
+  role: OrganizerRoleEnum,
+  createdAt: z.string(),
+});
+
+export type OrganizerRole = z.infer<typeof OrganizerRoleSchema>;

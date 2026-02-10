@@ -1,12 +1,15 @@
 import { z } from 'zod';
 
 export const TeamSchema = z.object({
-  id: z.string().uuid(),
-  hackathonId: z.string().uuid(),
-  name: z.string().min(2).max(50),
-  joinCode: z.string().length(8),
-  captainId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+  id: z.string(),
+  hackathonId: z.string(),
+  name: z.string(),
+  repoFullName: z.string().nullable().optional(),
+  repoUrl: z.string().nullable().optional(),
+  githubInstallationId: z.number().int().nullable().optional(),
+  botActive: z.number().int(),
+  inviteCode: z.string().nullable().optional(),
+  createdAt: z.string(),
 });
 
 export type Team = z.infer<typeof TeamSchema>;
