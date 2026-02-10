@@ -1,11 +1,9 @@
-export type UserRole = 'organizer' | 'participant';
-
 export interface JWTPayload {
-  sub: string;
-  email: string;
-  role: UserRole;
-  iat: number;
-  exp: number;
+  sub: string;   // user UUID
+  ghid: number;  // GitHub user ID
+  ghu: string;   // GitHub username
+  iat: number;   // issued at
+  exp: number;   // expiration
 }
 
 interface JWTHeader {
@@ -101,8 +99,8 @@ export async function verifyJWT(token: string, secret: string): Promise<JWTPaylo
     const payload = JSON.parse(decoder.decode(fromBase64Url(encodedPayload))) as Partial<JWTPayload>;
     if (
       typeof payload.sub !== 'string' ||
-      typeof payload.email !== 'string' ||
-      (payload.role !== 'organizer' && payload.role !== 'participant') ||
+      typeof payload.ghid !== 'number' ||
+      typeof payload.ghu !== 'string' ||
       typeof payload.iat !== 'number' ||
       typeof payload.exp !== 'number'
     ) {
