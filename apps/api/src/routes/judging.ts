@@ -1,17 +1,15 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient, judges, users } from '@devsage/db';
-import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema } from '@devsage/shared';
+import { eq, and, desc } from 'drizzle-orm';
+import { createDbClient, judges, users, rubricCriteria } from '@devsage/db';
+import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, optionalAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 
 const judging = new Hono<AuthAppEnv>();
-
-judging.use('*', authMiddleware);
 
 /**
  * POST /:slug/judges — invite a judge
@@ -19,6 +17,7 @@ judging.use('*', authMiddleware);
  */
 judging.post(
   '/:slug/judges',
+  authMiddleware,
   requireRole('admin'),
   zValidator('json', InviteJudgeRequestSchema),
   async (c) => {
@@ -79,6 +78,7 @@ judging.post(
  */
 judging.get(
   '/:slug/judges',
+  authMiddleware,
   requireRole('admin'),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -174,4 +174,88 @@ judging.post(
   },
 );
 
+/**
+ * GET /:slug/rubric — retrieve all rubric criteria for a hackathon, ordered by sort_order
+ * Requires: anonymous (open to all)
+ */
+judging.get(
+  '/:slug/rubric',
+  optionalAuth,
+  requireRole('anonymous'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const db = createDbClient(c.env.DB);
+
+    const criteria = await db
+      .select()
+      .from(rubricCriteria)
+      .where(eq(rubricCriteria.hackathon_id, hackathon.id))
+      .orderBy(rubricCriteria.sort_order)
+      .all();
+
+    return successResponse(c, criteria);
+  },
+);
+
+/**
+ * POST /:slug/rubric — bulk upsert rubric criteria (delete all, insert new)
+ * Requires: admin+ role
+ * Status constraint: only 'draft' or 'registration_open'
+ */
+judging.post(
+  '/:slug/rubric',
+  authMiddleware,
+  requireRole('admin'),
+  zValidator('json', BulkRubricRequestSchema),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const body = c.req.valid('json');
+    const db = createDbClient(c.env.DB);
+
+    if (hackathon.status !== 'draft' && hackathon.status !== 'registration_open') {
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only update rubric when hackathon is draft or registration_open');
+    }
+
+    await db
+      .delete(rubricCriteria)
+      .where(eq(rubricCriteria.hackathon_id, hackathon.id));
+
+    const newCriteria = body.criteria.map((_c) => ({
+      id: crypto.randomUUID(),
+      hackathon_id: hackathon.id,
+      name: _c.name,
+      description: _c.description || null,
+      max_score: _c.maxScore,
+      weight: _c.weight,
+      sort_order: _c.sortOrder,
+    }));
+
+    if (newCriteria.length > 0) {
+      await db.insert(rubricCriteria).values(newCriteria);
+    }
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'rubric.bulk_update',
+      entityType: 'rubric_criteria',
+      entityId: hackathon.id,
+      details: { count: newCriteria.length },
+    });
+
+    const inserted = await db
+      .select()
+      .from(rubricCriteria)
+      .where(eq(rubricCriteria.hackathon_id, hackathon.id))
+      .orderBy(rubricCriteria.sort_order)
+      .all();
+
+    return successResponse(c, inserted);
+  },
+);
+
 export default judging;
+
+

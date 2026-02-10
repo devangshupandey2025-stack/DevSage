@@ -24,6 +24,8 @@ async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS judges (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, invite_status TEXT DEFAULT 'pending' NOT NULL, invited_at TEXT NOT NULL, accepted_at TEXT, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_id_user_id_unique ON judges (hackathon_id, user_id)`,
+    `CREATE TABLE IF NOT EXISTS rubric_criteria (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, max_score INTEGER DEFAULT 10 NOT NULL, weight REAL DEFAULT 1.0 NOT NULL, sort_order INTEGER DEFAULT 0 NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS rubric_criteria_hackathon_id_name_unique ON rubric_criteria (hackathon_id, name)`,
     `CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, repo_full_name TEXT, repo_url TEXT, github_installation_id INTEGER, bot_active INTEGER DEFAULT 0 NOT NULL, invite_code TEXT, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS teams_invite_code_unique ON teams (invite_code)`,
     `CREATE TABLE IF NOT EXISTS team_members (id TEXT PRIMARY KEY NOT NULL, team_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'member' NOT NULL, joined_at TEXT NOT NULL, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
@@ -38,6 +40,7 @@ async function ensureSchema() {
 
 async function resetDb() {
   await env.DB.prepare('DELETE FROM audit_events').run();
+  await env.DB.prepare('DELETE FROM rubric_criteria').run();
   await env.DB.prepare('DELETE FROM team_members').run();
   await env.DB.prepare('DELETE FROM teams').run();
   await env.DB.prepare('DELETE FROM judges').run();
@@ -268,19 +271,329 @@ describe('POST /:slug/judges/:judgeId/respond — judge accepts or declines invi
     expect(json.error.code).toBe('FORBIDDEN');
   });
 
-  it('returns 404 if judge record not found', async () => {
-    const response = await SELF.fetch(
-      `http://api/api/v1/hackathons/${hackathonSlug}/judges/${crypto.randomUUID()}/respond`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: `session=${judgeToken}`,
-        },
-        body: JSON.stringify({ accept: true }),
-      },
-    );
+   it('returns 404 if judge record not found', async () => {
+     const response = await SELF.fetch(
+       `http://api/api/v1/hackathons/${hackathonSlug}/judges/${crypto.randomUUID()}/respond`,
+       {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+           Cookie: `session=${judgeToken}`,
+         },
+         body: JSON.stringify({ accept: true }),
+       },
+     );
+
+     expect(response.status).toBe(404);
+   });
+});
+
+describe('GET /:slug/rubric — get all rubric criteria', () => {
+  it('returns empty array when no criteria exist', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'GET',
+      headers: { Cookie: `session=${judgeToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<unknown> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toEqual([]);
+  });
+
+  it('returns criteria ordered by sort_order', async () => {
+    await env.DB
+      .prepare(`INSERT INTO rubric_criteria (id, hackathon_id, name, max_score, weight, sort_order)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12), (?13, ?14, ?15, ?16, ?17, ?18)`)
+      .bind(
+        crypto.randomUUID(), hackathonId, 'Criteria 2', 10, 0.5, 2,
+        crypto.randomUUID(), hackathonId, 'Criteria 1', 20, 0.3, 1,
+        crypto.randomUUID(), hackathonId, 'Criteria 3', 15, 0.2, 3,
+      )
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'GET',
+      headers: { Cookie: `session=${judgeToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ name: string; sort_order: number }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(3);
+    expect(json.data[0].name).toBe('Criteria 1');
+    expect(json.data[1].name).toBe('Criteria 2');
+    expect(json.data[2].name).toBe('Criteria 3');
+  });
+
+  it('allows anonymous users to view rubric', async () => {
+    await env.DB
+      .prepare(`INSERT INTO rubric_criteria (id, hackathon_id, name, max_score, weight, sort_order)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(crypto.randomUUID(), hackathonId, 'Test Criteria', 10, 1.0, 0)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'GET',
+      headers: { Cookie: `session=${judgeToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ name: string }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].name).toBe('Test Criteria');
+  });
+
+  it('returns 404 if hackathon not found', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/nonexistent/rubric`, {
+      method: 'GET',
+      headers: { Cookie: `session=${judgeToken}` },
+    });
 
     expect(response.status).toBe(404);
   });
 });
+
+describe('POST /:slug/rubric — bulk upsert rubric criteria', () => {
+  it('admin creates rubric criteria successfully', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Innovation', description: 'Originality', maxScore: 25, weight: 0.3, sortOrder: 1 },
+          { name: 'Execution', maxScore: 25, weight: 0.4, sortOrder: 2 },
+          { name: 'Impact', maxScore: 20, weight: 0.3, sortOrder: 3 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ name: string }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(3);
+    expect(json.data.some(c => c.name === 'Innovation')).toBe(true);
+  });
+
+  it('deletes existing criteria and inserts new ones (bulk upsert)', async () => {
+    await env.DB
+      .prepare(`INSERT INTO rubric_criteria (id, hackathon_id, name, max_score, weight, sort_order)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(crypto.randomUUID(), hackathonId, 'Old Criteria', 10, 1.0, 0)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'New Criteria', maxScore: 50, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ name: string }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].name).toBe('New Criteria');
+
+    const verify = (await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'GET',
+      headers: { Cookie: `session=${adminToken}` },
+    })) as any;
+    const verifyJson = (await verify.json()) as { ok: boolean; data: Array<{ name: string }> };
+    expect(verifyJson.data).toHaveLength(1);
+    expect(verifyJson.data[0].name).toBe('New Criteria');
+  });
+
+  it('records audit event on POST', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const auditResult = await env.DB.prepare('SELECT COUNT(*) as count FROM audit_events WHERE action = ?').bind('rubric.bulk_update').first() as { count: number };
+    expect(auditResult.count).toBeGreaterThan(0);
+  });
+
+  it('returns 403 if user is not admin', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 400 if hackathon status is not draft or registration_open', async () => {
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('active', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('INVALID_STATUS');
+  });
+
+  it('validates required name field', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: '', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('validates maxScore must be positive', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 0, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('validates weight is between 0 and 1', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.5, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('validates sortOrder is nonnegative', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: -1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('allows status registration_open for POST', async () => {
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('registration_open', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('returns 401 if not authenticated', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/rubric`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 404 if hackathon not found', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/nonexistent/rubric`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        criteria: [
+          { name: 'Test', maxScore: 10, weight: 1.0, sortOrder: 1 },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+});
+

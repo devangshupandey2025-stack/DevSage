@@ -1292,7 +1292,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 15. Force push detection + commit logging
+- [x] 15. Force push detection + commit logging
 
   **What to do**:
   - Implement force push detection in push handler (queue consumer):
@@ -1353,7 +1353,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 17. Judge invite + accept/decline
+- [x] 17. Judge invite + accept/decline
 
   **What to do**:
   - Create `apps/api/src/routes/judging.ts`:
