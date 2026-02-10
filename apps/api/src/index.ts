@@ -6,11 +6,11 @@ import hackathons from './routes/hackathons.js';
 import teams from './routes/teams.js';
 import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
+import { processWebhookBatch } from './queue/index.js';
+import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 
-// Re-export Durable Object classes (CRITICAL: wrangler requires this)
 export { HackathonStateMachine } from './durable-objects/hackathon-state-machine.js';
 
-// Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
 function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
@@ -18,68 +18,11 @@ function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
     return true;
   }
 
-  // Local dev (when not using Vite proxy)
   if (origin === 'http://localhost:5173') {
     return true;
   }
 
   return false;
-}
-
-interface WebhookQueueMessage {
-  repoFullName: string;
-  commitSha: string;
-  ref: string;
-  deliveryId: string;
-  pusherName: string;
-}
-
-interface RepoMapping {
-  hackathonId: string;
-  teamId: string;
-}
-
-interface LifecycleState {
-  status: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function parseQueueMessage(value: unknown): WebhookQueueMessage | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const { repoFullName, commitSha, ref, deliveryId, pusherName } = value;
-  if (
-    typeof repoFullName !== 'string' ||
-    typeof commitSha !== 'string' ||
-    typeof ref !== 'string' ||
-    typeof deliveryId !== 'string' ||
-    typeof pusherName !== 'string'
-  ) {
-    return null;
-  }
-
-  return { repoFullName, commitSha, ref, deliveryId, pusherName };
-}
-
-function parseLifecycleState(value: unknown): LifecycleState | null {
-  if (!isRecord(value) || typeof value.status !== 'string') {
-    return null;
-  }
-
-  return { status: value.status };
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }
 
 // Global error handler
@@ -115,46 +58,10 @@ app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });
 });
 
-// Export Worker with fetch and queue handlers
 export default {
   fetch: app.fetch,
 
-  async queue(batch: MessageBatch, env: Env) {
-    for (const msg of batch.messages) {
-      try {
-        const payload = parseQueueMessage(msg.body);
-        if (!payload) {
-          msg.ack();
-          continue;
-        }
-
-        const mapping = await env.KV.get<RepoMapping>(`repo:${payload.repoFullName}`, 'json');
-        if (!mapping || typeof mapping.hackathonId !== 'string' || typeof mapping.teamId !== 'string') {
-          msg.ack();
-          continue;
-        }
-
-        const lifecycleId = env.HACKATHON_SM.idFromName(mapping.hackathonId);
-        const lifecycleStub = env.HACKATHON_SM.get(lifecycleId);
-        const lifecycleResponse = await lifecycleStub.fetch('http://do/state');
-        if (!lifecycleResponse.ok) {
-          msg.ack();
-          continue;
-        }
-
-        const lifecyclePayload = await readJson(lifecycleResponse);
-        const lifecycle = parseLifecycleState(lifecyclePayload);
-        if (!lifecycle || lifecycle.status !== 'active') {
-          msg.ack();
-          continue;
-        }
-
-        // Submission handling consolidated into HackathonStateMachine
-        msg.ack();
-      } catch (error) {
-        console.error('Queue processing error', error);
-        msg.retry();
-      }
-    }
-  }
+  async queue(batch: MessageBatch<NormalizedGitHubEvent>, env: Env) {
+    await processWebhookBatch(batch, env);
+  },
 };
