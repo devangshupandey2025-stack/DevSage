@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, sql } from 'drizzle-orm';
 import { createDbClient, teams, teamMembers, users } from '@devsage/db';
-import { CreateTeamRequestSchema, JoinTeamRequestSchema } from '@devsage/shared';
+import { CreateTeamRequestSchema, JoinTeamRequestSchema, ConnectTeamRepoRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireRole, isRoleAtLeast } from '../middleware/role.js';
@@ -284,7 +284,76 @@ teamsRouter.delete(
       details: { removedUserId: targetUserId },
     });
 
-    return successResponse(c, { removed: true });
+     return successResponse(c, { removed: true });
+   },
+);
+
+/**
+ * POST /:slug/teams/:teamId/repo — connect GitHub repo to team
+ * Requires: participant+ role, must be team leader
+ */
+teamsRouter.post(
+  '/:slug/teams/:teamId/repo',
+  requireRole('participant'),
+  zValidator('json', ConnectTeamRepoRequestSchema),
+  async (c) => {
+    const teamId = c.req.param('teamId');
+    const user = c.get('user');
+    const hackathon = c.get('hackathon');
+    const body = c.req.valid('json');
+    const db = createDbClient(c.env.DB);
+
+    const team = await db
+      .select()
+      .from(teams)
+      .where(and(eq(teams.id, teamId), eq(teams.hackathon_id, hackathon.id)))
+      .get();
+
+    if (!team) {
+      return errorResponse(c, 404, 'NOT_FOUND', 'Team not found');
+    }
+
+    const actorMembership = await db
+      .select({ role: teamMembers.role })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
+      .get();
+
+    if (actorMembership?.role !== 'leader') {
+      return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader can connect repository');
+    }
+
+    const existingRepo = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.hackathon_id, hackathon.id), eq(teams.repo_full_name, body.repoFullName)))
+      .get();
+
+    if (existingRepo) {
+      return errorResponse(c, 409, 'REPO_ALREADY_CONNECTED', 'Repository already connected to another team in this hackathon');
+    }
+
+    await db
+      .update(teams)
+      .set({ repo_full_name: body.repoFullName })
+      .where(eq(teams.id, teamId));
+
+    const kvKey = `repo:${body.repoFullName}`;
+    await c.env.KV.put(kvKey, JSON.stringify({ hackathonId: hackathon.id, teamId }));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'repo.connect',
+      entityType: 'team',
+      entityId: teamId,
+      details: { repoFullName: body.repoFullName },
+    });
+
+    const updated = await db.select().from(teams).where(eq(teams.id, teamId)).get();
+
+    return successResponse(c, updated);
   },
 );
 

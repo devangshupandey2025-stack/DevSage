@@ -106,8 +106,8 @@ interface TeamData {
 }
 
 interface TeamResponse {
-  ok: boolean;
-  data: TeamData;
+   ok: boolean;
+   data: TeamData & { repo_full_name?: string };
 }
 
 interface ErrorResponse {
@@ -688,9 +688,220 @@ describe('team routes v2', () => {
       },
     });
 
-    expect(removeResp.status).toBe(403);
-    const body = (await removeResp.json()) as ErrorResponse;
-    expect(body.ok).toBe(false);
-    expect(body.error.code).toBe('FORBIDDEN');
-  });
+     expect(removeResp.status).toBe(403);
+     const body = (await removeResp.json()) as ErrorResponse;
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('FORBIDDEN');
+   });
+
+   it('POST /:slug/teams/:teamId/repo — leader connects repo successfully', async () => {
+     const ownerId = crypto.randomUUID();
+     const leaderId = crypto.randomUUID();
+     const hackathonId = crypto.randomUUID();
+     const slug = 'repo-connect-hack';
+
+     await insertUser(ownerId, 9001);
+     await insertUser(leaderId, 9002);
+     await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+     await insertOrganizerRole(hackathonId, leaderId, 'admin');
+
+     const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leaderId, 9002, 'user-9002'),
+       },
+       body: JSON.stringify({ name: 'RepoTeam' }),
+     });
+     const created = (await createResp.json()) as TeamResponse;
+     const teamId = created.data.id;
+
+     const repoResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/repo`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leaderId, 9002, 'user-9002'),
+       },
+       body: JSON.stringify({ repoFullName: 'owner/repo-name' }),
+     });
+
+     expect(repoResp.status).toBe(200);
+     const repoBody = (await repoResp.json()) as TeamResponse;
+     expect(repoBody.ok).toBe(true);
+     expect(repoBody.data.repo_full_name).toBe('owner/repo-name');
+
+     const team = await env.DB
+       .prepare(`SELECT repo_full_name FROM teams WHERE id = ?1`)
+       .bind(teamId)
+       .first();
+     expect(team?.repo_full_name).toBe('owner/repo-name');
+
+     const audit = await env.DB
+       .prepare(`SELECT action FROM audit_events WHERE action = 'repo.connect' AND entity_id = ?1`)
+       .bind(teamId)
+       .first();
+     expect(audit?.action).toBe('repo.connect');
+   });
+
+   it('POST /:slug/teams/:teamId/repo — member cannot connect repo (403)', async () => {
+     const ownerId = crypto.randomUUID();
+     const leaderId = crypto.randomUUID();
+     const memberId = crypto.randomUUID();
+     const hackathonId = crypto.randomUUID();
+     const slug = 'repo-forbidden-hack';
+
+     await insertUser(ownerId, 9101);
+     await insertUser(leaderId, 9102);
+     await insertUser(memberId, 9103);
+     await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+     await insertOrganizerRole(hackathonId, leaderId, 'admin');
+     await insertOrganizerRole(hackathonId, memberId, 'admin');
+
+     const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leaderId, 9102, 'user-9102'),
+       },
+       body: JSON.stringify({ name: 'RepoTeamForbid' }),
+     });
+     const created = (await createResp.json()) as TeamResponse;
+     const teamId = created.data.id;
+     const inviteCode = created.data.invite_code;
+
+     await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/join`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(memberId, 9103, 'user-9103'),
+       },
+       body: JSON.stringify({ inviteCode }),
+     });
+
+     const repoResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/repo`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(memberId, 9103, 'user-9103'),
+       },
+       body: JSON.stringify({ repoFullName: 'owner/repo-name' }),
+     });
+
+     expect(repoResp.status).toBe(403);
+     const body = (await repoResp.json()) as ErrorResponse;
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('FORBIDDEN');
+   });
+
+   it('POST /:slug/teams/:teamId/repo — rejects duplicate repo in same hackathon (409)', async () => {
+     const ownerId = crypto.randomUUID();
+     const leader1Id = crypto.randomUUID();
+     const leader2Id = crypto.randomUUID();
+     const hackathonId = crypto.randomUUID();
+     const slug = 'repo-dup-hack';
+
+     await insertUser(ownerId, 9201);
+     await insertUser(leader1Id, 9202);
+     await insertUser(leader2Id, 9203);
+     await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+     await insertOrganizerRole(hackathonId, leader1Id, 'admin');
+     await insertOrganizerRole(hackathonId, leader2Id, 'admin');
+
+     const create1 = await SELF.fetch(`${BASE}/${slug}/teams`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leader1Id, 9202, 'user-9202'),
+       },
+       body: JSON.stringify({ name: 'Team1' }),
+     });
+     const team1 = (await create1.json()) as TeamResponse;
+     const team1Id = team1.data.id;
+
+     const create2 = await SELF.fetch(`${BASE}/${slug}/teams`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leader2Id, 9203, 'user-9203'),
+       },
+       body: JSON.stringify({ name: 'Team2' }),
+     });
+     const team2 = (await create2.json()) as TeamResponse;
+     const team2Id = team2.data.id;
+
+     const repo1 = await SELF.fetch(`${BASE}/${slug}/teams/${team1Id}/repo`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leader1Id, 9202, 'user-9202'),
+       },
+       body: JSON.stringify({ repoFullName: 'org/shared-repo' }),
+     });
+     expect(repo1.status).toBe(200);
+
+     const repo2 = await SELF.fetch(`${BASE}/${slug}/teams/${team2Id}/repo`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leader2Id, 9203, 'user-9203'),
+       },
+       body: JSON.stringify({ repoFullName: 'org/shared-repo' }),
+     });
+
+     expect(repo2.status).toBe(409);
+     const body = (await repo2.json()) as ErrorResponse;
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('REPO_ALREADY_CONNECTED');
+   });
+
+   it('POST /:slug/teams/:teamId/repo — rejects invalid repo format', async () => {
+     const ownerId = crypto.randomUUID();
+     const leaderId = crypto.randomUUID();
+     const hackathonId = crypto.randomUUID();
+     const slug = 'repo-bad-format-hack';
+
+     await insertUser(ownerId, 9301);
+     await insertUser(leaderId, 9302);
+     await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+     await insertOrganizerRole(hackathonId, leaderId, 'admin');
+
+     const createResp = await SELF.fetch(`${BASE}/${slug}/teams`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leaderId, 9302, 'user-9302'),
+       },
+       body: JSON.stringify({ name: 'RepoFormat' }),
+     });
+     const created = (await createResp.json()) as TeamResponse;
+     const teamId = created.data.id;
+
+     const repoResp = await SELF.fetch(`${BASE}/${slug}/teams/${teamId}/repo`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: await authCookie(leaderId, 9302, 'user-9302'),
+       },
+       body: JSON.stringify({ repoFullName: 'invalid-no-slash' }),
+     });
+
+     expect(repoResp.status).toBe(400);
+   });
+
+   it('POST /:slug/teams/:teamId/repo — rejects without auth', async () => {
+     const ownerId = crypto.randomUUID();
+     const hackathonId = crypto.randomUUID();
+     const slug = 'repo-noauth-hack';
+
+     await insertUser(ownerId, 9401);
+     await insertHackathon({ id: hackathonId, slug, createdBy: ownerId });
+
+     const response = await SELF.fetch(`${BASE}/${slug}/teams/fake-team-id/repo`, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ repoFullName: 'org/repo' }),
+     });
+
+     expect(response.status).toBe(401);
+   });
 });
