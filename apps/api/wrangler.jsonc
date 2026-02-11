@@ -64,12 +64,6 @@
       }
     ]
   },
-  "r2_buckets": [
-    {
-      "binding": "ASSETS",
-      "bucket_name": "devsage-assets"
-    }
-  ],
   "triggers": {
     "crons": ["0 * * * *"]
   },
@@ -119,12 +113,6 @@
            }
          ]
        },
-       "r2_buckets": [
-         {
-           "binding": "ASSETS",
-           "bucket_name": "devsage-assets-dev"
-         }
-       ],
       "vars": {
         "FRONTEND_URL": "http://localhost:5173"
       }
