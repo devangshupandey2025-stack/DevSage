@@ -43,7 +43,7 @@ export function ProfilePage() {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-    });
+    } as const);
   };
 
 
@@ -56,7 +56,7 @@ export function ProfilePage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Identity card */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
+        <div className="rounded-2xl border border-white/10 bg-white/3 p-6 backdrop-blur-sm">
           <div className="flex items-center gap-5">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-[#CCFF00]/30">
               {user.avatar_url ? (
@@ -79,7 +79,7 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="mt-6 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <div className="mt-6 flex items-center gap-3 rounded-xl border border-white/10 bg-white/3 px-4 py-3">
             <Mail className="h-5 w-5 text-white/40" />
             <div className="flex flex-col">
               <span className="text-[11px] font-medium uppercase tracking-wider text-white/40">
@@ -91,7 +91,7 @@ export function ProfilePage() {
         </div>
 
         {/* Account info card */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
+        <div className="rounded-2xl border border-white/10 bg-white/3 p-6 backdrop-blur-sm">
           <div className="mb-5 flex items-center gap-2">
             <Shield className="h-5 w-5 text-[#CCFF00]" />
             <span className="text-lg font-semibold text-white">Account Information</span>
@@ -101,7 +101,7 @@ export function ProfilePage() {
           </p>
 
           <div className="grid gap-3">
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/3 px-4 py-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#CCFF00]/10">
                 <Github className="h-4 w-4 text-[#CCFF00]" />
               </div>
@@ -113,7 +113,7 @@ export function ProfilePage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/3 px-4 py-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#CCFF00]/10">
                 <Calendar className="h-4 w-4 text-[#CCFF00]" />
               </div>
