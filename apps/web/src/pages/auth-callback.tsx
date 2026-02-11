@@ -10,11 +10,7 @@ export function AuthCallbackPage() {
   useEffect(() => {
     if (!isLoading) {
       if (isAuthenticated && user) {
-        if (user.role === 'organiser') {
-            navigate('/organiser');
-        } else {
-            navigate('/dashboard');
-        }
+        navigate('/dashboard');
       } else {
         navigate('/login');
       }

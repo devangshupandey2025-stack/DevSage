@@ -202,7 +202,7 @@ export function DashboardPage() {
           Dashboard
         </div>
         <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">
-          Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
+          Welcome back{user?.display_name ? `, ${user.display_name.split(' ')[0]}` : ''}
         </h1>
         <p className="mt-1 text-white/50">Browse hackathons, join a team, and start building.</p>
       </motion.div>
