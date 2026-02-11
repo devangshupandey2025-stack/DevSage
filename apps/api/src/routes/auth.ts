@@ -109,15 +109,22 @@ auth.get('/callback/google', async (c) => {
   }
 
   try {
+    console.error('[Google OAuth] Step 1: Exchanging code for token...');
+    console.error('[Google OAuth] redirectUri:', stateRecord.redirectUri);
     const accessToken = await exchangeGoogleCodeForToken({
       code,
       clientId: c.env.GOOGLE_CLIENT_ID,
       clientSecret: c.env.GOOGLE_CLIENT_SECRET,
       redirectUri: stateRecord.redirectUri,
     });
+    console.error('[Google OAuth] Step 2: Got access token, fetching profile...');
 
     const profile = await fetchGoogleUserProfile(accessToken);
+    console.error('[Google OAuth] Step 3: Got profile:', profile.email);
+
     const user = await upsertOAuthUser(c, profile);
+    console.error('[Google OAuth] Step 4: Upserted user:', user.id);
+
     const token = await signJWT(
       {
         sub: user.id,
@@ -126,11 +133,16 @@ auth.get('/callback/google', async (c) => {
       },
       c.env.JWT_SECRET
     );
+    console.error('[Google OAuth] Step 5: JWT signed, setting cookie...');
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    return c.redirect(c.env.FRONTEND_URL, 302);
-  } catch {
-    return authError(c, 'Google OAuth failed', 'GOOGLE_OAUTH_FAILED');
+    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
+    console.error('[Google OAuth] Step 6: Cookie set, redirecting to', dashboardUrl);
+    return c.redirect(dashboardUrl, 302);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('Google OAuth callback error:', msg, err);
+    return c.json({ error: msg, code: 'GOOGLE_OAUTH_FAILED' }, 400);
   }
 });
 
@@ -181,7 +193,8 @@ auth.get('/callback/github', async (c) => {
     );
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    return c.redirect(c.env.FRONTEND_URL, 302);
+    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
+    return c.redirect(dashboardUrl, 302);
   } catch {
     return authError(c, 'GitHub OAuth failed', 'GITHUB_OAUTH_FAILED');
   }
