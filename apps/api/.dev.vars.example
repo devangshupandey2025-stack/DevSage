@@ -1,0 +1,7 @@
+JWT_SECRET=dev-secret-key-min-32-chars-long!!
+GOOGLE_CLIENT_ID=dev-google-client-id
+GOOGLE_CLIENT_SECRET=dev-google-client-secret
+GITHUB_CLIENT_ID=dev-github-client-id
+GITHUB_CLIENT_SECRET=dev-github-client-secret
+GITHUB_WEBHOOK_SECRET=dev-webhook-secret-min-32-chars!!
+FRONTEND_URL=http://localhost:5173
