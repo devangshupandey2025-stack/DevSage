@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './types/env.js';
+import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { errorHandler } from './middleware/error-handler.js';
 import auth from './routes/auth.js';
 import hackathons from './routes/hackathons.js';
@@ -89,6 +90,57 @@ export default {
       await processNotificationBatch(batch as MessageBatch<NotificationMessage>, env);
     } else {
       await processWebhookBatch(batch as MessageBatch<NormalizedGitHubEvent>, env);
+    }
+  },
+
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const now = new Date();
+    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+    const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    // Find hackathons with upcoming deadlines (active status only)
+    const approaching = await env.DB.prepare(`
+      SELECT id, slug, title, submission_deadline FROM hackathons
+      WHERE status = 'active'
+      AND submission_deadline > ?
+      AND submission_deadline <= ?
+    `).bind(now.toISOString(), twentyFourHoursFromNow.toISOString()).all();
+
+    for (const hackathon of approaching.results || []) {
+      const deadline = new Date(hackathon.submission_deadline as string);
+      const hoursRemaining = (deadline.getTime() - now.getTime()) / (60 * 60 * 1000);
+
+      // Determine reminder type (1h or 24h)
+      const reminderType = hoursRemaining <= 1 ? '1h' : '24h';
+
+      // Check if already sent via audit log
+      const alreadySent = await env.DB.prepare(`
+        SELECT 1 FROM audit_events
+        WHERE hackathon_id = ? AND action = ?
+      `).bind(hackathon.id, `deadline_reminder_${reminderType}`).first();
+
+      if (!alreadySent) {
+        // Enqueue notification
+        await env.NOTIFICATION_QUEUE.send({
+          type: 'deadline_reminder',
+          hackathonId: hackathon.id,
+          hoursRemaining: Math.floor(hoursRemaining),
+        });
+
+        // Record audit event
+        await env.DB.prepare(`
+          INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          hackathon.id,
+          'cron',
+          `deadline_reminder_${reminderType}`,
+          'hackathon',
+          hackathon.id,
+          now.toISOString()
+        ).run();
+      }
     }
   },
 };

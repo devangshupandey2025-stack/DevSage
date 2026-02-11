@@ -1573,7 +1573,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 24. Cron deadline reminders
+- [x] 24. Cron deadline reminders
 
   **What to do**:
   - Add `scheduled` handler to API Worker:

@@ -292,3 +292,101 @@
 - Serialized SMTP calls (no concurrent connections to avoid rate limiting)
 - Recipient resolution uses indexed joins (team_id, hackathon_id, user_id)
 
+
+## Task 24 — Scheduled Cron Handler for Deadline Reminders (2026-02-11)
+
+### Implementation Summary
+- Created `apps/api/src/__tests__/cron.test.ts` with 5 comprehensive tests
+- Added `scheduled()` handler to `apps/api/src/index.ts` (lines 96-145)
+- Cron trigger already configured in `apps/api/wrangler.jsonc` at line 74: `"crons": ["0 * * * *"]`
+
+### Key Patterns
+
+1. **Scheduled Handler Signature**:
+   ```typescript
+   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void>
+   ```
+   - Imported from `@cloudflare/workers-types`
+   - Exported as part of default Worker export alongside `fetch` and `queue`
+
+2. **Deadline Detection Logic**:
+   - Query hackathons with `status = 'active'` only
+   - Find deadlines in range: `now < deadline <= now + 24h`
+   - Calculate `hoursRemaining = (deadline - now) / 3600000`
+   - Determine reminder type: `hoursRemaining <= 1 ? '1h' : '24h'`
+
+3. **Duplicate Prevention**:
+   - Check `audit_events` table for existing reminder with same action
+   - Query: `SELECT 1 FROM audit_events WHERE hackathon_id = ? AND action = ?`
+   - Only enqueue + audit if `alreadySent` is null/falsy
+
+4. **Queue Message Format**:
+   ```typescript
+   {
+     type: 'deadline_reminder',
+     hackathonId: string,
+     hoursRemaining: number (floored)
+   }
+   ```
+   - Sent to `env.NOTIFICATION_QUEUE`
+   - Consumed by notification handler (Task 23)
+
+5. **Audit Event Recording**:
+   - Action: `deadline_reminder_1h` or `deadline_reminder_24h`
+   - Actor type: `'cron'`
+   - Entity type: `'hackathon'`
+   - Entity ID: hackathon ID
+   - Timestamp: ISO-8601 UTC
+
+### Testing Approach (TDD)
+
+**RED Phase**: Wrote 5 failing tests covering:
+- T-24h reminder sent for deadline in 24 hours
+- T-1h reminder sent for deadline in 1 hour
+- Duplicate prevention (no queue send if already sent)
+- Only active hackathons checked (completed status ignored)
+- Audit event recorded with correct action type
+
+**GREEN Phase**: Implemented scheduled handler to pass all tests
+
+**REFACTOR Phase**: Verified all 233 API tests pass (1 skipped)
+
+### Test Patterns
+
+1. **Schema Setup**: `ensureSchema()` creates tables in `beforeAll()`
+2. **DB Reset**: `resetDb()` clears tables in `beforeEach()`
+3. **User FK**: Must create user before hackathon (FK requirement)
+4. **Direct Handler Call**: Call `worker.scheduled(mockEvent, env, ctx)` directly
+   - Mock event: `{ cron: '0 * * * *', scheduledTime: now.getTime() } as ScheduledEvent`
+   - Mock context: `{ waitUntil: () => {} } as any`
+5. **Queue Spy**: `vi.spyOn(env.NOTIFICATION_QUEUE, 'send')` to verify calls
+6. **Result Handling**: `auditEventResult.results?.[0]` to access D1 query results
+
+### Edge Cases Handled
+
+- Hackathons with no deadline (filtered by query)
+- Hackathons with past deadlines (filtered by `submission_deadline > now`)
+- Non-active hackathons (filtered by `status = 'active'`)
+- Duplicate reminders (checked via audit_events)
+- Empty results (handled with `|| []` fallback)
+
+### Files Modified
+
+- `apps/api/src/index.ts`: Added `scheduled()` handler (50 lines)
+- `apps/api/src/__tests__/cron.test.ts`: New test file (230 lines, 5 tests)
+- `apps/api/wrangler.jsonc`: Cron trigger already present
+
+### Verification
+
+- All 5 cron tests pass
+- All 233 API tests pass (1 skipped)
+- No type errors from LSP
+- Cron trigger configured: `"0 * * * *"` (every hour)
+
+### Learnings
+
+- Scheduled handlers are exported alongside `fetch` and `queue` in default export
+- D1 raw SQL queries work well for cron operations (simpler than Drizzle for this use case)
+- Duplicate prevention via audit_events is effective and queryable
+- Test mocking of ScheduledEvent requires `as ScheduledEvent` cast
+- Queue spy verification works with `toHaveBeenCalledWith(expect.objectContaining(...))`
