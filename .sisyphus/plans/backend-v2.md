@@ -1324,7 +1324,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 16. Commit status posting to GitHub
+- [x] 16. Commit status posting to GitHub
 
   **What to do**:
   - Create `apps/api/src/services/github.ts`:
@@ -1414,7 +1414,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 19. Judge assignment (auto round-robin)
+- [x] 19. Judge assignment (auto round-robin)
 
   **What to do**:
   - Add `POST /api/v1/hackathons/:slug/judges/assign` → auto-assign [admin+]

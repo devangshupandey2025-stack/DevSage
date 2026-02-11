@@ -114,3 +114,82 @@
 - 11 new tests added: 6 for `matchSubmissionTag` pure function, 5 new tag handler tests (bot_active=0, non-matching tags, version extraction, late detection, notification)
 - All 172 tests passing, 1 skipped (11 test files)
 - Commit: `feat(api): implement tag-based submission handling with exactly-once DO locking` (7961df5)
+
+## Task 19 — GitHub Commit Status Posting Service
+
+- Created `apps/api/src/services/github.ts` with `postCommitStatus()` function for GitHub API integration
+- Function signature: `postCommitStatus(env: Env, params: CommitStatusParams)` where params include repoFullName, sha, state, description, context
+- Implementation uses `fetch()` with 10s AbortController timeout to prevent hanging requests
+- Fail-open semantics: never throws, always completes. On error: logs warn via `console.warn`, returns void
+- Token check: verifies `env.GITHUB_CLIENT_SECRET` exists; skips silently if not configured (graceful degradation in test environments)
+- Integrated into `tag-create-handler.ts` at two points:
+  - After rejection: calls `postCommitStatus()` with state='failure' + rejection reason
+  - After acceptance: calls `postCommitStatus()` with state='success' + tag name confirmation
+- TDD approach: wrote 7 comprehensive tests covering success, failure, timeout, missing token, fetch exceptions
+- Tests use vi.fn() to mock globalThis.fetch + vi.spyOn to verify warn() calls
+- Test results: 179 tests passing, 1 skipped (7 new github.test.ts tests added)
+- The 401 warnings during tag-create-handler tests are expected — GITHUB_CLIENT_SECRET is empty in test .dev.vars, correct fail-open behavior
+- Commit: `feat(api): add GitHub commit status posting service` (38419c4)
+
+
+## Judge Assignment Tests (2026-02-10)
+
+### Implementation
+- Round-robin assignment route was already implemented in commit 38419c4
+- Added comprehensive test suite covering all scenarios:
+  - Successful assignment with 3+ judges
+  - Assignment with fewer than 3 judges (min logic)
+  - Error cases (no judges, no submissions)
+  - Admin-only access control
+  - Idempotent duplicate handling via UNIQUE constraint
+  - Final submission preference over non-final
+
+### Test Patterns
+- Test schema needs submissions and judge_assignments tables
+- resetDb() must delete in FK dependency order (assignments before submissions)
+- Round-robin verification: check each team gets expected number of judges
+- Idempotency test: pre-insert assignment, verify no duplicates created
+
+### Learnings
+- The UNIQUE constraint on (judge_id, team_id) handles duplicates automatically with INSERT OR IGNORE
+- Drizzle's `.onConflictDoNothing()` is the idiomatic way to handle INSERT OR IGNORE
+- Final submission selection requires grouping and comparison logic on is_final and submitted_at
+- All 186 tests pass (including 7 new assignment tests)
+
+## Task 20 — SMTP Email Service (2026-02-10)
+
+### Implementation
+- Created `apps/api/src/services/smtp.ts` with `sendEmail()` function for transactional email
+- Function signature: `sendEmail(env: Env, params: SendEmailParams): Promise<SendEmailResult>` where params = { to, subject, body }
+- Returns `{ success: true }` or `{ success: false, error: string }` for audit logging
+- HTTP-based email sending approach: Cloudflare Workers don't support raw TCP/SMTP sockets, so SMTP_URL must point to HTTP-to-SMTP relay (Mailgun, SendGrid, etc.)
+- Uses `fetch()` with 10s AbortController timeout (consistent with github.ts pattern)
+- Fail-open: logs warn via `console.warn` on all failures (missing config, network errors, SMTP API errors, timeout)
+- Configuration validation: checks SMTP_URL, SMTP_USERNAME, SMTP_PASSWORD, SMTP_EMAIL_ADDR; returns error if any missing
+- Parameter validation: checks to, subject, body are non-empty; returns error if missing
+- Basic Auth header: encodes username:password in base64 for HTTP relay authentication
+- Plain text only: sends `text` field in JSON body (no HTML), SMTP_EMAIL_ADDR as `from` field
+
+### Testing
+- Created `apps/api/src/__tests__/smtp.test.ts` with 14 comprehensive tests using vi.fn() to mock fetch
+- Tests cover:
+  - Successful send with valid config and params
+  - Missing SMTP_URL, SMTP_USERNAME, SMTP_PASSWORD, SMTP_EMAIL_ADDR
+  - Missing recipient email, subject, body
+  - SMTP API returns non-OK status (500, etc.)
+  - Timeout handling via AbortError
+  - Network error handling
+  - Basic Auth header encoding verification
+  - Plain text body (no HTML)
+  - From address uses SMTP_EMAIL_ADDR
+- All 14 SMTP tests pass, no LSP diagnostics errors
+- Total test count: 201 passing, 1 skipped (from 186 baseline)
+
+### Learnings
+- Cloudflare Workers forbid raw TCP sockets; HTTP-based email relays required
+- Timeout enforcement via AbortController standard across all service functions (github.ts, smtp.ts)
+- Fail-open pattern: never throw, always return { success, error? } for graceful degradation
+- Mock fetch approach: vi.fn().mockResolvedValueOnce({ ok, status, statusText })
+- Buffer.from().toString('base64') for Basic Auth encoding in Cloudflare Workers environment
+- Console.warn used consistently for fail-open logging (matches project conventions)
+- Commit: `feat(api): add SMTP email service with env-based configuration` (e962ba1)

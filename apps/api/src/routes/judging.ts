@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and, desc, isNotNull } from 'drizzle-orm';
-import { createDbClient, judges, users, rubricCriteria, judgeAssignments, teams, submissions } from '@devsage/db';
-import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema } from '@devsage/shared';
+import { eq, and } from 'drizzle-orm';
+import { createDbClient, judges, users, rubricCriteria, judgeAssignments, teams, submissions, scores } from '@devsage/db';
+import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema, SubmitScoreRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware, optionalAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
@@ -388,6 +388,149 @@ judging.post(
       .all();
 
     return successResponse(c, inserted);
+  },
+);
+
+/**
+ * POST /:slug/scores — judge submits a score for a submission+criteria pair
+ * Requires: authenticated judge, must be assigned to the team that owns the submission
+ * Write-once: UNIQUE(submission_id, judge_id, criteria_id) → 409 on duplicate
+ */
+judging.post(
+  '/:slug/scores',
+  authMiddleware,
+  requireRole('anonymous'),
+  zValidator('json', SubmitScoreRequestSchema),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const body = c.req.valid('json');
+    const db = createDbClient(c.env.DB);
+
+    // 1. Find the judge record for this user
+    const judgeRecord = await db
+      .select()
+      .from(judges)
+      .where(
+        and(
+          eq(judges.hackathon_id, hackathon.id),
+          eq(judges.user_id, user.sub),
+          eq(judges.invite_status, 'accepted'),
+        ),
+      )
+      .get();
+
+    if (!judgeRecord) {
+      return errorResponse(c, 403, 'NOT_JUDGE', 'You are not an accepted judge for this hackathon');
+    }
+
+    // 2. Look up the criteria to get max_score
+    const criteria = await db
+      .select()
+      .from(rubricCriteria)
+      .where(
+        and(
+          eq(rubricCriteria.id, body.criteriaId),
+          eq(rubricCriteria.hackathon_id, hackathon.id),
+        ),
+      )
+      .get();
+
+    if (!criteria) {
+      return errorResponse(c, 404, 'CRITERIA_NOT_FOUND', 'Criteria not found');
+    }
+
+    // 3. Validate score range
+    if (body.score > criteria.max_score) {
+      return errorResponse(c, 400, 'SCORE_TOO_HIGH', `Score must not exceed ${criteria.max_score}`);
+    }
+
+    // 4. Look up the submission
+    const submission = await db
+      .select()
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.id, body.submissionId),
+          eq(submissions.hackathon_id, hackathon.id),
+        ),
+      )
+      .get();
+
+    if (!submission) {
+      return errorResponse(c, 404, 'SUBMISSION_NOT_FOUND', 'Submission not found');
+    }
+
+    // 5. Check that this judge is assigned to the team that owns this submission
+    const assignment = await db
+      .select()
+      .from(judgeAssignments)
+      .where(
+        and(
+          eq(judgeAssignments.judge_id, judgeRecord.id),
+          eq(judgeAssignments.team_id, submission.team_id),
+          eq(judgeAssignments.hackathon_id, hackathon.id),
+        ),
+      )
+      .get();
+
+    if (!assignment) {
+      return errorResponse(c, 403, 'NOT_ASSIGNED', 'You are not assigned to judge this team');
+    }
+
+    // 6. Check for existing score (UNIQUE constraint: submission_id, judge_id, criteria_id)
+    const existingScore = await db
+      .select()
+      .from(scores)
+      .where(
+        and(
+          eq(scores.submission_id, body.submissionId),
+          eq(scores.judge_id, judgeRecord.id),
+          eq(scores.criteria_id, body.criteriaId),
+        ),
+      )
+      .get();
+
+    if (existingScore) {
+      return errorResponse(c, 409, 'DUPLICATE_SCORE', 'Score already submitted for this submission and criteria');
+    }
+
+    // 7. Insert the score
+    const scoreId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await db.insert(scores).values({
+      id: scoreId,
+      submission_id: body.submissionId,
+      judge_id: judgeRecord.id,
+      criteria_id: body.criteriaId,
+      score: body.score,
+      comment: body.comment || null,
+      scored_at: now,
+    });
+
+    // 8. Audit event
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'score.submit',
+      entityType: 'score',
+      entityId: scoreId,
+      details: {
+        submissionId: body.submissionId,
+        criteriaId: body.criteriaId,
+        score: body.score,
+      },
+    });
+
+    const insertedScore = await db
+      .select()
+      .from(scores)
+      .where(eq(scores.id, scoreId))
+      .get();
+
+    return successResponse(c, insertedScore);
   },
 );
 

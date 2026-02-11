@@ -34,6 +34,8 @@ async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS submissions_team_tag_unique ON submissions (team_id, tag_name)`,
     `CREATE TABLE IF NOT EXISTS judge_assignments (id TEXT PRIMARY KEY NOT NULL, judge_id TEXT NOT NULL, team_id TEXT NOT NULL, hackathon_id TEXT NOT NULL, submission_id TEXT, status TEXT DEFAULT 'pending' NOT NULL, assigned_at TEXT NOT NULL, FOREIGN KEY (judge_id) REFERENCES judges(id) ON DELETE CASCADE, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (submission_id) REFERENCES submissions(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judge_assignments_judge_team_unique ON judge_assignments (judge_id, team_id)`,
+    `CREATE TABLE IF NOT EXISTS scores (id TEXT PRIMARY KEY NOT NULL, submission_id TEXT NOT NULL, judge_id TEXT NOT NULL, criteria_id TEXT NOT NULL, score INTEGER NOT NULL, comment TEXT, scored_at TEXT NOT NULL, FOREIGN KEY (submission_id) REFERENCES submissions(id), FOREIGN KEY (judge_id) REFERENCES judges(id), FOREIGN KEY (criteria_id) REFERENCES rubric_criteria(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS scores_submission_judge_criteria_unique ON scores (submission_id, judge_id, criteria_id)`,
     `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
   ];
 
@@ -44,6 +46,7 @@ async function ensureSchema() {
 
 async function resetDb() {
   await env.DB.prepare('DELETE FROM audit_events').run();
+  await env.DB.prepare('DELETE FROM scores').run();
   await env.DB.prepare('DELETE FROM judge_assignments').run();
   await env.DB.prepare('DELETE FROM submissions').run();
   await env.DB.prepare('DELETE FROM rubric_criteria').run();
@@ -143,16 +146,258 @@ describe('POST /:slug/judges — invite judge', () => {
 
     expect(response.status).toBe(401);
   });
+});
 
-  it('returns 403 if user is not admin', async () => {
-    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/judges`, {
+describe('POST /:slug/scores — submit score', () => {
+  let judgeRecordId: string;
+  let teamId: string;
+  let submissionId: string;
+  let criteriaId: string;
+
+  beforeEach(async () => {
+    judgeRecordId = crypto.randomUUID();
+    teamId = crypto.randomUUID();
+    submissionId = crypto.randomUUID();
+    criteriaId = crypto.randomUUID();
+
+    await env.DB
+      .prepare(`INSERT INTO judges (id, hackathon_id, user_id, invite_status, invited_at, accepted_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(judgeRecordId, hackathonId, judgeUserId, 'accepted', now, now)
+      .run();
+
+    await env.DB
+      .prepare(`INSERT INTO teams (id, hackathon_id, name, created_at)
+                VALUES (?1, ?2, ?3, ?4)`)
+      .bind(teamId, hackathonId, 'Test Team', now)
+      .run();
+
+    await env.DB
+      .prepare(`INSERT INTO submissions (id, team_id, hackathon_id, tag_name, commit_sha, submitted_at, received_at, is_final, version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`)
+      .bind(submissionId, teamId, hackathonId, 'v1', 'abc123', now, now, 1, 1)
+      .run();
+
+    await env.DB
+      .prepare(`INSERT INTO rubric_criteria (id, hackathon_id, name, max_score, weight, sort_order)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(criteriaId, hackathonId, 'Innovation', 25, 0.5, 1)
+      .run();
+
+    await env.DB
+      .prepare(`INSERT INTO judge_assignments (id, judge_id, team_id, hackathon_id, submission_id, status, assigned_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
+      .bind(crypto.randomUUID(), judgeRecordId, teamId, hackathonId, submissionId, 'pending', now)
+      .run();
+  });
+
+  it('judge successfully submits a score', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Cookie: `session=${judgeToken}`,
       },
-      body: JSON.stringify({ userId: judgeUserId }),
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 20,
+        comment: 'Great innovation!',
+      }),
     });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: { score: number; comment: string | null } };
+    expect(json.ok).toBe(true);
+    expect(json.data.score).toBe(20);
+    expect(json.data.comment).toBe('Great innovation!');
+  });
+
+  it('judge submits score without comment', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 15,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: { score: number; comment: string | null } };
+    expect(json.ok).toBe(true);
+    expect(json.data.score).toBe(15);
+    expect(json.data.comment).toBeNull();
+  });
+
+  it('returns 409 when duplicate score is submitted', async () => {
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, comment, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
+      .bind(crypto.randomUUID(), submissionId, judgeRecordId, criteriaId, 20, 'First score', now)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 25,
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('DUPLICATE_SCORE');
+  });
+
+  it('returns 400 when score exceeds max_score', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 30,
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const json = (await response.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe('SCORE_TOO_HIGH');
+    expect(json.error.message).toContain('25');
+  });
+
+  it('returns 403 when user is not an accepted judge', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${adminToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('NOT_JUDGE');
+  });
+
+  it('returns 403 when judge is not assigned to the team', async () => {
+    await env.DB
+      .prepare('DELETE FROM judge_assignments WHERE judge_id = ?')
+      .bind(judgeRecordId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('NOT_ASSIGNED');
+  });
+
+  it('returns 404 when criteria not found', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId: crypto.randomUUID(),
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('CRITERIA_NOT_FOUND');
+  });
+
+  it('returns 404 when submission not found', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId: crypto.randomUUID(),
+        criteriaId,
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    const json = (await response.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('SUBMISSION_NOT_FOUND');
+  });
+
+  it('creates audit event when score is submitted', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `session=${judgeToken}`,
+      },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const auditResult = await env.DB
+      .prepare('SELECT COUNT(*) as count FROM audit_events WHERE action = ?')
+      .bind('score.submit')
+      .first() as { count: number };
+    expect(auditResult.count).toBeGreaterThan(0);
+  });
+
+  it('returns 401 when not authenticated', async () => {
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/scores`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionId,
+        criteriaId,
+        score: 20,
+      }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+});
+
 
     expect(response.status).toBe(403);
   });
