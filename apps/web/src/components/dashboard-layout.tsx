@@ -26,7 +26,7 @@ export function DashboardLayout() {
       ? 'text-[#CCFF00] font-semibold'
       : 'text-white/60 hover:text-white';
 
-  const initial = user?.name?.charAt(0)?.toUpperCase() ?? user?.email?.charAt(0)?.toUpperCase() ?? '?';
+  const initial = user?.display_name?.charAt(0)?.toUpperCase() ?? user?.email?.charAt(0)?.toUpperCase() ?? '?';
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -43,22 +43,16 @@ export function DashboardLayout() {
           {/* Left — branding + nav */}
           <div className="flex items-center gap-8">
             <Link
-              to={user?.role === 'organiser' ? '/organiser' : '/dashboard'}
+              to="/dashboard"
               className="text-xl font-black tracking-tighter"
             >
               DEV<span className="text-[#CCFF00]">SAGE</span>
             </Link>
 
             <nav className="hidden items-center gap-6 text-sm sm:flex">
-              {user?.role === 'organiser' ? (
-                <Link to="/organiser" className={`transition ${navLinkClass('/organiser')}`}>
-                  Dashboard
-                </Link>
-              ) : (
-                <Link to="/dashboard" className={`transition ${navLinkClass('/dashboard')}`}>
-                  Dashboard
-                </Link>
-              )}
+              <Link to="/dashboard" className={`transition ${navLinkClass('/dashboard')}`}>
+                Dashboard
+              </Link>
             </nav>
           </div>
 
@@ -69,9 +63,9 @@ export function DashboardLayout() {
               onClick={() => setProfileOpen((p) => !p)}
               className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-[#CCFF00]/40 hover:bg-white/10"
             >
-              {user?.avatarUrl ? (
+              {user?.avatar_url ? (
                 <img
-                  src={user.avatarUrl}
+                  src={user.avatar_url}
                   alt=""
                   className="h-7 w-7 rounded-full object-cover"
                 />
@@ -87,7 +81,7 @@ export function DashboardLayout() {
               <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-black/95 shadow-2xl backdrop-blur-xl">
                 {/* User info header */}
                 <div className="border-b border-white/10 px-4 py-3">
-                  <p className="truncate text-sm font-semibold text-white">{user?.name ?? 'User'}</p>
+                  <p className="truncate text-sm font-semibold text-white">{user?.display_name ?? 'User'}</p>
                   <p className="truncate text-xs text-white/50">{user?.email}</p>
                 </div>
 

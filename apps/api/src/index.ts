@@ -1,17 +1,19 @@
 import { Hono } from 'hono';
 import type { Env } from './types/env.js';
+import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { errorHandler } from './middleware/error-handler.js';
 import auth from './routes/auth.js';
 import hackathons from './routes/hackathons.js';
 import teams from './routes/teams.js';
 import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
+import judging from './routes/judging.js';
+import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
+import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
+import type { NotificationMessage } from './queue/notification-handler.js';
 
-// Re-export Durable Object classes (CRITICAL: wrangler requires this)
-export { HackathonLifecycleDO } from './durable-objects/hackathon-lifecycle.js';
-export { SubmissionDO } from './durable-objects/submission.js';
+export { HackathonStateMachine } from './durable-objects/hackathon-state-machine.js';
 
-// Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
 function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
@@ -19,68 +21,11 @@ function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
     return true;
   }
 
-  // Local dev (when not using Vite proxy)
   if (origin === 'http://localhost:5173') {
     return true;
   }
 
   return false;
-}
-
-interface WebhookQueueMessage {
-  repoFullName: string;
-  commitSha: string;
-  ref: string;
-  deliveryId: string;
-  pusherName: string;
-}
-
-interface RepoMapping {
-  hackathonId: string;
-  teamId: string;
-}
-
-interface LifecycleState {
-  status: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function parseQueueMessage(value: unknown): WebhookQueueMessage | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const { repoFullName, commitSha, ref, deliveryId, pusherName } = value;
-  if (
-    typeof repoFullName !== 'string' ||
-    typeof commitSha !== 'string' ||
-    typeof ref !== 'string' ||
-    typeof deliveryId !== 'string' ||
-    typeof pusherName !== 'string'
-  ) {
-    return null;
-  }
-
-  return { repoFullName, commitSha, ref, deliveryId, pusherName };
-}
-
-function parseLifecycleState(value: unknown): LifecycleState | null {
-  if (!isRecord(value) || typeof value.status !== 'string') {
-    return null;
-  }
-
-  return { status: value.status };
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }
 
 // Global error handler
@@ -106,83 +51,96 @@ app.use('*', async (c, next) => {
 
 // Mount route groups
 app.route('/auth', auth);
-app.route('/hackathons', hackathons);
-app.route('/hackathons', teams);
+app.route('/api/v1/hackathons', hackathons);
+app.route('/api/v1/hackathons', teams);
 app.route('/webhooks', webhooks);
-app.route('/hackathons', submissions);
+app.route('/api/v1/hackathons', submissions);
+app.route('/api/v1/hackathons', judging);
 
 // Health check
 app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });
 });
 
-// Export Worker with fetch and queue handlers
+/**
+ * Type guard to determine if a message is a notification.
+ */
+function isNotificationMessage(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const type = (body as { type?: string }).type;
+  return type !== undefined && [
+    'submission_received',
+    'submission_invalid',
+    'force_push_alert',
+    'phase_transition',
+    'judge_invited',
+    'judge_assignment',
+    'scores_finalized',
+    'deadline_reminder',
+  ].includes(type);
+}
+
 export default {
   fetch: app.fetch,
 
-  async queue(batch: MessageBatch, env: Env) {
-    for (const msg of batch.messages) {
-      try {
-        const payload = parseQueueMessage(msg.body);
-        if (!payload) {
-          msg.ack();
-          continue;
-        }
+  async queue(batch: MessageBatch<NormalizedGitHubEvent | NotificationMessage>, env: Env) {
+    // Route to appropriate handler based on message type
+    const firstMessage = batch.messages[0];
+    if (firstMessage && isNotificationMessage(firstMessage.body)) {
+      await processNotificationBatch(batch as MessageBatch<NotificationMessage>, env);
+    } else {
+      await processWebhookBatch(batch as MessageBatch<NormalizedGitHubEvent>, env);
+    }
+  },
 
-        const mapping = await env.KV.get<RepoMapping>(`repo:${payload.repoFullName}`, 'json');
-        if (!mapping || typeof mapping.hackathonId !== 'string' || typeof mapping.teamId !== 'string') {
-          msg.ack();
-          continue;
-        }
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const now = new Date();
+    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+    const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-        const lifecycleId = env.HACKATHON_LIFECYCLE.idFromName(mapping.hackathonId);
-        const lifecycleStub = env.HACKATHON_LIFECYCLE.get(lifecycleId);
-        const lifecycleResponse = await lifecycleStub.fetch('http://do/state');
-        if (!lifecycleResponse.ok) {
-          msg.ack();
-          continue;
-        }
+    // Find hackathons with upcoming deadlines (active status only)
+    const approaching = await env.DB.prepare(`
+      SELECT id, slug, title, submission_deadline FROM hackathons
+      WHERE status = 'active'
+      AND submission_deadline > ?
+      AND submission_deadline <= ?
+    `).bind(now.toISOString(), twentyFourHoursFromNow.toISOString()).all();
 
-        const lifecyclePayload = await readJson(lifecycleResponse);
-        const lifecycle = parseLifecycleState(lifecyclePayload);
-        if (!lifecycle || lifecycle.status !== 'HACKING') {
-          msg.ack();
-          continue;
-        }
+    for (const hackathon of approaching.results || []) {
+      const deadline = new Date(hackathon.submission_deadline as string);
+      const hoursRemaining = (deadline.getTime() - now.getTime()) / (60 * 60 * 1000);
 
-        const submissionId = env.SUBMISSION.idFromName(mapping.hackathonId);
-        const submissionStub = env.SUBMISSION.get(submissionId);
-        const submissionResponse = await submissionStub.fetch('http://do/submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            hackathonId: mapping.hackathonId,
-            teamId: mapping.teamId,
-            repoFullName: payload.repoFullName,
-            commitSha: payload.commitSha,
-            deliveryId: payload.deliveryId,
-          }),
+      // Determine reminder type (1h or 24h)
+      const reminderType = hoursRemaining <= 1 ? '1h' : '24h';
+
+      // Check if already sent via audit log
+      const alreadySent = await env.DB.prepare(`
+        SELECT 1 FROM audit_events
+        WHERE hackathon_id = ? AND action = ?
+      `).bind(hackathon.id, `deadline_reminder_${reminderType}`).first();
+
+      if (!alreadySent) {
+        // Enqueue notification
+        await env.NOTIFICATION_QUEUE.send({
+          type: 'deadline_reminder',
+          hackathonId: hackathon.id,
+          hoursRemaining: Math.floor(hoursRemaining),
         });
 
-        if (!submissionResponse.ok) {
-          const reason = await submissionResponse.text();
-          console.error('SubmissionDO rejected webhook submission', {
-            repoFullName: payload.repoFullName,
-            hackathonId: mapping.hackathonId,
-            teamId: mapping.teamId,
-            deliveryId: payload.deliveryId,
-            status: submissionResponse.status,
-            reason,
-          });
-        }
-
-        msg.ack();
-      } catch (error) {
-        console.error('Queue processing error', error);
-        msg.retry();
+        // Record audit event
+        await env.DB.prepare(`
+          INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          hackathon.id,
+          'cron',
+          `deadline_reminder_${reminderType}`,
+          'hackathon',
+          hackathon.id,
+          now.toISOString()
+        ).run();
       }
     }
-  }
+  },
 };

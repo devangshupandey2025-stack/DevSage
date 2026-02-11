@@ -1,6 +1,14 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import type { User } from '@devsage/shared';
 import { apiRequest } from '@/lib/api';
+
+interface User {
+  id: string;
+  github_id: number;
+  github_username: string;
+  display_name: string;
+  email: string | null;
+  avatar_url: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -18,8 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const data = await apiRequest<{ user: User }>('/auth/me');
-        setUser(data.user);
+        const response = await apiRequest<{ ok: boolean; data: { user: User }; meta: unknown }>('/auth/me');
+        setUser(response.data.user);
       } catch (_error) {
         setUser(null);
       } finally {

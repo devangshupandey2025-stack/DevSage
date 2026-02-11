@@ -35,8 +35,8 @@ describe('auth critical paths', () => {
     const token = await signJWT(
       {
         sub: crypto.randomUUID(),
-        email: 'organiser@example.com',
-        role: 'organiser',
+        ghid: 12345,
+        ghu: 'testuser',
       },
       JWT_SECRET
     );
@@ -49,8 +49,8 @@ describe('auth critical paths', () => {
     const token = await signJWT(
       {
         sub: userId,
-        email: 'organiser@example.com',
-        role: 'organiser',
+        ghid: 12345,
+        ghu: 'testuser',
       },
       JWT_SECRET
     );
@@ -58,16 +58,18 @@ describe('auth critical paths', () => {
     const verified = await verifyJWT(token, JWT_SECRET);
 
     expect(verified?.sub).toBe(userId);
-    expect(verified?.email).toBe('organiser@example.com');
-    expect(verified?.role).toBe('organiser');
+    expect(verified?.ghid).toBe(12345);
+    expect(verified?.ghu).toBe('testuser');
+    expect(typeof verified?.iat).toBe('number');
+    expect(typeof verified?.exp).toBe('number');
   });
 
   it('verifyJWT rejects token signed with different secret', async () => {
     const token = await signJWT(
       {
         sub: crypto.randomUUID(),
-        email: 'participant@example.com',
-        role: 'participant',
+        ghid: 99999,
+        ghu: 'otheruser',
       },
       JWT_SECRET
     );
@@ -81,8 +83,8 @@ describe('auth critical paths', () => {
     const token = await signJWT(
       {
         sub: crypto.randomUUID(),
-        email: 'participant@example.com',
-        role: 'participant',
+        ghid: 12345,
+        ghu: 'testuser',
       },
       JWT_SECRET,
       -1
@@ -96,6 +98,7 @@ describe('auth critical paths', () => {
   it('verifyJWT rejects malformed tokens', async () => {
     const wrongFormat = await verifyJWT('not.a.jwt.token.extra', JWT_SECRET);
     const missingParts = await verifyJWT('only-two-parts.token', JWT_SECRET);
+    // Token with only sub field — missing ghid and ghu
     const missingFieldsToken = await signArbitraryToken({ sub: crypto.randomUUID() }, JWT_SECRET);
     const missingFields = await verifyJWT(missingFieldsToken, JWT_SECRET);
 
@@ -104,23 +107,34 @@ describe('auth critical paths', () => {
     expect(missingFields).toBeNull();
   });
 
-  it('auth middleware rejects requests without session cookie', async () => {
-    const response = await SELF.fetch('http://localhost/hackathons');
-    const body = (await response.json()) as { code: string };
+   it('auth middleware rejects requests without session cookie', async () => {
+      const response = await SELF.fetch('http://localhost/api/v1/hackathons', {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify({ title: 'Test' }),
+     });
+     const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
 
-    expect(response.status).toBe(401);
-    expect(body.code).toBe('NO_TOKEN');
-  });
+     expect(response.status).toBe(401);
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('NO_TOKEN');
+   });
 
-  it('auth middleware rejects requests with invalid JWT', async () => {
-    const response = await SELF.fetch('http://localhost/hackathons', {
-      headers: {
-        Cookie: 'session=invalid-token',
-      },
-    });
-    const body = (await response.json()) as { code: string };
+   it('auth middleware rejects requests with invalid JWT', async () => {
+      const response = await SELF.fetch('http://localhost/api/v1/hackathons', {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+         Cookie: 'session=invalid-token',
+       },
+       body: JSON.stringify({ title: 'Test' }),
+     });
+     const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
 
-    expect(response.status).toBe(401);
-    expect(body.code).toBe('INVALID_TOKEN');
-  });
+     expect(response.status).toBe(401);
+     expect(body.ok).toBe(false);
+     expect(body.error.code).toBe('INVALID_TOKEN');
+   });
 });

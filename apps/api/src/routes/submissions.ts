@@ -31,8 +31,8 @@ submissions.use('*', authMiddleware);
 submissions.get('/:id/submissions', async (c) => {
   const hackathonId = c.req.param('id');
 
-  const doId = c.env.SUBMISSION.idFromName(hackathonId);
-  const stub = c.env.SUBMISSION.get(doId);
+  const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
+  const stub = c.env.HACKATHON_SM.get(doId);
   const response = await stub.fetch(`http://do/submissions/${hackathonId}`);
   const payload = await readJson(response);
 
@@ -55,8 +55,8 @@ submissions.get('/:id/submissions/:teamId', async (c) => {
   const hackathonId = c.req.param('id');
   const teamId = c.req.param('teamId');
 
-  const doId = c.env.SUBMISSION.idFromName(hackathonId);
-  const stub = c.env.SUBMISSION.get(doId);
+  const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
+  const stub = c.env.HACKATHON_SM.get(doId);
   const response = await stub.fetch(`http://do/submission/${hackathonId}/${teamId}`);
   const payload = await readJson(response);
 
@@ -111,9 +111,9 @@ submissions.post(
       return c.json({ error: 'Only team captain can link repository', code: 'FORBIDDEN' }, 403);
     }
 
-    const doId = c.env.SUBMISSION.idFromName(hackathonId);
-    const stub = c.env.SUBMISSION.get(doId);
-    const linkResponse = await stub.fetch('http://do/link-repo', {
+     const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
+     const stub = c.env.HACKATHON_SM.get(doId);
+     const linkResponse = await stub.fetch('http://do/link-repo', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

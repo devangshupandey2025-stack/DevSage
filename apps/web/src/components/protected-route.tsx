@@ -25,12 +25,5 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // If organiser tries to access participant only, or vice versa (though we don't have participant-only routes really)
-    // If generic protected route, it allows both.
-    // If specifically for organiser, and user is participant, send to dashboard.
-    return <Navigate to="/dashboard" replace />;
-  }
-
   return <Outlet />;
 }

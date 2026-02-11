@@ -22,12 +22,8 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "HACKATHON_LIFECYCLE",
-        "class_name": "HackathonLifecycleDO"
-      },
-      {
-        "name": "SUBMISSION",
-        "class_name": "SubmissionDO"
+        "name": "HACKATHON_SM",
+        "class_name": "HackathonStateMachine"
       }
     ]
   },
@@ -35,6 +31,11 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["HackathonLifecycleDO", "SubmissionDO"]
+    },
+    {
+      "tag": "v2",
+      "deleted_classes": ["HackathonLifecycleDO", "SubmissionDO"],
+      "new_sqlite_classes": ["HackathonStateMachine"]
     }
   ],
   "queues": {
@@ -42,18 +43,75 @@
       {
         "queue": "github-webhooks",
         "binding": "WEBHOOK_QUEUE"
+      },
+      {
+        "queue": "devsage-notifications",
+        "binding": "NOTIFICATION_QUEUE"
       }
     ],
     "consumers": [
       {
         "queue": "github-webhooks",
         "max_batch_size": 10,
-        "max_retries": 3,
-        "dead_letter_queue": "github-webhooks-dlq"
+        "max_retries": 3
+      },
+      {
+        "queue": "devsage-notifications",
+        "max_batch_size": 10,
+        "max_retries": 3
       }
     ]
   },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
   "observability": {
     "enabled": true
+  },
+  "env": {
+    "dev": {
+      "name": "api-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "devsage-db-dev",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV",
+          "id": "00000000000000000000000000000000"
+        }
+      ],
+       "queues": {
+         "producers": [
+           {
+             "queue": "github-webhooks-dev",
+             "binding": "WEBHOOK_QUEUE"
+           },
+           {
+             "queue": "devsage-notifications-dev",
+             "binding": "NOTIFICATION_QUEUE"
+           }
+         ],
+         "consumers": [
+           {
+             "queue": "github-webhooks-dev",
+             "max_batch_size": 10,
+             "max_retries": 3
+           },
+           {
+             "queue": "devsage-notifications-dev",
+             "max_batch_size": 10,
+             "max_retries": 3
+           }
+         ]
+       },
+      "vars": {
+        "FRONTEND_URL": "http://localhost:5173"
+      }
+    }
   }
 }

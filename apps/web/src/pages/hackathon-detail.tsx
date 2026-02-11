@@ -87,22 +87,13 @@ export function HackathonDetailPage() {
         apiRequest<ListResponse<Team>>(`/hackathons/${id}/teams`),
       ];
 
-      // If organiser, also fetch submissions and registrations
-      if (user?.role === 'organiser') {
-        promises.push(apiRequest<Submission[]>(`/hackathons/${id}/submissions`));
-        promises.push(apiRequest<User[]>(`/hackathons/${id}/registrations`));
-      } else {
-        // Participant: fetch submissions (might return empty or all, filters later)
-         promises.push(apiRequest<Submission[]>(`/hackathons/${id}/submissions`));
-      }
+       // Fetch submissions (available to all users)
+       promises.push(apiRequest<Submission[]>(`/hackathons/${id}/submissions`));
 
-      const results = await Promise.all(promises);
-      setHackathon(results[0]);
-      setTeams(results[1].data);
-      setSubmissions(results[2] || []); // Submissions might be results[2]
-      if (user?.role === 'organiser') {
-        setRegistrations(results[3] || []);
-      }
+       const results = await Promise.all(promises);
+       setHackathon(results[0]);
+       setTeams(results[1].data);
+       setSubmissions(results[2] || []);
     } catch (error) {
       toast.error('Failed to load hackathon details');
       console.error(error);
@@ -226,9 +217,9 @@ export function HackathonDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Participant: Team Actions */}
-        {user?.role === 'participant' && (
-          <Card>
+         {/* Participant: Team Actions */}
+         {user && (
+           <Card>
             <CardHeader>
               <CardTitle>My Team</CardTitle>
             </CardHeader>
@@ -304,9 +295,9 @@ export function HackathonDetailPage() {
         )}
       </div>
 
-      {/* Organiser: Management Views */}
-      {user?.role === 'organiser' && (
-        <Tabs defaultValue="teams" className="w-full">
+       {/* Organiser: Management Views */}
+       {false && (
+         <Tabs defaultValue="teams" className="w-full">
           <TabsList>
             <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
             <TabsTrigger value="submissions">Submissions ({submissions.length})</TabsTrigger>
