@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
-import { and, eq } from 'drizzle-orm';
-import { createDbClient, users } from '@devsage/db';
+import { eq } from 'drizzle-orm';
+import { createDbClient, users, organizerRoles } from '@devsage/db';
 import type { Env } from '../types/env.js';
 import { clearSessionCookie, getSessionCookie, setSessionCookie } from '../lib/cookies.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
+import { errorResponse, successResponse } from '../lib/response.js';
+import type { GitHubOAuthProfile, GoogleOAuthProfile } from '../lib/oauth.js';
 import {
   buildGitHubAuthorizationUrl,
   buildGoogleAuthorizationUrl,
@@ -18,67 +20,87 @@ import {
 
 const auth = new Hono<{ Bindings: Env }>();
 
-async function upsertOAuthUser(c: { env: Env }, user: {
-  email: string;
-  name: string;
-  avatarUrl: string | null;
-  provider: 'google' | 'github';
-  providerId: string;
-}) {
-  const db = createDbClient(c.env.DB);
+async function upsertGitHubUser(env: Env, profile: GitHubOAuthProfile) {
+  const db = createDbClient(env.DB);
   const now = new Date().toISOString();
 
   const existing = await db
     .select()
     .from(users)
-    .where(and(eq(users.email, user.email), eq(users.provider, user.provider)))
+    .where(eq(users.github_id, profile.githubId))
     .get();
 
   if (existing) {
     await db
       .update(users)
       .set({
-        name: user.name,
-        avatar_url: user.avatarUrl,
-        provider_id: user.providerId,
+        github_username: profile.githubUsername,
+        display_name: profile.displayName,
+        email: profile.email,
+        avatar_url: profile.avatarUrl,
         updated_at: now,
       })
       .where(eq(users.id, existing.id));
 
     return {
       id: existing.id,
-      email: user.email,
-      role: existing.role,
+      github_id: existing.github_id,
+      github_username: profile.githubUsername,
     };
   }
 
-  const created = {
-    id: crypto.randomUUID(),
-    email: user.email,
-    name: user.name,
-    avatar_url: user.avatarUrl,
-    provider: user.provider,
-    provider_id: user.providerId,
-    role: 'participant' as const,
+  const id = crypto.randomUUID();
+  await db.insert(users).values({
+    id,
+    github_id: profile.githubId,
+    github_username: profile.githubUsername,
+    display_name: profile.displayName,
+    email: profile.email,
+    avatar_url: profile.avatarUrl,
     created_at: now,
     updated_at: now,
-  };
-
-  await db.insert(users).values(created);
+  });
 
   return {
-    id: created.id,
-    email: created.email,
-    role: created.role,
+    id,
+    github_id: profile.githubId,
+    github_username: profile.githubUsername,
+  };
+}
+
+async function linkGoogleToUser(env: Env, profile: GoogleOAuthProfile) {
+  const db = createDbClient(env.DB);
+  const now = new Date().toISOString();
+
+  const existing = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, profile.email))
+    .get();
+
+  if (!existing) {
+    return null;
+  }
+
+  await db
+    .update(users)
+    .set({
+      google_id: profile.googleId,
+      display_name: profile.displayName,
+      avatar_url: profile.avatarUrl ?? existing.avatar_url,
+      updated_at: now,
+    })
+    .where(eq(users.id, existing.id));
+
+  return {
+    id: existing.id,
+    github_id: existing.github_id,
+    github_username: existing.github_username,
   };
 }
 
 function callbackUrl(requestUrl: string, provider: 'google' | 'github'): string {
   return new URL(`/auth/callback/${provider}`, requestUrl).toString();
-}
-
-function authError(c: { json: (input: unknown, status?: number) => Response }, error: string, code: string, status = 400) {
-  return c.json({ error, code }, status);
 }
 
 auth.get('/google', async (c) => {
@@ -100,49 +122,38 @@ auth.get('/callback/google', async (c) => {
   const state = c.req.query('state');
 
   if (!code || !state) {
-    return authError(c, 'Missing OAuth params', 'MISSING_OAUTH_PARAMS');
+    return errorResponse(c, 400, 'MISSING_OAUTH_PARAMS', 'Missing OAuth params');
   }
 
   const stateRecord = await consumeOAuthState(c.env.KV, state);
   if (!stateRecord || stateRecord.provider !== 'google') {
-    return authError(c, 'Invalid OAuth state', 'INVALID_OAUTH_STATE');
+    return errorResponse(c, 400, 'INVALID_OAUTH_STATE', 'Invalid OAuth state');
   }
 
   try {
-    console.error('[Google OAuth] Step 1: Exchanging code for token...');
-    console.error('[Google OAuth] redirectUri:', stateRecord.redirectUri);
     const accessToken = await exchangeGoogleCodeForToken({
       code,
       clientId: c.env.GOOGLE_CLIENT_ID,
       clientSecret: c.env.GOOGLE_CLIENT_SECRET,
       redirectUri: stateRecord.redirectUri,
     });
-    console.error('[Google OAuth] Step 2: Got access token, fetching profile...');
 
     const profile = await fetchGoogleUserProfile(accessToken);
-    console.error('[Google OAuth] Step 3: Got profile:', profile.email);
-
-    const user = await upsertOAuthUser(c, profile);
-    console.error('[Google OAuth] Step 4: Upserted user:', user.id);
+    const user = await linkGoogleToUser(c.env, profile);
+    if (!user) {
+      return errorResponse(c, 400, 'NO_GITHUB_ACCOUNT', 'Sign in with GitHub first');
+    }
 
     const token = await signJWT(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-      },
+      { sub: user.id, ghid: user.github_id, ghu: user.github_username },
       c.env.JWT_SECRET
     );
-    console.error('[Google OAuth] Step 5: JWT signed, setting cookie...');
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
-    console.error('[Google OAuth] Step 6: Cookie set, redirecting to', dashboardUrl);
-    return c.redirect(dashboardUrl, 302);
+    return c.redirect(c.env.FRONTEND_URL, 302);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('Google OAuth callback error:', msg, err);
-    return c.json({ error: msg, code: 'GOOGLE_OAUTH_FAILED' }, 400);
+    console.error('Google OAuth failed', err);
+    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', 'Google OAuth failed');
   }
 });
 
@@ -165,12 +176,12 @@ auth.get('/callback/github', async (c) => {
   const state = c.req.query('state');
 
   if (!code || !state) {
-    return authError(c, 'Missing OAuth params', 'MISSING_OAUTH_PARAMS');
+    return errorResponse(c, 400, 'MISSING_OAUTH_PARAMS', 'Missing OAuth params');
   }
 
   const stateRecord = await consumeOAuthState(c.env.KV, state);
   if (!stateRecord || stateRecord.provider !== 'github') {
-    return authError(c, 'Invalid OAuth state', 'INVALID_OAUTH_STATE');
+    return errorResponse(c, 400, 'INVALID_OAUTH_STATE', 'Invalid OAuth state');
   }
 
   try {
@@ -182,58 +193,62 @@ auth.get('/callback/github', async (c) => {
     });
 
     const profile = await fetchGitHubUserProfile(accessToken);
-    const user = await upsertOAuthUser(c, profile);
+    const user = await upsertGitHubUser(c.env, profile);
     const token = await signJWT(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-      },
+      { sub: user.id, ghid: user.github_id, ghu: user.github_username },
       c.env.JWT_SECRET
     );
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
-    return c.redirect(dashboardUrl, 302);
-  } catch {
-    return authError(c, 'GitHub OAuth failed', 'GITHUB_OAUTH_FAILED');
+    return c.redirect(c.env.FRONTEND_URL, 302);
+  } catch (err) {
+    console.error('GitHub OAuth failed', err);
+    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', 'GitHub OAuth failed');
   }
 });
 
 auth.get('/me', async (c) => {
   const token = getSessionCookie(c);
   if (!token) {
-    return authError(c, 'Unauthorized', 'NO_TOKEN', 401);
+    return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
   }
 
   const payload = await verifyJWT(token, c.env.JWT_SECRET);
   if (!payload) {
-    return authError(c, 'Invalid token', 'INVALID_TOKEN', 401);
+    return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid or expired token');
   }
 
   const db = createDbClient(c.env.DB);
-  const row = await db
+
+  const user = await db
     .select()
     .from(users)
-    .where(eq(users.id, payload.sub as string))
+    .where(eq(users.id, payload.sub))
     .get();
 
-  if (!row) {
-    return authError(c, 'User not found', 'USER_NOT_FOUND', 404);
+  if (!user) {
+    return errorResponse(c, 404, 'USER_NOT_FOUND', 'User not found');
   }
 
-  return c.json({
+  const roles = await db
+    .select({
+      hackathon_id: organizerRoles.hackathon_id,
+      role: organizerRoles.role,
+    })
+    .from(organizerRoles)
+    .where(eq(organizerRoles.user_id, user.id))
+    .all();
+
+  return successResponse(c, {
     user: {
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      avatarUrl: row.avatar_url,
-      provider: row.provider,
-      providerId: row.provider_id,
-      role: row.role,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      id: user.id,
+      github_id: user.github_id,
+      github_username: user.github_username,
+      display_name: user.display_name,
+      email: user.email,
+      avatar_url: user.avatar_url,
     },
+    roles,
   });
 });
 

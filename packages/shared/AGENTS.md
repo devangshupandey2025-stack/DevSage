@@ -12,8 +12,16 @@ src/
     ├── hackathon.ts      # HackathonSchema, CreateHackathonRequestSchema, HackathonStatus
     ├── team.ts           # TeamSchema, CreateTeamRequestSchema, JoinTeamRequestSchema
     ├── team-member.ts    # TeamMemberSchema
-    ├── registration.ts   # RegistrationSchema
     ├── submission.ts     # SubmissionSchema
+    ├── organizer-role.ts # OrganizerRoleSchema
+    ├── judge.ts          # JudgeSchema
+    ├── rubric.ts         # RubricCriteriaSchema
+    ├── score.ts          # ScoreSchema
+    ├── judge-assignment.ts # JudgeAssignmentSchema
+    ├── ai-review.ts      # AiReviewSchema
+    ├── audit-event.ts    # AuditEventSchema
+    ├── commit-log.ts     # CommitLogSchema
+    ├── force-push.ts     # ForcePushEventSchema
     ├── api.ts            # ApiErrorSchema, pagination types
     └── constants.ts      # HACKATHON_STATUS_TRANSITIONS, ROLES, MAX_TEAM_NAME_LENGTH, JOIN_CODE_LENGTH
 ```
@@ -24,7 +32,8 @@ src/
 - **Types**: Inferred via `z.infer<typeof Schema>` — no separate type files
 - **Adding a schema**: Create file in `schemas/`, re-export from `src/index.ts` with `.js` extension
 - **Status transitions**: `HACKATHON_STATUS_TRANSITIONS` is the source of truth for valid state moves
-- **Roles**: `ROLES = ['organiser', 'participant'] as const` — never add more
+- **Roles**: 7 per-hackathon roles: `anonymous | participant | team_leader | judge | moderator | admin | owner`
+- **Status enum**: 7 lowercase statuses: `draft, registration_open, registration_closed, active, judging, completed, archived`
 
 ## ANTI-PATTERNS
 

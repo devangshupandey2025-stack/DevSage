@@ -8,7 +8,8 @@ Hono-based API running on Cloudflare Workers. Single Worker handles HTTP routes,
 src/
 ├── index.ts              # Entry point — Hono app + DO re-exports + queue handler
 ├── routes/               # Hono route modules (auth, hackathons, teams, webhooks, submissions)
-├── durable-objects/      # HackathonLifecycleDO, SubmissionDO (SQLite-backed)
+├── queue/                # Queue consumer handlers
+├── durable-objects/      # HackathonStateMachine (single DO, SQLite-backed)
 ├── middleware/            # auth, role, error-handler
 ├── lib/                  # jwt (crypto.subtle), cookies, oauth (manual Google+GitHub)
 ├── types/                # env.ts (Worker bindings), auth.ts (JWT payload)
@@ -34,22 +35,23 @@ src/
 |---------|------|------|
 | `DB` | D1 Database | `devsage-db` |
 | `KV` | KV Namespace | — |
-| `HACKATHON_LIFECYCLE` | Durable Object | `HackathonLifecycleDO` |
-| `SUBMISSION` | Durable Object | `SubmissionDO` |
+| `HACKATHON_SM` | Durable Object | `HackathonStateMachine` |
 | `WEBHOOK_QUEUE` | Queue | `github-webhooks` |
+| `NOTIFICATION_QUEUE` | Queue | `notifications` |
+| `ASSETS` | R2Bucket | (optional) |
 
 Secrets (in `.dev.vars` locally, `wrangler secret put` for prod):
-`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`
+`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `SMTP_URL`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_EMAIL_ADDR`
 
 ## ROUTES
 
-Production API is hosted at `https://api.devsage.org` and routes are rooted (no extra `/api` prefix):
-`/auth/*`, `/hackathons/*`, `/webhooks/*`
+Production API is hosted at `https://api.devsage.org`. v2 routes use `/api/v1/` prefix with slug-based hackathon addressing:
+`/api/v1/hackathons/:slug/*`, `/auth/*`, `/webhooks/*`
 
 ## CONVENTIONS
 
 - **Route mounting**: Each route file exports a Hono sub-app, mounted in `index.ts`
-- **Auth pattern**: `authMiddleware` extracts JWT → sets `c.get('user')`. Use `requireRole('organiser')` for role gates.
+- **Auth pattern**: `authMiddleware` extracts JWT → sets `c.get('user')`. Role resolved per-request via `resolveRole()`, not from JWT.
 - **DB access**: `createDbClient(c.env.DB)` from `@devsage/db`. Drizzle query builder.
 - **Validation**: `@hono/zod-validator` with schemas from `@devsage/shared`
 - **DO communication**: Worker calls DO via `stub.fetch('http://do/endpoint')`. DOs NEVER touch D1.

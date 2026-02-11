@@ -35,11 +35,18 @@ interface GitHubEmailResponse {
   primary: boolean;
 }
 
-export interface OAuthUserProfile {
-  provider: OAuthProvider;
-  providerId: string;
+export interface GitHubOAuthProfile {
+  githubId: number;
+  githubUsername: string;
+  displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
+export interface GoogleOAuthProfile {
+  googleId: string;
   email: string;
-  name: string;
+  displayName: string;
   avatarUrl: string | null;
 }
 
@@ -131,7 +138,7 @@ export async function exchangeGoogleCodeForToken(params: {
   return token.access_token;
 }
 
-export async function fetchGoogleUserProfile(accessToken: string): Promise<OAuthUserProfile> {
+export async function fetchGoogleUserProfile(accessToken: string): Promise<GoogleOAuthProfile> {
   const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -143,15 +150,14 @@ export async function fetchGoogleUserProfile(accessToken: string): Promise<OAuth
   }
 
   const user = (await response.json()) as GoogleUserResponse;
-  if (!user.id || !user.email || !user.name) {
+  if (!user.id || !user.email) {
     throw new Error('Google user profile incomplete');
   }
 
   return {
-    provider: 'google',
-    providerId: user.id,
+    googleId: user.id,
     email: user.email,
-    name: user.name,
+    displayName: user.name ?? user.email,
     avatarUrl: user.picture ?? null,
   };
 }
@@ -191,7 +197,7 @@ export async function exchangeGitHubCodeForToken(params: {
   return token.access_token;
 }
 
-export async function fetchGitHubUserProfile(accessToken: string): Promise<OAuthUserProfile> {
+export async function fetchGitHubUserProfile(accessToken: string): Promise<GitHubOAuthProfile> {
   const baseHeaders = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/vnd.github+json',
@@ -217,17 +223,13 @@ export async function fetchGitHubUserProfile(accessToken: string): Promise<OAuth
   const emails = (await emailResponse.json()) as GitHubEmailResponse[];
   const primaryVerified = emails.find((email) => email.primary && email.verified);
   const fallbackVerified = emails.find((email) => email.verified);
-  const selectedEmail = user.email ?? primaryVerified?.email ?? fallbackVerified?.email ?? emails[0]?.email;
-
-  if (!selectedEmail) {
-    throw new Error('GitHub email missing');
-  }
+  const selectedEmail = user.email ?? primaryVerified?.email ?? fallbackVerified?.email ?? emails[0]?.email ?? null;
 
   return {
-    provider: 'github',
-    providerId: String(user.id),
+    githubId: user.id,
+    githubUsername: user.login,
+    displayName: user.name ?? user.login,
     email: selectedEmail,
-    name: user.name ?? user.login,
     avatarUrl: user.avatar_url,
   };
 }

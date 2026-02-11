@@ -9,10 +9,10 @@ interface LifecycleState {
 }
 
 const ACTION_MAP: Record<LifecycleAction, { from: HackathonStatus; to: HackathonStatus }> = {
-  openRegistration: { from: 'DRAFT', to: 'REGISTRATION_OPEN' },
-  startHacking: { from: 'REGISTRATION_OPEN', to: 'HACKING' },
-  closeSubmissions: { from: 'HACKING', to: 'SUBMISSION_CLOSED' },
-  complete: { from: 'SUBMISSION_CLOSED', to: 'COMPLETED' },
+  openRegistration: { from: 'draft', to: 'registration_open' },
+  startHacking: { from: 'registration_open', to: 'registration_closed' },
+  closeSubmissions: { from: 'registration_closed', to: 'active' },
+  complete: { from: 'active', to: 'judging' },
 };
 
 function transitionLifecycle(state: LifecycleState, action: LifecycleAction, expectedVersion: number): LifecycleState {
@@ -33,31 +33,31 @@ function transitionLifecycle(state: LifecycleState, action: LifecycleAction, exp
 }
 
 describe('lifecycle state machine critical paths', () => {
-  it('supports DRAFT to COMPLETED transition sequence', () => {
-    let state: LifecycleState = { status: 'DRAFT', version: 1 };
+  it('supports draft to judging transition sequence', () => {
+    let state: LifecycleState = { status: 'draft', version: 1 };
 
     state = transitionLifecycle(state, 'openRegistration', 1);
-    expect(state.status).toBe('REGISTRATION_OPEN');
+    expect(state.status).toBe('registration_open');
 
     state = transitionLifecycle(state, 'startHacking', 2);
-    expect(state.status).toBe('HACKING');
+    expect(state.status).toBe('registration_closed');
 
     state = transitionLifecycle(state, 'closeSubmissions', 3);
-    expect(state.status).toBe('SUBMISSION_CLOSED');
+    expect(state.status).toBe('active');
 
     state = transitionLifecycle(state, 'complete', 4);
-    expect(state.status).toBe('COMPLETED');
+    expect(state.status).toBe('judging');
     expect(state.version).toBe(5);
   });
 
   it('rejects invalid transition', () => {
-    const state: LifecycleState = { status: 'DRAFT', version: 1 };
+    const state: LifecycleState = { status: 'draft', version: 1 };
 
     expect(() => transitionLifecycle(state, 'complete', 1)).toThrowError('INVALID_TRANSITION');
   });
 
   it('rejects version mismatch', () => {
-    const state: LifecycleState = { status: 'REGISTRATION_OPEN', version: 2 };
+    const state: LifecycleState = { status: 'registration_open', version: 2 };
 
     expect(() => transitionLifecycle(state, 'startHacking', 1)).toThrowError('VERSION_MISMATCH');
   });

@@ -15,6 +15,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/v1': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
       '/auth': {
         target: 'http://localhost:8787',
         changeOrigin: true,
