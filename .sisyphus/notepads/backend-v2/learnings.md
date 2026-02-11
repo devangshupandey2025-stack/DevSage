@@ -236,3 +236,59 @@
 ### Commit
 - Message: `feat(api): implement leaderboard aggregation with weighted scoring`
 - All tests passing, no LSP diagnostics errors
+
+## Task 23: Notification Queue Consumer (2026-02-11)
+
+**Implementation Summary:**
+- Created `apps/api/src/queue/notification-handler.ts` with 8 notification types
+- Updated `apps/api/src/queue/index.ts` with `processNotificationBatch()`
+- Updated `apps/api/src/index.ts` with message type routing
+- Comprehensive tests in `apps/api/src/__tests__/notification-handler.test.ts`
+
+**Key Patterns:**
+1. **Recipient Resolution**: Type-based logic in `resolveRecipients()` helper
+   - submission_received: All team members (via team_members join)
+   - submission_invalid: Team leader only (team_members where role='leader')
+   - force_push_alert: Moderator+ organizers (organizer_roles where role IN ('owner','admin','moderator'))
+   - phase_transition: All hackathon participants (all team_members for hackathon)
+   - judge_invited/assignment: Single judge (judges table by judge_id)
+   - scores_finalized: All team members
+   - deadline_reminder: Team leaders with no final submission (raw SQL with NOT EXISTS subquery)
+
+2. **Email Template Rendering**: Plain text templates in `renderEmailTemplate()` helper
+   - Subject: `[DevSage] {Event Title}`
+   - Body: Hackathon name, event details, FRONTEND_URL links
+   - Dynamic content: team names, tag names, commit SHAs, hours remaining, etc.
+
+3. **SMTP Integration**: Serialized calls (no concurrent connections)
+   - `for...of` loop (NOT `Promise.all()`)
+   - Fail-open: sendEmail never throws, returns `{ success, error? }`
+   - 10s timeout per email (enforced in smtp.ts)
+
+4. **Audit Logging**: Every send attempt logged
+   - Action: `notification.sent` (success) or `notification.failed` (failure)
+   - Details: `{ recipient, type, success, error }`
+   - Continues sending to remaining recipients even after failure
+
+5. **Queue Message Routing**: Type guard in `index.ts`
+   - `isNotificationMessage()` checks if type is one of 8 notification types
+   - Routes to `processNotificationBatch()` or `processWebhookBatch()`
+   - Both queues use same `queue()` handler
+
+**Testing Approach:**
+- TDD: RED → GREEN → REFACTOR
+- Comprehensive coverage: 12 tests covering all 8 types + error handling + serialization
+- Mocked sendEmail via `vi.spyOn(module, 'sendEmail')`
+- Verified recipient resolution, email content, audit logging, error handling
+
+**Edge Cases Handled:**
+- Users without email addresses (filtered out)
+- SMTP failures (logged, continue to next recipient)
+- Empty recipient list (log warning, return early)
+- Teams with no final submission (deadline_reminder uses NOT EXISTS subquery)
+
+**Performance Considerations:**
+- Max 10 messages per batch (enforced at queue level)
+- Serialized SMTP calls (no concurrent connections to avoid rate limiting)
+- Recipient resolution uses indexed joins (team_id, hackathon_id, user_id)
+

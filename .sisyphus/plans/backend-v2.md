@@ -1538,7 +1538,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 23. Notification queue consumer
+- [x] 23. Notification queue consumer
 
   **What to do**:
   - Create `apps/api/src/queue/notification-handler.ts`:

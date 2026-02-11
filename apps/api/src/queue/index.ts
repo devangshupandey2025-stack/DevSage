@@ -4,6 +4,8 @@ import { handlePush } from './push-handler.js';
 import { handleTagCreate } from './tag-create-handler.js';
 import { handleTagDelete } from './tag-delete-handler.js';
 import { handleInstallation } from './installation-handler.js';
+import type { NotificationMessage } from './notification-handler.js';
+import { handleNotification } from './notification-handler.js';
 
 export async function processWebhookBatch(
   batch: MessageBatch<NormalizedGitHubEvent>,
@@ -32,6 +34,21 @@ export async function processWebhookBatch(
     } catch (error) {
       const event = message.body;
       console.error('Queue handler error', { type: event?.type, error });
+      message.retry({ delaySeconds: Math.min(300, 30 * message.attempts) });
+    }
+  }
+}
+
+export async function processNotificationBatch(
+  batch: MessageBatch<NotificationMessage>,
+  env: Env
+): Promise<void> {
+  for (const message of batch.messages) {
+    try {
+      await handleNotification(message.body, env);
+      message.ack();
+    } catch (error) {
+      console.error('Notification handler error', { type: message.body?.type, error });
       message.retry({ delaySeconds: Math.min(300, 30 * message.attempts) });
     }
   }

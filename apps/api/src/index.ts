@@ -7,8 +7,9 @@ import teams from './routes/teams.js';
 import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
 import judging from './routes/judging.js';
-import { processWebhookBatch } from './queue/index.js';
+import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
+import type { NotificationMessage } from './queue/notification-handler.js';
 
 export { HackathonStateMachine } from './durable-objects/hackathon-state-machine.js';
 
@@ -60,10 +61,34 @@ app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });
 });
 
+/**
+ * Type guard to determine if a message is a notification.
+ */
+function isNotificationMessage(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const type = (body as { type?: string }).type;
+  return type !== undefined && [
+    'submission_received',
+    'submission_invalid',
+    'force_push_alert',
+    'phase_transition',
+    'judge_invited',
+    'judge_assignment',
+    'scores_finalized',
+    'deadline_reminder',
+  ].includes(type);
+}
+
 export default {
   fetch: app.fetch,
 
-  async queue(batch: MessageBatch<NormalizedGitHubEvent>, env: Env) {
-    await processWebhookBatch(batch, env);
+  async queue(batch: MessageBatch<NormalizedGitHubEvent | NotificationMessage>, env: Env) {
+    // Route to appropriate handler based on message type
+    const firstMessage = batch.messages[0];
+    if (firstMessage && isNotificationMessage(firstMessage.body)) {
+      await processNotificationBatch(batch as MessageBatch<NotificationMessage>, env);
+    } else {
+      await processWebhookBatch(batch as MessageBatch<NormalizedGitHubEvent>, env);
+    }
   },
 };
