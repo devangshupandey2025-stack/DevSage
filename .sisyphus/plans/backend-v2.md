@@ -1508,7 +1508,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 22. SMTP email service (env var based)
+- [x] 22. SMTP email service (env var based)
 
   **What to do**:
   - Create `apps/api/src/services/smtp.ts`:
