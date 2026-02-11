@@ -31,9 +31,6 @@ import {
   Twitter,
   Linkedin,
   Instagram,
-  Code2,
-  Layers,
-  Box,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -804,54 +801,68 @@ const SplitSection = () => {
 };
 
 /* ─────────────────────────────────────────────
-   PARTNERS SECTION
+   TEAM / CREDITS SECTION
    ───────────────────────────────────────────── */
-interface Partner {
-  name: string;
-  icon: LucideIcon;
-}
+const teamMembers = [
+  { name: 'L Kevin Daniel', role: 'Backend & Infrastructure' },
+  { name: 'Srijan Guchhait', role: 'System Architecture & Backend' },
+  { name: 'Devangshu Pandey', role: 'Frontend' },
+  { name: 'Ibhan Mukherjee', role: 'AI/ML' },
+  { name: 'Deeptanshu Samanta', role: 'UI/UX' },
+  { name: 'Harsh', role: 'Security & Testing' },
+];
 
-const PartnersSection = () => {
+const TeamSection = () => {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, margin: '-100px' });
 
-  const partners: Partner[] = [
-    { name: 'Vercel', icon: Layers },
-    { name: 'GitHub', icon: Github },
-    { name: 'Docker', icon: Box },
-    { name: 'AWS', icon: Globe },
-    { name: 'Stripe', icon: Zap },
-    { name: 'Figma', icon: Code2 },
-  ];
-
   return (
     <section ref={ref} className="py-32 bg-black relative">
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={isInView ? { opacity: 1 } : {}}
-          className="text-center text-white/30 text-sm font-medium tracking-widest uppercase mb-16"
+      {/* Soft glow */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="h-125 w-125 rounded-full bg-[#CCFF00]/5 blur-[180px]" />
+      </div>
+
+      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.7 }}
+          className="text-center mb-16"
         >
-          Trusted by industry leaders
-        </motion.p>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
-          {partners.map((partner, i) => {
-            const Icon = partner.icon;
-            return (
-              <motion.div
-                key={partner.name}
-                initial={{ opacity: 0, y: 20 }}
-                animate={isInView ? { opacity: 1, y: 0 } : {}}
-                transition={{ delay: i * 0.1 }}
-                className="flex flex-col items-center gap-3 py-6 px-4 rounded-xl hover:bg-white/3 transition-colors group"
-              >
-                <Icon className="w-8 h-8 text-white/30 group-hover:text-[#CCFF00] transition-colors" />
-                <span className="text-white/40 font-medium text-sm group-hover:text-white/70 transition-colors">
-                  {partner.name}
-                </span>
-              </motion.div>
-            );
-          })}
+          <p className="text-xs font-medium uppercase tracking-[0.3em] text-[#CCFF00]/60 mb-4">
+            The People Behind DevSage
+          </p>
+          <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white">
+            Meet the <span className="text-[#CCFF00]">Builders</span>
+          </h2>
+        </motion.div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+          {teamMembers.map((member, i) => (
+            <motion.div
+              key={member.name}
+              initial={{ opacity: 0, y: 30 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ delay: 0.1 * i, duration: 0.5 }}
+              className="group relative flex flex-col items-center rounded-2xl border border-white/6 bg-white/2 px-4 py-8 backdrop-blur-sm transition-all hover:border-[#CCFF00]/30 hover:bg-white/5"
+            >
+              {/* Avatar circle with initials */}
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-white/10 bg-[#CCFF00]/10 text-lg font-bold text-[#CCFF00] transition-all group-hover:border-[#CCFF00]/40 group-hover:shadow-[0_0_20px_rgba(204,255,0,0.15)]">
+                {member.name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .join('')
+                  .slice(0, 2)}
+              </div>
+              <span className="text-sm font-semibold text-white text-center leading-tight">
+                {member.name}
+              </span>
+              <span className="mt-1.5 text-[11px] text-white/40 text-center leading-tight">
+                {member.role}
+              </span>
+            </motion.div>
+          ))}
         </div>
       </div>
     </section>
@@ -989,13 +1000,30 @@ const Footer = () => {
           ))}
         </div>
 
-        {/* Bottom bar */}
-        <div className="border-t border-white/6 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-white/30 text-sm">
-            © {new Date().getFullYear()} DevSage. All rights reserved.
+        {/* Built by */}
+        <div className="border-t border-white/6 pt-10 pb-2">
+          <p className="text-center text-xs font-medium uppercase tracking-widest text-white/30 mb-6">
+            Built by
           </p>
-          <p className="text-white/20 text-sm">
-            Built with ♥ for developers everywhere
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+            {[
+              'L Kevin Daniel',
+              'Srijan Guchhait',
+              'Devangshu Pandey',
+              'Ibhan Mukherjee',
+              'Deeptanshu Samanta',
+              'Harsh',
+            ].map((name) => (
+              <span
+                key={name}
+                className="text-sm font-medium text-white/50 hover:text-[#CCFF00] transition-colors"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+          <p className="text-center text-white/20 text-sm mt-8">
+            © {new Date().getFullYear()} DevSage. All rights reserved.
           </p>
         </div>
       </div>
@@ -1018,7 +1046,7 @@ export function HomePage() {
       <BentoGrid />
       <HackathonGallery />
       <SplitSection />
-      <PartnersSection />
+      <TeamSection />
       <CTASection />
       <Footer />
     </div>
