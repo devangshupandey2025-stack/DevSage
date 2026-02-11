@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { createDbClient, judges, users, rubricCriteria, judgeAssignments, teams, submissions, scores } from '@devsage/db';
 import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema, SubmitScoreRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
@@ -531,6 +531,54 @@ judging.post(
       .get();
 
     return successResponse(c, insertedScore);
+  },
+);
+
+/**
+ * GET /:slug/leaderboard — aggregated weighted scoring results
+ * Requires: anonymous (open to all after judging complete, admin+ anytime)
+ */
+judging.get(
+  '/:slug/leaderboard',
+  optionalAuth,
+  requireRole('anonymous'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const role = c.get('role');
+    const db = createDbClient(c.env.DB);
+
+    // Visibility check: organizers can view anytime, others only after judging complete
+    const isOrganizer = ['owner', 'admin', 'moderator'].includes(role);
+    const isAfterJudging = ['completed', 'archived'].includes(hackathon.status);
+
+    if (!isOrganizer && !isAfterJudging) {
+      return errorResponse(c, 403, 'FORBIDDEN', 'Leaderboard is only visible after judging is complete');
+    }
+
+    // Query weighted scoring results using Drizzle ORM
+    // Formula: SUM(score * weight) / SUM(max_score * weight) * 100
+    const leaderboard = await db
+      .select({
+        team_id: teams.id,
+        team_name: teams.name,
+        weighted_percentage: sql<number>`ROUND(SUM(${scores.score} * ${rubricCriteria.weight}) / SUM(${rubricCriteria.max_score} * ${rubricCriteria.weight}) * 100, 2)`,
+        judges_completed: sql<number>`COUNT(DISTINCT ${scores.judge_id})`,
+      })
+      .from(scores)
+      .innerJoin(rubricCriteria, eq(scores.criteria_id, rubricCriteria.id))
+      .innerJoin(submissions, eq(scores.submission_id, submissions.id))
+      .innerJoin(teams, eq(submissions.team_id, teams.id))
+      .where(
+        and(
+          eq(submissions.hackathon_id, hackathon.id),
+          eq(submissions.is_final, 1),
+        ),
+      )
+      .groupBy(teams.id)
+      .orderBy(sql`ROUND(SUM(${scores.score} * ${rubricCriteria.weight}) / SUM(${rubricCriteria.max_score} * ${rubricCriteria.weight}) * 100, 2) DESC`)
+      .all();
+
+    return successResponse(c, leaderboard);
   },
 );
 

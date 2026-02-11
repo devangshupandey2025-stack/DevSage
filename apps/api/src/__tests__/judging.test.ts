@@ -398,11 +398,6 @@ describe('POST /:slug/scores — submit score', () => {
   });
 });
 
-
-    expect(response.status).toBe(403);
-  });
-});
-
 describe('GET /:slug/judges — list judges', () => {
   it('admin lists all judges with user details', async () => {
     await env.DB
@@ -798,6 +793,337 @@ describe('POST /:slug/judges/assign — auto-assign judges to teams', () => {
   });
 });
 
+describe('GET /:slug/leaderboard — aggregated results', () => {
+  let judgeRecordId1: string;
+  let judgeRecordId2: string;
+  let teamId1: string;
+  let teamId2: string;
+  let submissionId1: string;
+  let submissionId2: string;
+  let criteriaId1: string;
+  let criteriaId2: string;
+
+  beforeEach(async () => {
+    judgeRecordId1 = crypto.randomUUID();
+    judgeRecordId2 = crypto.randomUUID();
+    teamId1 = crypto.randomUUID();
+    teamId2 = crypto.randomUUID();
+    submissionId1 = crypto.randomUUID();
+    submissionId2 = crypto.randomUUID();
+    criteriaId1 = crypto.randomUUID();
+    criteriaId2 = crypto.randomUUID();
+
+    // Create two judges
+    const judge2UserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(judge2UserId, 11111, 'judge2', 'Judge Two', now, now)
+      .run();
+
+    await env.DB
+      .prepare(`INSERT INTO judges (id, hackathon_id, user_id, invite_status, invited_at, accepted_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12)`)
+      .bind(
+        judgeRecordId1, hackathonId, judgeUserId, 'accepted', now, now,
+        judgeRecordId2, hackathonId, judge2UserId, 'accepted', now, now,
+      )
+      .run();
+
+    // Create two teams
+    await env.DB
+      .prepare(`INSERT INTO teams (id, hackathon_id, name, created_at)
+                VALUES (?1, ?2, ?3, ?4), (?5, ?6, ?7, ?8)`)
+      .bind(teamId1, hackathonId, 'Team Alpha', now, teamId2, hackathonId, 'Team Beta', now)
+      .run();
+
+    // Create final submissions for both teams
+    await env.DB
+      .prepare(`INSERT INTO submissions (id, team_id, hackathon_id, tag_name, commit_sha, submitted_at, received_at, is_final, version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9), (?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)`)
+      .bind(
+        submissionId1, teamId1, hackathonId, 'v1', 'abc123', now, now, 1, 1,
+        submissionId2, teamId2, hackathonId, 'v1', 'def456', now, now, 1, 1,
+      )
+      .run();
+
+    // Create two rubric criteria with different weights
+    await env.DB
+      .prepare(`INSERT INTO rubric_criteria (id, hackathon_id, name, max_score, weight, sort_order)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12)`)
+      .bind(
+        criteriaId1, hackathonId, 'Innovation', 25, 0.5, 1,
+        criteriaId2, hackathonId, 'Execution', 20, 0.3, 2,
+      )
+      .run();
+  });
+
+  it('calculates weighted percentage correctly', async () => {
+    // Create participant user
+    const participantUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(participantUserId, 99999, 'participant', 'Participant User', now, now)
+      .run();
+
+    // Add participant to team
+    await env.DB
+      .prepare(`INSERT INTO team_members (id, team_id, user_id, role, joined_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)`)
+      .bind(crypto.randomUUID(), teamId1, participantUserId, 'member', now)
+      .run();
+
+    const participantToken = await signJWT({ sub: participantUserId, ghid: 99999, ghu: 'participant' }, JWT_SECRET);
+
+    // Team 1: Judge 1 scores 20/25 on Innovation (weight 0.5), 15/20 on Execution (weight 0.3)
+    // Weighted score = (20*0.5 + 15*0.3) / (25*0.5 + 20*0.3) * 100 = 14.5 / 18.5 * 100 = 78.38%
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12)`)
+      .bind(
+        crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId1, 20, now,
+        crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId2, 15, now,
+      )
+      .run();
+
+    // Team 2: Judge 1 scores 10/25 on Innovation, 10/20 on Execution
+    // Weighted score = (10*0.5 + 10*0.3) / (25*0.5 + 20*0.3) * 100 = 8.0 / 18.5 * 100 = 43.24%
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12)`)
+      .bind(
+        crypto.randomUUID(), submissionId2, judgeRecordId1, criteriaId1, 10, now,
+        crypto.randomUUID(), submissionId2, judgeRecordId1, criteriaId2, 10, now,
+      )
+      .run();
+
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('completed', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${participantToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ team_id: string; team_name: string; weighted_percentage: number; judges_completed: number }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(2);
+    
+    // Ordered by weighted_percentage DESC
+    expect(json.data[0].team_id).toBe(teamId1);
+    expect(json.data[0].team_name).toBe('Team Alpha');
+    expect(json.data[0].weighted_percentage).toBeCloseTo(78.38, 1);
+    expect(json.data[0].judges_completed).toBe(1);
+
+    expect(json.data[1].team_id).toBe(teamId2);
+    expect(json.data[1].team_name).toBe('Team Beta');
+    expect(json.data[1].weighted_percentage).toBeCloseTo(43.24, 1);
+    expect(json.data[1].judges_completed).toBe(1);
+  });
+
+  it('participant cannot view leaderboard before judging complete', async () => {
+    // Create participant user
+    const participantUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(participantUserId, 99999, 'participant', 'Participant User', now, now)
+      .run();
+
+    // Add participant to team
+    await env.DB
+      .prepare(`INSERT INTO team_members (id, team_id, user_id, role, joined_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)`)
+      .bind(crypto.randomUUID(), teamId1, participantUserId, 'member', now)
+      .run();
+
+    const participantToken = await signJWT({ sub: participantUserId, ghid: 99999, ghu: 'participant' }, JWT_SECRET);
+
+    // Hackathon is in 'judging' status
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('judging', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${participantToken}` },
+    });
+
+    expect(response.status).toBe(403);
+    const json = (await response.json()) as { error: { code: string; message: string } };
+    expect(json.error.code).toBe('FORBIDDEN');
+    expect(json.error.message).toContain('after judging is complete');
+  });
+
+  it('participant can view leaderboard after judging complete', async () => {
+    // Create participant user
+    const participantUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(participantUserId, 99999, 'participant', 'Participant User', now, now)
+      .run();
+
+    // Add participant to team
+    await env.DB
+      .prepare(`INSERT INTO team_members (id, team_id, user_id, role, joined_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)`)
+      .bind(crypto.randomUUID(), teamId1, participantUserId, 'member', now)
+      .run();
+
+    const participantToken = await signJWT({ sub: participantUserId, ghid: 99999, ghu: 'participant' }, JWT_SECRET);
+
+    // Add some scores
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId1, 20, now)
+      .run();
+
+    // Hackathon is 'completed'
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('completed', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${participantToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<unknown> };
+    expect(json.ok).toBe(true);
+  });
+
+  it('admin can view leaderboard anytime', async () => {
+    // Hackathon is in 'judging' status (not completed)
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('judging', hackathonId)
+      .run();
+
+    // Add some scores
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId1, 20, now)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${adminToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<unknown> };
+    expect(json.ok).toBe(true);
+  });
+
+  it('returns empty array when no scores exist', async () => {
+    // Create participant user
+    const participantUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(participantUserId, 99999, 'participant', 'Participant User', now, now)
+      .run();
+
+    const participantToken = await signJWT({ sub: participantUserId, ghid: 99999, ghu: 'participant' }, JWT_SECRET);
+
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('completed', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${participantToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<unknown> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toEqual([]);
+  });
+
+  it('counts judges_completed correctly with multiple judges', async () => {
+    // Create participant user
+    const participantUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(participantUserId, 99999, 'participant', 'Participant User', now, now)
+      .run();
+
+    const participantToken = await signJWT({ sub: participantUserId, ghid: 99999, ghu: 'participant' }, JWT_SECRET);
+
+    // Team 1: Both judges score both criteria
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6), (?7, ?8, ?9, ?10, ?11, ?12), (?13, ?14, ?15, ?16, ?17, ?18), (?19, ?20, ?21, ?22, ?23, ?24)`)
+      .bind(
+        crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId1, 20, now,
+        crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId2, 15, now,
+        crypto.randomUUID(), submissionId1, judgeRecordId2, criteriaId1, 22, now,
+        crypto.randomUUID(), submissionId1, judgeRecordId2, criteriaId2, 18, now,
+      )
+      .run();
+
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('completed', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${participantToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<{ judges_completed: number }> };
+    expect(json.ok).toBe(true);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].judges_completed).toBe(2);
+  });
+
+  it('allows any authenticated user to view leaderboard after completion', async () => {
+    // Create a user who is NOT a participant (just a random authenticated user)
+    const randomUserId = crypto.randomUUID();
+    await env.DB
+      .prepare(`INSERT INTO users (id, github_id, github_username, display_name, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(randomUserId, 88888, 'randomuser', 'Random User', now, now)
+      .run();
+
+    const randomToken = await signJWT({ sub: randomUserId, ghid: 88888, ghu: 'randomuser' }, JWT_SECRET);
+
+    await env.DB
+      .prepare(`INSERT INTO scores (id, submission_id, judge_id, criteria_id, score, scored_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+      .bind(crypto.randomUUID(), submissionId1, judgeRecordId1, criteriaId1, 20, now)
+      .run();
+
+    await env.DB
+      .prepare('UPDATE hackathons SET status = ? WHERE id = ?')
+      .bind('completed', hackathonId)
+      .run();
+
+    const response = await SELF.fetch(`http://api/api/v1/hackathons/${hackathonSlug}/leaderboard`, {
+      method: 'GET',
+      headers: { Cookie: `session=${randomToken}` },
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { ok: boolean; data: Array<unknown> };
+    expect(json.ok).toBe(true);
+  });
+});
 
 describe('GET /:slug/rubric — get all rubric criteria', () => {
   it('returns empty array when no criteria exist', async () => {

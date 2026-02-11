@@ -1475,7 +1475,7 @@ Wave 11 (Finalization):
 
 ---
 
-- [ ] 21. Leaderboard aggregation
+- [x] 21. Leaderboard aggregation
 
   **What to do**:
   - Add `GET /api/v1/hackathons/:slug/leaderboard` → aggregated results [scoped by role]

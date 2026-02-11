@@ -193,3 +193,46 @@
 - Buffer.from().toString('base64') for Basic Auth encoding in Cloudflare Workers environment
 - Console.warn used consistently for fail-open logging (matches project conventions)
 - Commit: `feat(api): add SMTP email service with env-based configuration` (e962ba1)
+
+## Task 21 — Leaderboard Aggregation Route (2026-02-11)
+
+### Implementation
+- Created GET `/:slug/leaderboard` route in `/apps/api/src/routes/judging.ts` with weighted scoring aggregation
+- Uses `optionalAuth` + `requireRole('anonymous')` pattern for role-scoped visibility
+- Visibility logic: organizers (owner/admin/moderator) can view anytime, others only after hackathon status is 'completed' or 'archived'
+- Weighted percentage formula: `SUM(score * weight) / SUM(max_score * weight) * 100` rounded to 2 decimal places
+- Query uses Drizzle ORM with `sql<number>` template for aggregation functions
+- Filters to `is_final = 1` submissions only
+- Groups by team_id, orders by weighted_percentage DESC
+- Returns: team_id, team_name, weighted_percentage, judges_completed (COUNT DISTINCT judge_id)
+
+### Testing
+- Added 7 comprehensive tests covering:
+  - Weighted percentage calculation with multiple criteria and weights
+  - Role-scoped visibility (participant before/after completion, admin anytime)
+  - Empty leaderboard (no scores)
+  - Multiple judges per team (judges_completed count)
+  - Authenticated user access after completion
+- TDD approach: wrote failing tests first, then implemented route
+- All 216 tests passing (1 skipped)
+
+### Learnings
+- **Drizzle ORDER BY with aliases**: Cannot reference SELECT alias in ORDER BY clause. Must repeat the full expression:
+  ```typescript
+  .orderBy(sql`ROUND(SUM(...) / SUM(...) * 100, 2) DESC`)  // ✓ Works
+  .orderBy(sql`weighted_percentage DESC`)                   // ✗ Fails: "no such column"
+  ```
+- **Anonymous access pattern**: `optionalAuth` + `requireRole('anonymous')` allows both authenticated and unauthenticated requests. However, in practice, all tests use authenticated requests (participant/admin tokens) because the middleware chain expects a user context for role resolution.
+- **Weighted scoring math**: Formula is `SUM(score * weight) / SUM(max_score * weight) * 100`, NOT `SUM((score/max_score) * weight) * 100`. The weights apply to raw scores, not percentages.
+- **Test calculation errors**: Always verify manual calculations! Initial test expected 83.78% but correct answer was 78.38% (20*0.5 + 15*0.3 = 14.5, not 15.5).
+- **Role-scoped visibility**: Implemented as application logic in route handler (not middleware), checking `role` and `hackathon.status` before executing query.
+- **Empty result handling**: Drizzle `.all()` returns empty array when no rows match, no special handling needed.
+- **COUNT DISTINCT**: Used `sql<number>` template with `COUNT(DISTINCT ${scores.judge_id})` to count unique judges per team.
+
+### Files Modified
+- `apps/api/src/routes/judging.ts`: Added leaderboard GET route (+30 lines)
+- `apps/api/src/__tests__/judging.test.ts`: Added 7 leaderboard tests (+200 lines)
+
+### Commit
+- Message: `feat(api): implement leaderboard aggregation with weighted scoring`
+- All tests passing, no LSP diagnostics errors
