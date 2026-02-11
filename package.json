@@ -21,6 +21,11 @@
     "secrets:staged": "lint-staged -q --allow-empty",
     "secrets:scan": "secretlint --maskSecrets --format compact ."
   },
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.25.0"
+    }
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260206.0",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
