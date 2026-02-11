@@ -37,13 +37,14 @@ export function ProfilePage() {
       .slice(0, 2);
   };
 
-  const formatDate = (dateString: string | undefined): string => {
+  const formatDateString = (dateString: string | undefined | null | Date): string => {
     if (!dateString) return 'Unknown';
-    return new Date(dateString).toLocaleDateString(undefined, {
+    const date = dateString instanceof Date ? dateString : new Date(dateString);
+    return date.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-    } as const);
+    });
   };
 
 
@@ -121,7 +122,7 @@ export function ProfilePage() {
                 <span className="text-[11px] font-medium uppercase tracking-wider text-white/40">
                   Member Since
                 </span>
-                <span className="text-sm font-medium text-white/90">{formatDate(user.createdAt as string)}</span>
+                <span className="text-sm font-medium text-white/90">{formatDateString(user.createdAt)}</span>
               </div>
             </div>
           </div>
