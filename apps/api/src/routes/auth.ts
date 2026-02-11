@@ -211,11 +211,28 @@ auth.get('/me', async (c) => {
     return authError(c, 'Invalid token', 'INVALID_TOKEN', 401);
   }
 
+  const db = createDbClient(c.env.DB);
+  const row = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, payload.sub as string))
+    .get();
+
+  if (!row) {
+    return authError(c, 'User not found', 'USER_NOT_FOUND', 404);
+  }
+
   return c.json({
     user: {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      avatarUrl: row.avatar_url,
+      provider: row.provider,
+      providerId: row.provider_id,
+      role: row.role,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     },
   });
 });

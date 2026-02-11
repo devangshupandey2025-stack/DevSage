@@ -9,7 +9,6 @@ import { HackathonDetailPage } from '@/pages/hackathon-detail';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
 import { ProfilePage } from '@/pages/profile';
-import { AboutPage } from '@/pages/about';
 import { NotFoundPage } from '@/pages/not-found';
 import { HomePage } from '@/pages/home';
 
@@ -27,7 +26,6 @@ export default function App() {
           <Route path="/hackathons/:id/teams" element={<TeamManagementPage />} />
           <Route path="/hackathons/:id/leaderboard" element={<LeaderboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/about" element={<AboutPage />} />
         </Route>
       </Route>
       

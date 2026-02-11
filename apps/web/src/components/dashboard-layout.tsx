@@ -59,9 +59,6 @@ export function DashboardLayout() {
                   Dashboard
                 </Link>
               )}
-              <Link to="/about" className={`transition ${navLinkClass('/about')}`}>
-                About
-              </Link>
             </nav>
           </div>
 
