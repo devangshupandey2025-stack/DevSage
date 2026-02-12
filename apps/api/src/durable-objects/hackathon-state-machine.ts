@@ -300,13 +300,16 @@ export class HackathonStateMachine extends DurableObject<Env> {
     if (!allowed.includes(targetStatus)) return false;
 
     const now = new Date().toISOString();
-    this.ctx.storage.sql.exec(
+    const cursor = this.ctx.storage.sql.exec(
       `UPDATE lifecycle_state SET status = ?, version = version + 1, transitioned_at = ? WHERE hackathon_id = ? AND version = ?`,
       targetStatus,
       now,
       currentState.hackathonId,
       currentState.version,
     );
+
+    // Verify the UPDATE actually modified a row (optimistic concurrency check)
+    if (cursor.rowsWritten === 0) return false;
 
     return true;
   }

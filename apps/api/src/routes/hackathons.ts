@@ -4,9 +4,10 @@ import { eq, ne, desc, count } from 'drizzle-orm';
 import { createDbClient, hackathons as hackathonsTable, organizerRoles } from '@devsage/db';
 import {
   CreateHackathonRequestSchema,
-  HACKATHON_STATUS_TRANSITIONS,
   type HackathonStatus,
   UpdateHackathonRequestSchema,
+  PaginationQuerySchema,
+  StatusTransitionRequestSchema,
 } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -42,8 +43,11 @@ function getStateMachineStub(env: AuthAppEnv['Bindings'], hackathonId: string) {
 
 hackathons.get('/', async (c) => {
   const db = createDbClient(c.env.DB);
-  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 10, 1), 100);
-  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+  const parsed = PaginationQuerySchema.safeParse({
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+  });
+  const { limit, offset } = parsed.success ? parsed.data : { limit: 10, offset: 0 };
 
   const whereCondition = ne(hackathonsTable.status, 'draft');
 
@@ -255,26 +259,14 @@ hackathons.patch(
   '/:slug/status',
   authMiddleware,
   requireRole('admin'),
+  zValidator('json', StatusTransitionRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
     const user = c.get('user');
     const db = createDbClient(c.env.DB);
+    const body = c.req.valid('json');
 
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return errorResponse(c, 400, 'INVALID_BODY', 'Invalid JSON body');
-    }
-
-    if (!isRecord(body) || typeof body.targetStatus !== 'string') {
-      return errorResponse(c, 400, 'INVALID_BODY', 'Expected { targetStatus }');
-    }
-
-    const targetStatus = body.targetStatus as string;
-    if (!Object.prototype.hasOwnProperty.call(HACKATHON_STATUS_TRANSITIONS, targetStatus)) {
-      return errorResponse(c, 400, 'INVALID_STATUS', `Unknown status: ${targetStatus}`);
-    }
+    const targetStatus = body.targetStatus;
 
     const smStub = getStateMachineStub(c.env, hackathon.id);
     const transitionResponse = await smStub.fetch('http://do/transition', {
@@ -282,7 +274,7 @@ hackathons.patch(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         targetStatus,
-        expectedVersion: typeof body.expectedVersion === 'number' ? body.expectedVersion : undefined,
+        expectedVersion: body.expectedVersion,
       }),
     });
 

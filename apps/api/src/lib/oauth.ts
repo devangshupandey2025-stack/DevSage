@@ -52,6 +52,13 @@ export interface GoogleOAuthProfile {
 
 const OAUTH_STATE_PREFIX = 'oauth:state:';
 const OAUTH_STATE_TTL_SECONDS = 600;
+const OAUTH_FETCH_TIMEOUT_MS = 10_000;
+
+function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OAUTH_FETCH_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
 
 export function generateOAuthState(): string {
   return crypto.randomUUID();
@@ -116,7 +123,7 @@ export async function exchangeGoogleCodeForToken(params: {
     grant_type: 'authorization_code',
   });
 
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -139,7 +146,7 @@ export async function exchangeGoogleCodeForToken(params: {
 }
 
 export async function fetchGoogleUserProfile(accessToken: string): Promise<GoogleOAuthProfile> {
-  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+  const response = await fetchWithTimeout('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -175,7 +182,7 @@ export async function exchangeGitHubCodeForToken(params: {
     redirect_uri: params.redirectUri,
   });
 
-  const response = await fetch('https://github.com/login/oauth/access_token', {
+  const response = await fetchWithTimeout('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -204,7 +211,7 @@ export async function fetchGitHubUserProfile(accessToken: string): Promise<GitHu
     'User-Agent': 'devsage-api',
   };
 
-  const userResponse = await fetch('https://api.github.com/user', {
+  const userResponse = await fetchWithTimeout('https://api.github.com/user', {
     headers: baseHeaders,
   });
   if (!userResponse.ok) {
@@ -213,7 +220,7 @@ export async function fetchGitHubUserProfile(accessToken: string): Promise<GitHu
 
   const user = (await userResponse.json()) as GitHubUserResponse;
 
-  const emailResponse = await fetch('https://api.github.com/user/emails', {
+  const emailResponse = await fetchWithTimeout('https://api.github.com/user/emails', {
     headers: baseHeaders,
   });
   if (!emailResponse.ok) {

@@ -35,5 +35,6 @@ export function clearSessionCookie(c: Context, frontendUrl: string): void {
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: '/',
     secure: production,
+    sameSite: production ? 'Strict' : 'Lax',
   });
 }

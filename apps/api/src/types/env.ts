@@ -4,7 +4,6 @@ export interface Env {
   HACKATHON_SM: DurableObjectNamespace;
   WEBHOOK_QUEUE: Queue;
   NOTIFICATION_QUEUE: Queue;
-  ASSETS?: R2Bucket;
   JWT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;

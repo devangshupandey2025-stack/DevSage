@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { and, eq } from 'drizzle-orm';
-import { createDbClient, teams, teamMembers } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { requireRole } from '../middleware/role.js';
+import { successResponse, errorResponse } from '../lib/response.js';
 
 const submissions = new Hono<AuthAppEnv>();
 
@@ -18,145 +18,95 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function parseLinkRepoBody(value: unknown): { repoFullName: string } | null {
-  if (!isRecord(value) || typeof value.repoFullName !== 'string' || value.repoFullName.length === 0) {
-    return null;
-  }
-
-  return { repoFullName: value.repoFullName };
-}
-
-submissions.use('*', authMiddleware);
-
-submissions.get('/:id/submissions', async (c) => {
-  const hackathonId = c.req.param('id');
-
-  const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
-  const stub = c.env.HACKATHON_SM.get(doId);
-  const response = await stub.fetch(`http://do/submissions/${hackathonId}`);
-  const payload = await readJson(response);
-
-  if (!response.ok) {
-    return c.json(
-      isRecord(payload)
-        ? payload
-        : {
-            error: 'Failed to fetch submissions',
-            code: 'SUBMISSIONS_FETCH_FAILED',
-          },
-      response.status as 400 | 401 | 403 | 404 | 409 | 500
-    );
-  }
-
-  return c.json(payload, 200);
-});
-
-submissions.get('/:id/submissions/:teamId', async (c) => {
-  const hackathonId = c.req.param('id');
-  const teamId = c.req.param('teamId');
-
-  const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
-  const stub = c.env.HACKATHON_SM.get(doId);
-  const response = await stub.fetch(`http://do/submission/${hackathonId}/${teamId}`);
-  const payload = await readJson(response);
-
-  if (!response.ok) {
-    return c.json(
-      isRecord(payload)
-        ? payload
-        : {
-            error: 'Failed to fetch submission',
-            code: 'SUBMISSION_FETCH_FAILED',
-          },
-      response.status as 400 | 401 | 403 | 404 | 409 | 500
-    );
-  }
-
-  return c.json(payload, 200);
-});
-
-submissions.post(
-  '/:hackathonId/teams/:teamId/repo',
+/**
+ * GET /:slug/submissions — list all submissions for a hackathon
+ * Requires: participant+ (via requireRole)
+ */
+submissions.get(
+  '/:slug/submissions',
+  authMiddleware,
+  requireRole('participant'),
   async (c) => {
-    const hackathonId = c.req.param('hackathonId');
-    const teamId = c.req.param('teamId');
-    const user = c.get('user');
-    let bodyRaw: unknown;
+    const hackathon = c.get('hackathon');
+
+    const doId = c.env.HACKATHON_SM.idFromName(hackathon.id);
+    const stub = c.env.HACKATHON_SM.get(doId);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
     try {
-      bodyRaw = await c.req.json();
-    } catch {
-      return c.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, 400);
+      const response = await stub.fetch(`http://do/submissions/${hackathon.id}`, {
+        signal: controller.signal,
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        const errPayload = isRecord(payload) ? payload : {};
+        return errorResponse(
+          c,
+          response.status as 400,
+          String(errPayload.code ?? 'SUBMISSIONS_FETCH_FAILED'),
+          String(errPayload.error ?? 'Failed to fetch submissions'),
+        );
+      }
+
+      return successResponse(c, payload);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return errorResponse(c, 504, 'TIMEOUT', 'Submission query timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
+  },
+);
 
-    const body = parseLinkRepoBody(bodyRaw);
-    if (!body) {
-      return c.json({ error: 'Expected { repoFullName }', code: 'INVALID_BODY' }, 400);
+/**
+ * GET /:slug/submissions/:teamId — get submission detail for a team
+ * Requires: participant+ (via requireRole)
+ */
+submissions.get(
+  '/:slug/submissions/:teamId',
+  authMiddleware,
+  requireRole('participant'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const teamId = c.req.param('teamId');
+
+    const doId = c.env.HACKATHON_SM.idFromName(hackathon.id);
+    const stub = c.env.HACKATHON_SM.get(doId);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    try {
+      const response = await stub.fetch(`http://do/submission/${hackathon.id}/${teamId}`, {
+        signal: controller.signal,
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        const errPayload = isRecord(payload) ? payload : {};
+        return errorResponse(
+          c,
+          response.status as 400,
+          String(errPayload.code ?? 'SUBMISSION_FETCH_FAILED'),
+          String(errPayload.error ?? 'Failed to fetch submission'),
+        );
+      }
+
+      return successResponse(c, payload);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return errorResponse(c, 504, 'TIMEOUT', 'Submission query timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    const db = createDbClient(c.env.DB);
-
-    const team = await db
-      .select({ id: teams.id })
-      .from(teams)
-      .where(and(eq(teams.id, teamId), eq(teams.hackathon_id, hackathonId)))
-      .get();
-
-    if (!team) {
-      return c.json({ error: 'Team not found', code: 'NOT_FOUND' }, 404);
-    }
-
-    const leader = await db
-      .select({ userId: teamMembers.user_id })
-      .from(teamMembers)
-      .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.role, 'leader')))
-      .get();
-
-    if (!leader || leader.userId !== user.sub) {
-      return c.json({ error: 'Only team leader can link repository', code: 'FORBIDDEN' }, 403);
-    }
-
-     const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
-     const stub = c.env.HACKATHON_SM.get(doId);
-     const linkResponse = await stub.fetch('http://do/link-repo', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        hackathonId,
-        teamId,
-        repoFullName: body.repoFullName,
-      }),
-    });
-
-    const linkPayload = await readJson(linkResponse);
-    if (!linkResponse.ok) {
-      return c.json(
-        isRecord(linkPayload)
-          ? linkPayload
-          : {
-              error: 'Failed to link repository',
-              code: 'REPO_LINK_FAILED',
-            },
-        linkResponse.status as 400 | 401 | 403 | 404 | 409 | 500
-      );
-    }
-
-    await c.env.KV.put(
-      `repo:${body.repoFullName}`,
-      JSON.stringify({
-        hackathonId,
-        teamId,
-      })
-    );
-
-    return c.json(
-      {
-        message: 'Repository linked',
-        repoFullName: body.repoFullName,
-      },
-      200
-    );
-  }
+  },
 );
 
 export default submissions;

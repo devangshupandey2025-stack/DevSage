@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, sql } from 'drizzle-orm';
 import { createDbClient, teams, teamMembers, users } from '@devsage/db';
-import { CreateTeamRequestSchema, JoinTeamRequestSchema, ConnectTeamRepoRequestSchema } from '@devsage/shared';
+import { CreateTeamRequestSchema, JoinTeamRequestSchema, ConnectTeamRepoRequestSchema, PaginationQuerySchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireRole, isRoleAtLeast } from '../middleware/role.js';
@@ -88,8 +88,11 @@ teamsRouter.post(
 teamsRouter.get('/:slug/teams', requireRole('participant'), async (c) => {
   const hackathon = c.get('hackathon');
   const db = createDbClient(c.env.DB);
-  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
-  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+  const parsed = PaginationQuerySchema.safeParse({
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+  });
+  const { limit, offset } = parsed.success ? parsed.data : { limit: 20, offset: 0 };
 
   const data = await db
     .select()

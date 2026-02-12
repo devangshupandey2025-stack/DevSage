@@ -677,7 +677,7 @@ describe('queue handlers', () => {
       expect(msg.teamId).toBe('team-1');
       expect(msg.hackathonId).toBe('hack-1');
       expect(msg.tagName).toBe('submission_v2');
-      expect(msg.version).toBe(2);
+      expect(msg.commitSha).toBeDefined();
     });
   });
 

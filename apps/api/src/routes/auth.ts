@@ -259,7 +259,7 @@ auth.get('/me', async (c) => {
 
 auth.post('/logout', (c) => {
   clearSessionCookie(c, c.env.FRONTEND_URL);
-  return c.json({ ok: true });
+  return successResponse(c, { message: 'Logged out' });
 });
 
 export default auth;

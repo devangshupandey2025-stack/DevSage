@@ -160,7 +160,7 @@ function normalizeCreateEvent(
   deliveryId: string,
   timestamp: string
 ): NormalizedTagCreateEvent | null {
-  const { ref, ref_type: refType, repository, sender } = payload;
+  const { ref, ref_type: refType, repository, sender, head_commit: headCommit } = payload;
 
   if (!isRecord(repository) || !isRecord(sender)) {
     return null;
@@ -179,13 +179,18 @@ function normalizeCreateEvent(
     return null;
   }
 
+  // Extract SHA from head_commit (GitHub create event) or master_branch sha
+  const sha = (isRecord(headCommit) && typeof headCommit.sha === 'string')
+    ? headCommit.sha
+    : (typeof payload.sha === 'string' ? payload.sha : '');
+
   return {
     type: 'tag_created',
     deliveryId,
     timestamp,
     repoFullName: repository.full_name,
     tagName: ref,
-    sha: '',
+    sha,
     senderLogin: sender.login,
   };
 }

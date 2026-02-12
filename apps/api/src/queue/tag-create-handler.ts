@@ -48,17 +48,26 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   const doId = env.HACKATHON_SM.idFromName(team.hackathon_id);
   const doStub = env.HACKATHON_SM.get(doId);
 
-  const doResponse = await doStub.fetch('http://do/accept-submission', {
-    method: 'POST',
-    body: JSON.stringify({
-      teamId: team.id,
-      submissionId,
-      tagName: event.tagName,
-      commitSha: event.sha,
-      timestamp: event.timestamp,
-      webhookDeliveryId: event.deliveryId,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+  let doResponse: Response;
+  try {
+    doResponse = await doStub.fetch('http://do/accept-submission', {
+      method: 'POST',
+      body: JSON.stringify({
+        teamId: team.id,
+        submissionId,
+        tagName: event.tagName,
+        commitSha: event.sha,
+        timestamp: event.timestamp,
+        webhookDeliveryId: event.deliveryId,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const doResult = await doResponse.json();
   if (!isRecord(doResult)) return;
@@ -108,7 +117,7 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
     teamId: team.id,
     hackathonId: team.hackathon_id,
     tagName: event.tagName,
-    version: tagMatch.version ?? 1,
+    commitSha: event.sha,
   });
 
    await insertAuditEvent(db, {

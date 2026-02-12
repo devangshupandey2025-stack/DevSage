@@ -38,7 +38,7 @@ app.use('*', async (c, next) => {
     c.header('Access-Control-Allow-Origin', origin);
     c.header('Access-Control-Allow-Credentials', 'true');
     c.header('Access-Control-Allow-Headers', 'Content-Type');
-    c.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    c.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     c.header('Vary', 'Origin');
   }
 
@@ -93,54 +93,62 @@ export default {
     }
   },
 
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    const now = new Date();
-    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-    const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    try {
+      const now = new Date();
+      const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-    // Find hackathons with upcoming deadlines (active status only)
-    const approaching = await env.DB.prepare(`
-      SELECT id, slug, title, submission_deadline FROM hackathons
-      WHERE status = 'active'
-      AND submission_deadline > ?
-      AND submission_deadline <= ?
-    `).bind(now.toISOString(), twentyFourHoursFromNow.toISOString()).all();
+      // Find hackathons with upcoming deadlines (active status only)
+      const approaching = await env.DB.prepare(`
+        SELECT id, slug, title, submission_deadline FROM hackathons
+        WHERE status = 'active'
+        AND submission_deadline > ?
+        AND submission_deadline <= ?
+      `).bind(now.toISOString(), twentyFourHoursFromNow.toISOString()).all();
 
-    for (const hackathon of approaching.results || []) {
-      const deadline = new Date(hackathon.submission_deadline as string);
-      const hoursRemaining = (deadline.getTime() - now.getTime()) / (60 * 60 * 1000);
+      for (const hackathon of approaching.results || []) {
+        const deadline = new Date(hackathon.submission_deadline as string);
+        const hoursRemaining = (deadline.getTime() - now.getTime()) / (60 * 60 * 1000);
 
-      // Determine reminder type (1h or 24h)
-      const reminderType = hoursRemaining <= 1 ? '1h' : '24h';
+        // Determine reminder type (1h or 24h)
+        const reminderType = hoursRemaining <= 1 ? '1h' : '24h';
+        const action = `deadline_reminder_${reminderType}`;
 
-      // Check if already sent via audit log
-      const alreadySent = await env.DB.prepare(`
-        SELECT 1 FROM audit_events
-        WHERE hackathon_id = ? AND action = ?
-      `).bind(hackathon.id, `deadline_reminder_${reminderType}`).first();
+        // Check if already sent via audit log
+        const alreadySent = await env.DB.prepare(`
+          SELECT 1 FROM audit_events
+          WHERE hackathon_id = ? AND action = ?
+          LIMIT 1
+        `).bind(hackathon.id, action).first();
 
-      if (!alreadySent) {
-        // Enqueue notification
-        await env.NOTIFICATION_QUEUE.send({
-          type: 'deadline_reminder',
-          hackathonId: hackathon.id,
-          hoursRemaining: Math.floor(hoursRemaining),
-        });
+        if (!alreadySent) {
+          // Record audit event first (idempotency marker)
+          await env.DB.prepare(`
+            INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            crypto.randomUUID(),
+            hackathon.id,
+            'cron',
+            action,
+            'hackathon',
+            hackathon.id,
+            now.toISOString()
+          ).run();
 
-        // Record audit event
-        await env.DB.prepare(`
-          INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(
-          crypto.randomUUID(),
-          hackathon.id,
-          'cron',
-          `deadline_reminder_${reminderType}`,
-          'hackathon',
-          hackathon.id,
-          now.toISOString()
-        ).run();
+          // Enqueue notification
+          await env.NOTIFICATION_QUEUE.send({
+            type: 'deadline_reminder',
+            hackathonId: hackathon.id as string,
+            hoursRemaining: Math.floor(hoursRemaining),
+          });
+        }
       }
+    } catch (error) {
+      console.error('Cron scheduled handler failed:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
     }
   },
 };

@@ -420,8 +420,35 @@ Submit now: ${env.FRONTEND_URL}/hackathons/${hackathonSlug}/team`,
  * @param message - Notification message from queue
  * @param env - Worker environment bindings
  */
+/**
+ * Generate a stable idempotency key for a notification message.
+ * Uses type + hackathonId + discriminator fields to produce a unique key.
+ */
+function notificationIdempotencyKey(message: NotificationMessage): string {
+  const parts = [message.type, message.hackathonId];
+  if ('teamId' in message && message.teamId) parts.push(message.teamId);
+  if ('judgeId' in message && message.judgeId) parts.push(message.judgeId);
+  if ('forcePushId' in message && message.forcePushId) parts.push(message.forcePushId);
+  if ('fromPhase' in message && message.fromPhase) parts.push(message.fromPhase);
+  if ('hoursRemaining' in message) parts.push(String(message.hoursRemaining));
+  return parts.join(':');
+}
+
 export async function handleNotification(message: NotificationMessage, env: Env): Promise<void> {
   const db = createDbClient(env.DB);
+  const idempotencyKey = notificationIdempotencyKey(message);
+
+  // Idempotency check: skip if already processed
+  const alreadySent = await env.DB.prepare(`
+    SELECT 1 FROM audit_events
+    WHERE action = 'notification.sent' AND entity_type = 'notification' AND entity_id = ?
+    LIMIT 1
+  `).bind(idempotencyKey).first();
+
+  if (alreadySent) {
+    console.warn('handleNotification: duplicate, skipping', { type: message.type, key: idempotencyKey });
+    return;
+  }
 
   // 1. Resolve recipients based on type
   const recipients = await resolveRecipients(message, env);
@@ -449,7 +476,7 @@ export async function handleNotification(message: NotificationMessage, env: Env)
       actorType: 'system',
       action,
       entityType: 'notification',
-      entityId: message.type,
+      entityId: idempotencyKey,
       details: {
         recipient: recipient.email,
         type: message.type,
