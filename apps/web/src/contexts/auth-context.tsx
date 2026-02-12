@@ -8,7 +8,7 @@ interface User {
   display_name: string;
   email: string | null;
   avatar_url: string | null;
-  createdAt: string;
+  created_at: string;
 }
 
 interface AuthContextType {

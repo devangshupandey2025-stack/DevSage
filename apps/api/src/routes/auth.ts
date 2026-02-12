@@ -150,10 +150,12 @@ auth.get('/callback/google', async (c) => {
     );
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    return c.redirect(c.env.FRONTEND_URL, 302);
+    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
+    return c.redirect(dashboardUrl, 302);
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('Google OAuth failed', err);
-    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', 'Google OAuth failed');
+    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', `Google OAuth failed: ${message}`);
   }
 });
 
@@ -200,10 +202,12 @@ auth.get('/callback/github', async (c) => {
     );
 
     setSessionCookie(c, token, c.env.FRONTEND_URL);
-    return c.redirect(c.env.FRONTEND_URL, 302);
+    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
+    return c.redirect(dashboardUrl, 302);
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('GitHub OAuth failed', err);
-    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', 'GitHub OAuth failed');
+    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', `GitHub OAuth failed: ${message}`);
   }
 });
 
@@ -247,6 +251,7 @@ auth.get('/me', async (c) => {
       display_name: user.display_name,
       email: user.email,
       avatar_url: user.avatar_url,
+      created_at: user.created_at,
     },
     roles,
   });

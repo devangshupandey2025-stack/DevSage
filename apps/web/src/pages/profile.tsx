@@ -1,5 +1,5 @@
 import { useAuth } from '@/contexts/auth-context';
-import { Mail, Shield, Calendar, Github, Globe } from 'lucide-react';
+import { Mail, Shield, Calendar, Github } from 'lucide-react';
 
 export function ProfilePage() {
   const { user, isLoading } = useAuth();
@@ -122,7 +122,7 @@ export function ProfilePage() {
                 <span className="text-[11px] font-medium uppercase tracking-wider text-white/40">
                   Member Since
                 </span>
-                <span className="text-sm font-medium text-white/90">{formatDateString(user.createdAt)}</span>
+                <span className="text-sm font-medium text-white/90">{formatDateString(user.created_at)}</span>
               </div>
             </div>
           </div>

@@ -284,7 +284,7 @@ describe('queue handlers', () => {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
       ).bind('sub-2', 'team-1', 'hack-1', 'submission_v2', 'b'.repeat(40), now, now, 0, 0, 2, 'validated', 'delivery-sub-2').run();
 
-      const mockQueue = { send: async () => {} };
+      const mockQueue = { send: async () => {}, sendBatch: async () => {} };
       const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
 
       const event: NormalizedPushEvent = {
@@ -319,7 +319,7 @@ describe('queue handlers', () => {
       await insertHackathon('hack-1', 'test-hack', 'user-1');
       await insertTeam('team-1', 'hack-1', 'Team Alpha', 'org/repo', 1);
 
-      const mockQueue = { send: async () => {} };
+      const mockQueue = { send: async () => {}, sendBatch: async () => {} };
       const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
 
       const event: NormalizedPushEvent = {
@@ -359,7 +359,8 @@ describe('queue handlers', () => {
       const mockQueue = { 
         send: async (msg: unknown) => { 
           queuedMessage = msg; 
-        } 
+        },
+        sendBatch: async () => {},
       };
       const mockEnv = { ...env, NOTIFICATION_QUEUE: mockQueue };
 

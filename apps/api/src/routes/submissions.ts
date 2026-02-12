@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
-import { createDbClient, teams } from '@devsage/db';
+import { createDbClient, teams, teamMembers } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 
@@ -95,10 +95,7 @@ submissions.post(
     const db = createDbClient(c.env.DB);
 
     const team = await db
-      .select({
-        id: teams.id,
-        captainId: teams.captain_id,
-      })
+      .select({ id: teams.id })
       .from(teams)
       .where(and(eq(teams.id, teamId), eq(teams.hackathon_id, hackathonId)))
       .get();
@@ -107,8 +104,14 @@ submissions.post(
       return c.json({ error: 'Team not found', code: 'NOT_FOUND' }, 404);
     }
 
-    if (team.captainId !== user.sub) {
-      return c.json({ error: 'Only team captain can link repository', code: 'FORBIDDEN' }, 403);
+    const leader = await db
+      .select({ userId: teamMembers.user_id })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.role, 'leader')))
+      .get();
+
+    if (!leader || leader.userId !== user.sub) {
+      return c.json({ error: 'Only team leader can link repository', code: 'FORBIDDEN' }, 403);
     }
 
      const doId = c.env.HACKATHON_SM.idFromName(hackathonId);
