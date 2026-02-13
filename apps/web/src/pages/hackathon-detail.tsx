@@ -64,11 +64,18 @@ interface ListResponse<T> {
 export function HackathonDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+
+  // Dynamic custom-page loader: any file placed under `src/pages/hackathons/*.tsx`
+  // will be picked up at build-time by Vite and can override the default template.
+  const pages = import.meta.glob('./hackathons/*.tsx');
+
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [registrations, setRegistrations] = useState<User[]>([]); // Organiser only
   const [loading, setLoading] = useState(true);
+  const [customPageComp, setCustomPageComp] = useState<React.ComponentType<any> | null>(null);
+
   
   // Participant actions
   const [teamName, setTeamName] = useState('');
@@ -80,6 +87,30 @@ export function HackathonDetailPage() {
       fetchData();
     }
   }, [id, user]);
+
+  // Try to load a custom per-hackathon page (if a file exists under src/pages/hackathons/<slug>.tsx)
+  useEffect(() => {
+    if (!id) return;
+    const slug = id; // this route uses slug
+    const key = `./hackathons/${slug}.tsx`;
+    if (pages[key]) {
+      (async () => {
+        try {
+          const mod = await pages[key]();
+          // Always extract .default if present, else assume mod itself is the component
+          setCustomPageComp(
+            (mod && typeof mod === 'object' && 'default' in mod && mod.default)
+              ? (mod.default as React.ComponentType<any>)
+              : (mod as React.ComponentType<any>)
+          );
+        } catch (err) {
+          console.error('Failed to load custom hackathon page', err);
+        }
+      })();
+    } else {
+      setCustomPageComp(null);
+    }
+  }, [id]);
 
   const fetchData = async () => {
     if (!id) return;
@@ -181,6 +212,12 @@ export function HackathonDetailPage() {
         <Skeleton className="h-64 w-full" />
       </div>
     );
+  }
+
+  // If a custom page component exists (file at src/pages/hackathons/<slug>.tsx), render it.
+  if (customPageComp) {
+    const Custom = customPageComp;
+    return <Custom hackathon={hackathon} />;
   }
 
   // derive accent color (fallback to neon green)

@@ -22,6 +22,9 @@ interface Hackathon {
   slug: string;
   title: string;
   description: string | null;
+  primary_color?: string | null;
+  banner_r2_key?: string | null;
+  logo_r2_key?: string | null;
   status: 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
   registration_opens: string;
   registration_closes: string;
@@ -103,49 +106,66 @@ const STATUS_PILL: Record<string, { label: string; bg: string; text: string }> =
 
 function HackathonCard({ hackathon }: { hackathon: Hackathon }) {
   const pill = STATUS_PILL[hackathon.status] ?? STATUS_PILL.draft;
+  const accent = hackathon.primary_color ?? '#CCFF00';
+
+  const heroStyle = hackathon.banner_r2_key
+    ? { background: `url('/r2/${hackathon.banner_r2_key}') center/cover no-repeat, linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25))` }
+    : { background: `linear-gradient(135deg, ${accent}20, #00000000)` };
 
   return (
     <Link to={`/hackathons/${hackathon.slug}`} className="group block">
       <motion.div
-        whileHover={{ y: -4 }}
-        className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/3 p-6 transition-colors hover:border-[#CCFF00]/30 hover:bg-white/6"
+        whileHover={{ y: -6 }}
+        className="relative overflow-hidden rounded-2xl border border-white/8 transition-shadow"
+        style={{ boxShadow: `0 6px 30px ${accent}20` }}
       >
-        {/* Glow on hover */}
-        <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-[#CCFF00]/0 blur-[80px] transition-all duration-500 group-hover:bg-[#CCFF00]/10" />
+        <div className="p-6" style={heroStyle}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider`} style={{ background: `${accent}22`, color: accent }}>
+                {pill.label}
+              </span>
 
-        {/* Status pill */}
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${pill.bg} ${pill.text}`}>
-          {pill.label}
-        </span>
+              {/* Expanded title area */}
+              <h3 className="mt-4 text-2xl md:text-3xl font-extrabold text-white line-clamp-2 transition-colors group-hover:text-opacity-95" style={{ color: accent }}>
+                {hackathon.title}
+              </h3>
 
-        {/* Title */}
-        <h3 className="mt-3 text-lg font-bold text-white line-clamp-1 group-hover:text-[#CCFF00] transition-colors">
-          {hackathon.title}
-        </h3>
+              <p className="mt-3 text-sm text-white/60 line-clamp-3">
+                {hackathon.description}
+              </p>
+            </div>
 
-        {/* Description */}
-        <p className="mt-1.5 text-sm text-white/50 line-clamp-2">
-          {hackathon.description}
-        </p>
+            <div className="shrink-0 self-start">
+              {hackathon.logo_r2_key ? (
+                <img src={`/r2/${hackathon.logo_r2_key}`} alt="logo" className="h-20 w-20 rounded-lg object-cover border" />
+              ) : (
+                <div className="h-16 w-16 rounded-lg bg-white/5 flex items-center justify-center text-xl font-bold text-white/60">S</div>
+              )}
+            </div>
+          </div>
 
-        {/* Meta row */}
-        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-white/40">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="h-3.5 w-3.5" />
-            Opens {formatDate(hackathon.registration_opens)}
-          </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            Due {formatDate(hackathon.submission_deadline)}
-          </span>
-          <span className="flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" />
-            Max {hackathon.max_team_size}
-          </span>
+          {/* Meta row — moved down */}
+          <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-white/40">
+            <span className="flex items-center gap-1">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Opens {formatDate(hackathon.registration_opens)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              Due {formatDate(hackathon.submission_deadline)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              Max {hackathon.max_team_size}
+            </span>
+          </div>
         </div>
 
-        {/* Arrow */}
-        <ArrowRight className="absolute bottom-6 right-6 h-5 w-5 text-white/20 transition-all group-hover:translate-x-1 group-hover:text-[#CCFF00]" />
+        {/* Card footer arrow */}
+        <div className="absolute bottom-4 right-4">
+          <ArrowRight className="h-5 w-5 text-white/20 transition-all group-hover:translate-x-1 group-hover:text-white/90" />
+        </div>
       </motion.div>
     </Link>
   );

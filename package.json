@@ -19,6 +19,7 @@
     "deploy:web": "pnpm --filter @devsage/web run deploy",
     "deploy:api:dev": "pnpm --filter @devsage/api run deploy:dev",
     "deploy:web:dev": "pnpm --filter @devsage/web run deploy:dev",
+    "generate:hackathons": "node ./scripts/generate-hackathon-pages.js" ,
     "prepare": "husky",
     "secrets:staged": "lint-staged -q --allow-empty",
     "secrets:scan": "secretlint --maskSecrets --format compact ."
