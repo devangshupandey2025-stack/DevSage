@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -189,6 +190,7 @@ function SkeletonCard() {
 /* ──────────── Main Page ──────────── */
 
 export function DashboardPage() {
+  const location = useLocation();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [hackathons, setHackathons] = useState<Hackathon[]>([]);
@@ -264,7 +266,7 @@ export function DashboardPage() {
   const meta = TAB_META[activeTab];
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10" key={location.key}>
       {/* Greeting */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}

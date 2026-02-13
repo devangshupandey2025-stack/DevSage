@@ -2,12 +2,22 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 export default function Hack001Page({ hackathon }: { hackathon: any }) {
-  const accent = hackathon?.primary_color ?? '#2DD4BF'; // glass-blue accent fallback
+    // ...existing code...
+    const accent = hackathon?.primary_color ?? '#2DD4BF'; // glass-blue accent fallback
+    // Back to Dashboard button
+    const backButton = (
+      <div className="mb-6">
+        <Link to="/dashboard" className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: accent, color: '#000' }}>
+          ← Back to Dashboard
+        </Link>
+      </div>
+    );
   const bgGradient = 'linear-gradient(135deg, rgba(6,78,59,0.45), rgba(2,6,23,0.6))';
 
   return (
     <div className="min-h-screen p-8" style={{ background: bgGradient }}>
       <div className="max-w-4xl mx-auto rounded-3xl border border-white/10 p-8" style={{ backdropFilter: 'blur(8px)', background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))' }}>
+        {backButton}
         <div className="flex items-start justify-between gap-6">
           <div>
             <h1 className="text-4xl md:text-5xl font-extrabold text-white leading-tight" style={{ color: accent }}>{hackathon?.title ?? 'Hackathon'}</h1>
@@ -41,9 +51,6 @@ export default function Hack001Page({ hackathon }: { hackathon: any }) {
             <div>
               <h3 className="text-sm text-white/60">Prizes</h3>
               <p className="mt-2 text-white/70">$10,000 — multiple categories</p>
-            </div>
-            <div className="mt-4">
-              <Link to="/dashboard" className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: accent, color: '#000' }}>Back to dashboard</Link>
             </div>
           </div>
         </div>
