@@ -15,6 +15,7 @@ const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ defaul
 const HackathonDetailPage = lazy(() => import('@/pages/hackathon-detail').then(m => ({ default: m.HackathonDetailPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then(m => ({ default: m.ProfilePage })));
 const OrganiserDashboardPage = lazy(() => import('@/pages/organizer-dashboard').then(m => ({ default: m.OrganiserDashboardPage })));
+const InviteAcceptPage = lazy(() => import('@/pages/invite-accept').then(m => ({ default: m.InviteAcceptPage })));
 
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/link-required" element={<LinkRequiredPage />} />
+        <Route path="/invites/:code" element={<InviteAcceptPage />} />
         
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
