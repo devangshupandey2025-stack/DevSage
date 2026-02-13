@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { ArrowLeft, FileText, Calendar, Ticket } from 'lucide-react';
 
 // Local interfaces matching snake_case API response
 interface Hackathon {
@@ -75,6 +77,11 @@ export function HackathonDetailPage() {
   const [registrations, setRegistrations] = useState<User[]>([]); // Organiser only
   const [loading, setLoading] = useState(true);
   const [customPageComp, setCustomPageComp] = useState<React.ComponentType<any> | null>(null);
+
+  // Local UI state for hero modals
+  const [openRegister, setOpenRegister] = useState(false);
+  const [openRules, setOpenRules] = useState(false);
+  const [openSchedule, setOpenSchedule] = useState(false);
 
   
   // Participant actions
@@ -225,31 +232,112 @@ export function HackathonDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Hero with per-hackathon theme */}
+      {/* Top bar: Back + quick actions */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/dashboard">
+              <ArrowLeft className="h-4 w-4 text-white/80" />
+            </Link>
+          </Button>
+          <div>
+            <div className="text-xs text-white/40">Hackathon</div>
+            <div className="text-lg font-semibold text-white">{hackathon.title}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Dialog open={openRules} onOpenChange={setOpenRules}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm"><FileText className="h-4 w-4 mr-2" /> Rules</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Rules — {hackathon.title}</DialogTitle>
+                <DialogDescription>Official rules and judging criteria.</DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 text-sm text-muted-foreground">(Rules content can be edited by organisers)</div>
+              <DialogFooter>
+                <Button onClick={() => setOpenRules(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={openSchedule} onOpenChange={setOpenSchedule}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm"><Calendar className="h-4 w-4 mr-2" /> Schedule</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Schedule — {hackathon.title}</DialogTitle>
+                <DialogDescription>Important dates and timeline</DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 text-sm text-muted-foreground">
+                <ul className="list-disc pl-5 space-y-2">
+                  <li>Registration opens: {formatDate(hackathon.registration_start_date)}</li>
+                  <li>Hacking starts: {formatDate(hackathon.hacking_start_date)}</li>
+                  <li>Submission deadline: {formatDate(hackathon.submission_deadline)}</li>
+                </ul>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setOpenSchedule(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+            <DialogTrigger asChild>
+              <Button size="sm" style={{ background: accent, color: '#000' }}><Ticket className="h-4 w-4 mr-2" /> Register</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Register for {hackathon.title}</DialogTitle>
+                <DialogDescription>Join as a participant or create a team.</DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 text-sm">
+                <p className="text-muted-foreground">Click below to create a team or use an invite code to join an existing team.</p>
+                <div className="mt-4 flex gap-2">
+                  <Button onClick={() => { setOpenRegister(false); /* focus/create flow in-page */ }}>Create a Team</Button>
+                  <Button variant="outline" onClick={() => { setOpenRegister(false); /* scroll to join form */ }}>Join with Code</Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setOpenRegister(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Hero with per-hackathon theme (updated visuals + content) */}
       <div
-        className="rounded-2xl overflow-hidden bg-linear-to-br p-6"
+        className="rounded-2xl overflow-hidden p-6"
         style={{
+          border: '1px solid rgba(255,255,255,0.04)',
           background: hackathon.banner_r2_key
-            ? `url('/r2/${hackathon.banner_r2_key}') center/cover no-repeat, linear-gradient(135deg, rgba(0,0,0,0.6), rgba(0,0,0,0.3))`
-            : `linear-gradient(135deg, ${accent}20 0%, #00000000 60%)`,
+            ? `linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)), url('/r2/${hackathon.banner_r2_key}') center/cover no-repeat`
+            : `linear-gradient(135deg, ${accent}10 0%, #00000000 60%)`,
         }}
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-black text-white tracking-tight">{hackathon.title}</h1>
-            <p className="mt-2 text-sm text-white/80 max-w-2xl">{hackathon.description}</p>
-            <div className="mt-4 flex items-center gap-3">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-5xl md:text-6xl font-extrabold text-white leading-tight" style={{ color: accent }}>{hackathon.title}</h1>
+            <p className="mt-4 text-lg text-white/80 max-w-3xl">{hackathon.description || 'No description provided.'}</p>
+
+            <div className="mt-6 flex flex-wrap items-center gap-4">
               <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" style={{ background: `${accent}22`, color: accent }}>
                 {hackathon.status.replace('_', ' ')}
               </span>
               <span className="text-sm text-white/60">Max team size: <strong className="text-white/90">{hackathon.max_team_size}</strong></span>
+              <span className="ml-2 text-sm text-white/60">Prizes: <strong className="text-white/90">$10,000</strong></span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          <div className="shrink-0 w-full md:w-auto">
             {hackathon.logo_r2_key ? (
-              <img src={`/r2/${hackathon.logo_r2_key}`} alt="logo" className="h-20 w-20 rounded-lg object-cover" />
+              <img src={`/r2/${hackathon.logo_r2_key}`} alt="logo" className="h-28 w-28 rounded-lg object-cover border border-white/6" />
             ) : (
-              <div className="h-20 w-20 rounded-lg bg-white/5 flex items-center justify-center text-xl font-bold text-white/80">S</div>
+              <div className="h-28 w-28 rounded-lg bg-white/5 flex items-center justify-center text-2xl font-bold text-white/80">S</div>
             )}
           </div>
         </div>
