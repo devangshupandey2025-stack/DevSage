@@ -804,7 +804,7 @@ const SplitSection = () => {
    TEAM / CREDITS SECTION
    ───────────────────────────────────────────── */
 const teamMembers = [
-  { name: 'L Kevin Daniel', role: 'Backend & Infrastructure' },
+  { name: 'L Kevin Daniel', role: 'Full Stack and infrastructure' },
   { name: 'Srijan Guchhait', role: 'System Architecture & Backend' },
   { name: 'Devangshu Pandey', role: 'Frontend' },
   { name: 'Ibhan Mukherjee', role: 'AI/ML' },
@@ -1041,7 +1041,12 @@ export function HomePage() {
       <Navbar />
       <Hero />
       <MarqueeText>
-        HACKATHONS — COLLABORATION — INNOVATION — COMMUNITY — BUILD THE FUTURE
+        <span className="block text-3xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-purple-500 to-pink-500 tracking-tight mb-2">
+    HACKATHONS — COLLABORATION • INNOVATION • COMMUNITY • BUILD THE FUTURE
+  </span>
+  <span className="block text-lg md:text-2xl font-medium text-gray-300 mt-2">
+    Empowering creators, coders, and dreamers to solve real-world challenges together.
+  </span>
       </MarqueeText>
       <BentoGrid />
       <HackathonGallery />
@@ -1052,3 +1057,4 @@ export function HomePage() {
     </div>
   );
 }
+export default HomePage;
