@@ -7,7 +7,6 @@ import { AuthCallbackPage } from '@/pages/auth-callback';
 import { LinkRequiredPage } from '@/pages/link-required';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
-import { JudgeDashboardPage } from '@/pages/judge-dashboard';
 import { NotFoundPage } from '@/pages/not-found';
 
 // Lazy-load route pages to reduce initial bundle size (code-splitting)
@@ -33,7 +32,6 @@ export default function App() {
             <Route path="/hackathons/:slug" element={<HackathonDetailPage />} />
             <Route path="/hackathons/:slug/teams" element={<TeamManagementPage />} />
             <Route path="/hackathons/:slug/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/hackathons/:slug/judge" element={<JudgeDashboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/organiser" element={<OrganiserDashboardPage />} />
           </Route>

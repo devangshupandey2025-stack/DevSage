@@ -11,7 +11,7 @@ import {
 
 interface Admin {
   id: string;
-  github_id: number;
+  user_id: string;
   github_username: string;
   display_name: string;
   email: string | null;

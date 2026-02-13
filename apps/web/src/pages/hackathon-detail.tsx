@@ -18,52 +18,64 @@ import { useCustomHackathonPage } from '@/hooks/use-custom-hackathon-page';
 // Local interfaces matching snake_case API response
 interface Hackathon {
   id: string;
-  slug?: string;
+  slug: string;
   title: string;
   description: string;
+  rules_md?: string | null;
   primary_color?: string | null;
   banner_r2_key?: string | null;
   logo_r2_key?: string | null;
-  status: 'DRAFT' | 'REGISTRATION_OPEN' | 'HACKING' | 'SUBMISSION_CLOSED' | 'COMPLETED';
-  registration_start_date: string;
-  hacking_start_date: string;
+  status: 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
+  registration_opens: string;
+  registration_closes: string;
   submission_deadline: string;
+  judging_starts?: string;
+  judging_ends?: string;
+  min_team_size?: number;
   max_team_size: number;
-  organiser_id: string;
+  max_teams?: number;
+  created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+interface TeamMember {
+  user_id: string;
+  role: 'leader' | 'member';
+  joined_at: string;
+  display_name: string;
 }
 
 interface Team {
   id: string;
   hackathon_id: string;
   name: string;
-  join_code: string;
-  captain_id: string;
+  repo_full_name?: string | null;
+  repo_url?: string | null;
+  invite_code: string;
+  bot_active?: boolean;
+  github_installation_id?: number | null;
   created_at: string;
-  member_count?: number; // From list endpoint
-  members?: { user_id: string }[]; // Optional if list returns it
+  members?: TeamMember[];
 }
 
 interface Submission {
   id: string;
   hackathon_id: string;
   team_id: string;
-  repo_full_name: string;
+  tag_name: string;
   commit_sha: string;
   submitted_at: string;
+  is_late: boolean;
+  is_final: boolean;
+  version: number;
   status: string;
 }
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
-
-interface ListResponse<T> {
-  data: T[];
-  total: number;
+interface ApiEnvelope<T> {
+  ok: boolean;
+  data: T;
+  meta?: { total?: number; limit?: number; offset?: number };
 }
 
 export function HackathonDetailPage() {
@@ -76,7 +88,6 @@ export function HackathonDetailPage() {
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [registrations, setRegistrations] = useState<User[]>([]); // Organiser only
   const [loading, setLoading] = useState(true);
   // Local UI state for hero modals
   const [openRegister, setOpenRegister] = useState(false);
@@ -102,18 +113,15 @@ export function HackathonDetailPage() {
     setLoading(true);
     try {
       // Parallel fetch
-      const promises: Promise<any>[] = [
-        apiRequest<Hackathon>(`/api/v1/hackathons/${id}`),
-        apiRequest<ListResponse<Team>>(`/api/v1/hackathons/${id}/teams`),
-      ];
+      const [hackathonRes, teamsRes, submissionsRes] = await Promise.all([
+        apiRequest<ApiEnvelope<Hackathon>>(`/api/v1/hackathons/${id}`),
+        apiRequest<ApiEnvelope<Team[]>>(`/api/v1/hackathons/${id}/teams`),
+        apiRequest<ApiEnvelope<Submission[]>>(`/api/v1/hackathons/${id}/submissions`),
+      ]);
 
-       // Fetch submissions (available to all users)
-       promises.push(apiRequest<Submission[]>(`/api/v1/hackathons/${id}/submissions`));
-
-       const results = await Promise.all(promises);
-       setHackathon(results[0]);
-       setTeams(results[1].data);
-       setSubmissions(results[2] || []);
+       setHackathon(hackathonRes.data);
+       setTeams(teamsRes.data);
+       setSubmissions(submissionsRes.data || []);
     } catch (error) {
       toast.error('Failed to load hackathon details');
       console.error(error);
@@ -146,9 +154,14 @@ export function HackathonDetailPage() {
     if (!id) return;
     setActionLoading(true);
     try {
-      await apiRequest(`/api/v1/hackathons/${id}/teams/join`, {
+      const matchingTeam = teams.find(t => t.invite_code === joinCode.trim());
+      if (!matchingTeam) {
+        toast.error('No team found with that invite code');
+        return;
+      }
+      await apiRequest(`/api/v1/hackathons/${id}/teams/${matchingTeam.id}/join`, {
         method: 'POST',
-        body: JSON.stringify({ joinCode }),
+        body: JSON.stringify({ inviteCode: joinCode.trim() }),
       });
       toast.success('Joined team!');
       setJoinCode('');
@@ -161,11 +174,11 @@ export function HackathonDetailPage() {
   };
 
   const handleLeaveTeam = async (teamId: string) => {
-    if (!id || !confirm('Are you sure you want to leave this team?')) return;
+    if (!id || !user || !confirm('Are you sure you want to leave this team?')) return;
     setActionLoading(true);
     try {
-      await apiRequest(`/api/v1/hackathons/${id}/teams/${teamId}/leave`, {
-        method: 'POST',
+      await apiRequest(`/api/v1/hackathons/${id}/teams/${teamId}/members/${user.id}`, {
+        method: 'DELETE',
       });
       toast.success('Left team');
       fetchData();
@@ -181,12 +194,8 @@ export function HackathonDetailPage() {
     return new Date(dateStr).toLocaleDateString() + ' ' + new Date(dateStr).toLocaleTimeString();
   };
 
-  // Find my team: check captain_id OR if members list exists and I'm in it
-  // Note: The list endpoint might not return members for all teams for participants
-  // But for the user's OWN team, maybe it does? Or we just assume captain for now.
-  // Ideally we'd have a better way, but for MVP:
-  const myTeam = teams.find(t => t.captain_id === user?.id) 
-    || teams.find(t => t.members?.some(m => m.user_id === user?.id));
+  // Find my team by checking the members array
+  const myTeam = teams.find(t => t.members?.some(m => m.user_id === user?.id));
 
   const mySubmission = myTeam ? submissions.find(s => s.team_id === myTeam.id) : null;
 
@@ -265,8 +274,8 @@ export function HackathonDetailPage() {
               </DialogHeader>
               <div className="mt-4 text-sm text-muted-foreground">
                 <ul className="list-disc pl-5 space-y-2">
-                  <li>Registration opens: {formatDate(hackathon.registration_start_date)}</li>
-                  <li>Hacking starts: {formatDate(hackathon.hacking_start_date)}</li>
+                  <li>Registration opens: {formatDate(hackathon.registration_opens)}</li>
+                  <li>Registration closes: {formatDate(hackathon.registration_closes)}</li>
                   <li>Submission deadline: {formatDate(hackathon.submission_deadline)}</li>
                 </ul>
               </div>
@@ -344,11 +353,11 @@ export function HackathonDetailPage() {
             <div className="pt-4 space-y-1 text-sm">
               <div className="flex justify-between border-b py-1">
                 <span>Registration Start:</span>
-                <span className="font-medium">{formatDate(hackathon.registration_start_date)}</span>
+                <span className="font-medium">{formatDate(hackathon.registration_opens)}</span>
               </div>
               <div className="flex justify-between border-b py-1">
-                <span>Hacking Start:</span>
-                <span className="font-medium">{formatDate(hackathon.hacking_start_date)}</span>
+                <span>Registration Closes:</span>
+                <span className="font-medium">{formatDate(hackathon.registration_closes)}</span>
               </div>
               <div className="flex justify-between border-b py-1">
                 <span>Deadline:</span>
@@ -409,13 +418,13 @@ export function HackathonDetailPage() {
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-lg font-bold">{myTeam.name}</h3>
-                    <p className="text-sm text-muted-foreground">Joined as {myTeam.captain_id === user?.id ? 'Captain' : 'Member'}</p>
+                    <p className="text-sm text-muted-foreground">Joined as {myTeam.members?.some(m => m.user_id === user?.id && m.role === 'leader') ? 'Captain' : 'Member'}</p>
                   </div>
                   
                   {mySubmission ? (
                     <div className="bg-muted p-3 rounded-md">
                       <p className="text-sm font-medium">Submission Received</p>
-                      <p className="text-xs font-mono">{mySubmission.repo_full_name}</p>
+                      <p className="text-xs font-mono">{mySubmission.tag_name}</p>
                       <Badge variant="outline" className="mt-1">{mySubmission.status}</Badge>
                     </div>
                   ) : (
@@ -476,80 +485,7 @@ export function HackathonDetailPage() {
         )}
       </div>
 
-       {/* Organiser: Management Views */}
-       {false && (
-         <Tabs defaultValue="teams" className="w-full">
-          <TabsList>
-            <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
-            <TabsTrigger value="submissions">Submissions ({submissions.length})</TabsTrigger>
-            <TabsTrigger value="registrations">Registrations ({registrations.length})</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="teams" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {teams.map(team => (
-                <Card key={team.id}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">{team.name}</CardTitle>
-                    <CardDescription>Created {new Date(team.created_at).toLocaleDateString()}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm">Members: {team.member_count ?? '?'}</p>
-                    <p className="text-sm">Captain ID: {team.captain_id.substring(0, 8)}...</p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button asChild size="sm" variant="outline" className="w-full">
-                       <Link to={`/hackathons/${id}/teams`}>View Details</Link>
-                       {/* Note: In real app, might want specific team detail link for organiser, but reusing team management page for now if it supports view only */}
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))}
-              {teams.length === 0 && <p className="text-muted-foreground">No teams yet.</p>}
-            </div>
-          </TabsContent>
 
-          <TabsContent value="submissions" className="mt-4">
-             <div className="space-y-4">
-               {submissions.map(sub => (
-                 <Card key={sub.id}>
-                   <CardHeader className="pb-2">
-                     <div className="flex justify-between">
-                        <CardTitle className="text-base font-mono">{sub.repo_full_name}</CardTitle>
-                        <Badge>{sub.status}</Badge>
-                     </div>
-                   </CardHeader>
-                   <CardContent className="text-sm text-muted-foreground">
-                      Commit: <span className="font-mono text-foreground">{sub.commit_sha.substring(0, 7)}</span>
-                      <br />
-                      Submitted: {formatDate(sub.submitted_at)}
-                   </CardContent>
-                 </Card>
-               ))}
-               {submissions.length === 0 && <p className="text-muted-foreground">No submissions yet.</p>}
-             </div>
-          </TabsContent>
-
-          <TabsContent value="registrations" className="mt-4">
-            <Card>
-              <CardContent className="pt-6">
-                <ul className="space-y-2">
-                  {registrations.map(reg => (
-                    <li key={reg.id} className="flex justify-between items-center border-b pb-2 last:border-0">
-                      <div>
-                        <p className="font-medium">{reg.name}</p>
-                        <p className="text-sm text-muted-foreground">{reg.email}</p>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-mono">{reg.id.substring(0, 8)}...</span>
-                    </li>
-                  ))}
-                  {registrations.length === 0 && <p className="text-muted-foreground">No registrations yet.</p>}
-                </ul>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { DashboardPage } from '@/pages/dashboard';
 import { ProfilePage } from '@/pages/profile';
 import { InviteAcceptPage } from '@/pages/invite-accept';
 import { AuthCallbackPage } from '@/pages/auth-callback';
+import { HackathonManagePage } from '@/pages/hackathon-manage';
+import { JudgeScoringPage } from '@/pages/judge-scoring';
 
 export default function App() {
   return (
@@ -17,6 +19,8 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/hackathons/:slug" element={<HackathonManagePage />} />
+          <Route path="/hackathons/:slug/judge" element={<JudgeScoringPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
       </Route>
