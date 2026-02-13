@@ -90,7 +90,7 @@ pnpm install
 pnpm dev
 ```
 
-> The API requires a `.dev.vars` file for secrets (OAuth credentials, JWT keys, etc.). See [docs/setup.md](docs/setup.md) for full instructions.
+> The API requires a `.dev.vars` file for secrets (OAuth credentials, JWT keys, etc.). See [docs/v2/setup.md](docs/v2/setup.md) for full instructions.
 
 ## Scripts
 
@@ -107,11 +107,11 @@ pnpm dev
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — System architecture and design decisions
-- [Setup](docs/setup.md) — Developer setup guide
-- [Deployment](docs/deployment.md) — Production deployment
-- [Secrets](docs/secrets.md) — Secrets management conventions
-- [Contributing](docs/contributing.md) — Contributing guidelines
+- [Architecture](docs/v2/architecture/00-overview.md) — System architecture and design decisions
+- [Setup](docs/v2/setup.md) — Developer setup guide
+- [Deployment](docs/v2/deployment.md) — Production deployment
+- [Secrets](docs/v2/secrets.md) — Secrets management conventions
+- [Contributing](docs/v2/contributing.md) — Contributing guidelines
 
 ## Project Status
 

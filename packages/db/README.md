@@ -68,7 +68,7 @@ const allUsers = await db.select().from(users);
 - **SQL columns**: `snake_case` in the database.
 - **Drizzle references**: `camelCase` in TypeScript schema definitions.
 
-For full table schemas and ERD, see `docs/architecture.md`.
+For full table schemas and ERD, see `docs/v2/architecture/10-data-model.md`.
 
 ## Scripts
 

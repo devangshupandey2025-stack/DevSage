@@ -116,7 +116,7 @@ DevSage enforces secret scanning at multiple stages to prevent accidental creden
 - **Pre-push hook:** A full repository scan runs before any push. Pushes are blocked if secrets are detected.
 - **Manual scan:** Run `pnpm secrets:scan` for a full repo scan, or `pnpm secrets:staged` to scan only staged files.
 
-See [docs/secrets.md](./secrets.md) for the full secret handling conventions.
+See [secrets.md](./secrets.md) for the full secret handling conventions.
 
 ## Troubleshooting
 

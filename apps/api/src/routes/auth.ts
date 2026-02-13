@@ -104,7 +104,9 @@ async function handleOAuthSuccess(
 
   setSessionCookie(c, token, frontendOrigin);
 
-  const dashboardUrl = new URL('/dashboard', frontendOrigin).toString();
+  // Each app has its own landing page after login
+  const landingPath = appOrigin === 'admin' ? '/' : '/dashboard';
+  const dashboardUrl = new URL(landingPath, frontendOrigin).toString();
   return c.redirect(dashboardUrl, 302);
 }
 
@@ -278,7 +280,9 @@ auth.get('/me', async (c) => {
 });
 
 auth.post('/logout', (c) => {
-  clearSessionCookie(c, c.env.FRONTEND_URL);
+  const origin = c.req.header('Origin');
+  const frontendUrl = resolveFrontendOrigin(origin, c.env);
+  clearSessionCookie(c, frontendUrl);
   return successResponse(c, { message: 'Logged out' });
 });
 

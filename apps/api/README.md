@@ -29,7 +29,7 @@ pnpm dev
 pnpm --filter @devsage/api dev
 ```
 
-Local development requires a `.dev.vars` file with secrets (gitignored). See `docs/setup.md` for required values.
+Local development requires a `.dev.vars` file with secrets (gitignored). See `docs/v2/setup.md` for required values.
 
 ## Worker Bindings
 
@@ -158,4 +158,4 @@ Configuration lives in `wrangler.jsonc`. Never run wrangler commands from the re
 - `console.log` is banned -- use `console.warn` or `console.error`.
 - All timestamps are UTC ISO-8601 (`new Date().toISOString()`).
 
-For full architecture details, see `docs/architecture.md`. For database schemas, see `packages/db`.
+For full architecture details, see `docs/v2/architecture/00-overview.md`. For database schemas, see `packages/db`.
