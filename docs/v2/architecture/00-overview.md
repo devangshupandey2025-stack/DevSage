@@ -72,58 +72,50 @@ graph TD
 DevSage is organized around 8 core business domains:
 
 ```mermaid
-graph TD
-    DS((DevSage))
-
-    DS --- AUTH["Authentication"]
-    DS --- HL["Hackathon Lifecycle"]
-    DS --- TM["Team Management"]
-    DS --- SUB["Submissions"]
-    DS --- JDG["Judging"]
-    DS --- GHI["GitHub Integration"]
-    DS --- NTF["Notifications"]
-    DS --- AUD["Audit & Compliance"]
-
-    AUTH --- AUTH1["GitHub OAuth"]
-    AUTH --- AUTH2["Google OAuth"]
-    AUTH --- AUTH3["JWT Sessions"]
-    AUTH --- AUTH4["Account Linking"]
-
-    HL --- HL1["7-State Machine"]
-    HL --- HL2["Phase Transitions"]
-    HL --- HL3["Deadline Enforcement"]
-    HL --- HL4["Durable Objects"]
-
-    TM --- TM1["Registration"]
-    TM --- TM2["Invite Codes"]
-    TM --- TM3["Repo Linking"]
-    TM --- TM4["Member Roles"]
-
-    SUB --- SUB1["Tag-Based Capture"]
-    SUB --- SUB2["Exactly-Once Locking"]
-    SUB --- SUB3["Version Tracking"]
-    SUB --- SUB4["Late Detection"]
-
-    JDG --- JDG1["Judge Invitations"]
-    JDG --- JDG2["Rubric Criteria"]
-    JDG --- JDG3["Round-Robin Assignment"]
-    JDG --- JDG4["Weighted Scoring"]
-    JDG --- JDG5["Leaderboard"]
-
-    GHI --- GHI1["Webhook Pipeline"]
-    GHI --- GHI2["Commit Tracking"]
-    GHI --- GHI3["Force Push Detection"]
-    GHI --- GHI4["Bot Status Posting"]
-
-    NTF --- NTF1["Email via SMTP"]
-    NTF --- NTF2["9 Event Types"]
-    NTF --- NTF3["Deadline Reminders"]
-    NTF --- NTF4["Recipient Resolution"]
-
-    AUD --- AUD1["Append-Only Log"]
-    AUD --- AUD2["4 Actor Types"]
-    AUD --- AUD3["Decision Traceability"]
-    AUD --- AUD4["AI Review Provenance"]
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e8e8ff', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#6366f1', 'lineColor': '#6366f1', 'secondaryColor': '#f0fdf4', 'secondaryTextColor': '#1a1a2e', 'tertiaryColor': '#fef3c7', 'tertiaryTextColor': '#1a1a2e'}}}%%
+mindmap
+  root((DevSage))
+    **Authentication**
+      GitHub OAuth
+      Google OAuth
+      JWT Sessions
+      Account Linking
+    **Hackathon Lifecycle**
+      7-State Machine
+      Phase Transitions
+      Deadline Enforcement
+      Durable Objects
+    **Team Management**
+      Registration
+      Invite Codes
+      Repo Linking
+      Member Roles
+    **Submissions**
+      Tag-Based Capture
+      Exactly-Once Locking
+      Version Tracking
+      Late Detection
+    **Judging**
+      Judge Invitations
+      Rubric Criteria
+      Round-Robin Assignment
+      Weighted Scoring
+      Leaderboard
+    **GitHub Integration**
+      Webhook Pipeline
+      Commit Tracking
+      Force Push Detection
+      Bot Status Posting
+    **Notifications**
+      Email via SMTP
+      9 Event Types
+      Deadline Reminders
+      Recipient Resolution
+    **Audit & Compliance**
+      Append-Only Log
+      4 Actor Types
+      Decision Traceability
+      AI Review Provenance
 ```
 
 ---
