@@ -22,6 +22,7 @@
     "deploy:api:dev": "pnpm --filter @devsage/api run deploy:dev",
     "deploy:web:dev": "pnpm --filter @devsage/web run deploy:dev",
     "generate:hackathons": "node ./scripts/generate-hackathon-pages.js",
+    "generate:site": "node ./scripts/generate-hackathon-site.js",
     "deploy:platform:dev": "pnpm --filter @devsage/platform run deploy:dev",
     "deploy:admin:dev": "pnpm --filter @devsage/admin run deploy:dev",
     "prepare": "husky",

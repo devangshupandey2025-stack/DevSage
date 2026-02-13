@@ -64,6 +64,16 @@ export function OrganiserDashboardPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   
+  const [siteDialogOpen, setSiteDialogOpen] = useState(false);
+  const [selectedHackathon, setSelectedHackathon] = useState<Hackathon | null>(null);
+  const [siteConfig, setSiteConfig] = useState({
+    accentColor: '#2DD4BF',
+    prizePool: '$10,000',
+    logoUrl: '',
+    rules: '',
+  });
+  const [generatedCommand, setGeneratedCommand] = useState('');
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -154,6 +164,53 @@ export function OrganiserDashboardPage() {
     } catch (error) {
       toast.error('Failed to advance phase');
       console.error(error);
+    }
+  };
+
+  const openSiteDialog = (hackathon: Hackathon) => {
+    setSelectedHackathon(hackathon);
+    setSiteConfig({
+      accentColor: '#2DD4BF',
+      prizePool: '$10,000',
+      logoUrl: '',
+      rules: '',
+    });
+    setGeneratedCommand('');
+    setSiteDialogOpen(true);
+  };
+
+  const handleSiteConfigChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setSiteConfig(prev => ({ ...prev, [name]: value }));
+  };
+
+  const generateCommand = () => {
+    if (!selectedHackathon) return;
+    const config = {
+      slug: selectedHackathon.id,
+      title: selectedHackathon.title,
+      description: selectedHackathon.description,
+      accentColor: siteConfig.accentColor,
+      registrationStart: selectedHackathon.registration_start_date,
+      hackingStart: selectedHackathon.hacking_start_date,
+      submissionDeadline: selectedHackathon.submission_deadline,
+      maxTeamSize: selectedHackathon.max_team_size,
+      prizePool: siteConfig.prizePool,
+      apiOrigin: 'https://api.devsage.org',
+      logoUrl: siteConfig.logoUrl || null,
+      bannerUrl: null,
+      rules: siteConfig.rules || null,
+    };
+    const base64 = btoa(JSON.stringify(config));
+    setGeneratedCommand(`pnpm generate:site --config '${base64}'`);
+  };
+
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedCommand);
+      toast.success('Command copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
     }
   };
 
@@ -299,6 +356,13 @@ export function OrganiserDashboardPage() {
                   </Button>
                 )}
               </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => openSiteDialog(hackathon)}
+              >
+                Generate Site
+              </Button>
             </CardFooter>
           </Card>
         ))}
@@ -308,6 +372,101 @@ export function OrganiserDashboardPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={siteDialogOpen} onOpenChange={setSiteDialogOpen}>
+        <DialogContent className="sm:max-w-150 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generate Hackathon Site</DialogTitle>
+            <DialogDescription>
+              Configure the landing page for {selectedHackathon?.title}. The generated command will create a GitHub repo and deploy to Cloudflare.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Accent Color</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="color"
+                    name="accentColor"
+                    value={siteConfig.accentColor}
+                    onChange={handleSiteConfigChange}
+                    className="h-9 w-14 rounded border border-input cursor-pointer bg-transparent"
+                  />
+                  <Input
+                    name="accentColor"
+                    value={siteConfig.accentColor}
+                    onChange={handleSiteConfigChange}
+                    placeholder="#2DD4BF"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Prize Pool</label>
+                <Input
+                  name="prizePool"
+                  value={siteConfig.prizePool}
+                  onChange={handleSiteConfigChange}
+                  placeholder="$10,000"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Logo URL</label>
+              <Input
+                name="logoUrl"
+                value={siteConfig.logoUrl}
+                onChange={handleSiteConfigChange}
+                placeholder="https://example.com/logo.png (optional)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Rules / Additional Info</label>
+              <textarea
+                name="rules"
+                value={siteConfig.rules}
+                onChange={handleSiteConfigChange}
+                placeholder="Optional rules or additional information..."
+                className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                rows={3}
+              />
+            </div>
+
+            <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+              <p><strong>Hackathon:</strong> {selectedHackathon?.title}</p>
+              <p><strong>Slug:</strong> {selectedHackathon?.id}</p>
+              <p><strong>Status:</strong> {selectedHackathon?.status}</p>
+              <p><strong>Registration:</strong> {selectedHackathon?.registration_start_date ? new Date(selectedHackathon.registration_start_date).toLocaleDateString() : '-'}</p>
+              <p><strong>Deadline:</strong> {selectedHackathon?.submission_deadline ? new Date(selectedHackathon.submission_deadline).toLocaleDateString() : '-'}</p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button onClick={generateCommand} className="w-full">
+              Generate Command
+            </Button>
+
+            {generatedCommand && (
+              <div className="w-full space-y-2">
+                <textarea
+                  readOnly
+                  value={generatedCommand}
+                  className="w-full rounded-md border border-input bg-black/50 p-3 text-xs font-mono text-green-400 focus:outline-none"
+                  rows={3}
+                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                />
+                <Button variant="outline" className="w-full" onClick={copyCommand}>
+                  Copy Command
+                </Button>
+              </div>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

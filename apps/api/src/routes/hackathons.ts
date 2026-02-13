@@ -10,8 +10,8 @@ import {
   StatusTransitionRequestSchema,
 } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { requireRole } from '../middleware/role.js';
+import { authMiddleware, optionalAuth } from '../middleware/auth.js';
+import { requireRole, resolveRole, isRoleAtLeast } from '../middleware/role.js';
 import { requireOrganizer } from '../middleware/require-organizer.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
@@ -63,91 +63,30 @@ hackathons.get('/', async (c) => {
   return paginatedResponse(c, data, total, limit, offset);
 });
 
-hackathons.get('/:slug', async (c) => {
+hackathons.get('/:slug', optionalAuth, async (c) => {
   const slug = c.req.param('slug');
   const db = createDbClient(c.env.DB);
-  let userId: string | undefined = undefined;
-  let userRole: string | undefined = undefined;
 
-  // Try to get user from auth (if present)
-  try {
-    const token = c.req.header('cookie')?.match(/session=([^;]+)/)?.[1];
-    if (token) {
-      // Use the same JWT verify logic as authMiddleware
-      const { verifyJWT } = await import('../lib/jwt.js');
-      const payload = await verifyJWT(token, c.env.JWT_SECRET);
-      if (payload && payload.sub) {
-        userId = payload.sub;
-      }
-    }
-  } catch {}
-
-  let hackathon;
-  // Fetch hackathon ID first
-  let hackathonId: string | undefined = undefined;
-  try {
-    const hackathonIdResult = await db
-      .select({ id: hackathonsTable.id })
-      .from(hackathonsTable)
-      .where(eq(hackathonsTable.slug, slug))
-      .get();
-    hackathonId = hackathonIdResult?.id;
-  } catch (err) {
-    console.error('Error fetching hackathonId:', err);
-    return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to fetch hackathonId');
-  }
-
-  if (userId && hackathonId) {
-    try {
-      // Check if user is an organizer (owner, admin, moderator) for this hackathon
-      const orgRole = await db
-        .select({ role: organizerRoles.role })
-        .from(organizerRoles)
-        .where(
-          and(
-            eq(organizerRoles.hackathon_id, hackathonId),
-            eq(organizerRoles.user_id, userId)
-          )
-        )
-        .get();
-      if (orgRole && ['owner', 'admin', 'moderator'].includes(orgRole.role)) {
-        // Organizer: can see any hackathon (including draft)
-        hackathon = await db
-          .select()
-          .from(hackathonsTable)
-          .where(eq(hackathonsTable.slug, slug))
-          .get();
-      }
-    } catch (err) {
-      console.error('Error checking organizer role:', err);
-      return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to check organizer role');
-    }
-  }
-  if (!hackathon) {
-    try {
-      // Fallback: only allow non-draft hackathons
-      hackathon = await db
-        .select()
-        .from(hackathonsTable)
-        .where(
-          and(
-            eq(hackathonsTable.slug, slug),
-            ne(hackathonsTable.status, 'draft')
-          )
-        )
-        .get();
-    } catch (err) {
-      console.error('Error fetching fallback hackathon:', err);
-      return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to fetch hackathon');
-    }
-  }
-  // If hackathonId is missing, return not found
-  if (!hackathonId) {
-    return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
-  }
+  const hackathon = await db
+    .select()
+    .from(hackathonsTable)
+    .where(eq(hackathonsTable.slug, slug))
+    .get();
 
   if (!hackathon) {
     return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+  }
+
+  // Draft hackathons are only visible to organizers (owner/admin/moderator)
+  if (hackathon.status === 'draft') {
+    const user = c.get('user');
+    if (!user) {
+      return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+    }
+    const role = await resolveRole(user.sub, hackathon.id, db);
+    if (!isRoleAtLeast(role, 'moderator')) {
+      return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+    }
   }
 
   return successResponse(c, hackathon);

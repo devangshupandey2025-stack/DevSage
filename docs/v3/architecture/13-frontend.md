@@ -1,223 +1,906 @@
 # 13 — Frontend Architecture
 
-> React 18 single-page application with Vite, Tailwind CSS v4, and shadcn/ui. Deployed as Cloudflare Workers Static Assets. Serves participant dashboards, organizer tools, and judge interfaces for the DevSage hackathon platform.
+> DevSage splits its frontend into three independently deployed React SPAs — one for participants, one for organizers, and one for internal platform administration. All three apps share a common tech stack and component library, communicating exclusively with a single Hono API Worker at `apps/api`.
 
-**Related docs:** [Authentication](./01-authentication.md) | [API Design](./11-api-design.md) | [Infrastructure](./12-infrastructure.md) | [Roles & Permissions](./06-roles-permissions.md)
+**Related docs:** [Authentication](./01-authentication.md) | [API Design](./11-api-design.md) | [Infrastructure](./12-infrastructure.md) | [Roles & Permissions](./06-roles-permissions.md) | [Real-time](./14-real-time.md)
 
 ---
 
-## Current Frontend Architecture (v2)
+## Frontend Topology
 
-### Tech Stack
+DevSage's frontend is not a single monolith. It is three purpose-built applications, each serving a distinct audience with different feature sets, security boundaries, and deployment cadences.
+
+```mermaid
+graph TD
+    subgraph Frontend["Frontend — 3 Independent SPAs"]
+        WEB["apps/web<br/>devsage.org<br/>Participant Experience"]
+        PLAT["apps/platform<br/>platform.devsage.org<br/>Organizer Experience"]
+        ADMIN["apps/admin<br/>admin.devsage.org<br/>Internal Administration"]
+    end
+
+    subgraph Backend["Backend — Single API"]
+        API["apps/api<br/>api.devsage.org<br/>Hono Worker"]
+    end
+
+    subgraph Packages["Shared Packages"]
+        UI["packages/ui<br/>Component Library"]
+        SHARED["packages/shared<br/>Zod Schemas + Types"]
+        RT["packages/realtime<br/>WebSocket Client SDK"]
+    end
+
+    WEB -->|"HTTPS REST + WebSocket"| API
+    PLAT -->|"HTTPS REST + WebSocket"| API
+    ADMIN -->|"HTTPS REST"| API
+
+    WEB --> UI
+    WEB --> SHARED
+    WEB --> RT
+
+    PLAT --> UI
+    PLAT --> SHARED
+    PLAT --> RT
+
+    ADMIN --> UI
+    ADMIN --> SHARED
+```
+
+### Why Three Apps
+
+| Reason | Detail |
+|--------|--------|
+| **Security isolation** | Admin tooling (impersonation, user bans, system config) is never shipped to participant or organizer browsers. Attack surface is minimized per app |
+| **Independent deployment** | Ship an organizer bugfix without touching participant code. Different release cadences per audience |
+| **Bundle size** | Each app only ships the code its users need. Participants never download organizer analytics or admin moderation tools |
+| **Access control** | Each app has its own `ProtectedRoute` logic with audience-appropriate role checks. No shared auth state leaks across apps |
+| **Team ownership** | Different teams or contributors can own different apps without merge conflicts on shared routing or layout code |
+
+### App Summary
+
+| App | Package | Audience | Port (dev) | Production URL | Auth |
+|-----|---------|----------|------------|----------------|------|
+| `apps/web` | `@devsage/web` | Hackathon participants, judges, public visitors | 5173 | `devsage.org` | OAuth (GitHub + Google) → JWT cookie |
+| `apps/platform` | `@devsage/platform` | Hackathon organizers | 5174 | `platform.devsage.org` | OAuth → JWT cookie (organizer invite required) |
+| `apps/admin` | `@devsage/admin` | DevSage internal team | 5175 | `admin.devsage.org` | OAuth → JWT cookie (team-member only) |
+
+---
+
+## Shared Tech Stack
+
+All three apps share the same foundation. Consistency is enforced via `packages/config` (shared tsconfig + ESLint).
 
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
-| Framework | React | 18.3 | Component model, hooks, Suspense |
+| Framework | React | 18.x | Component model, hooks, Suspense |
 | Build tool | Vite | 6.x | Dev server, HMR, production bundling |
 | Routing | React Router | 7.x | Client-side routing, nested layouts |
 | Styling | Tailwind CSS | 4.x | Utility-first CSS with CSS variables |
-| Components | shadcn/ui | latest | Radix-based accessible primitives |
+| Components | shadcn/ui (via `packages/ui`) | latest | Radix-based accessible primitives |
 | Animations | Framer Motion | 11.x | Page transitions, interactive effects |
-| Icons | Lucide React | 0.468 | Consistent icon set |
-| Toasts | Sonner | 1.7 | Toast notification system |
-| Validation | Zod (via @devsage/shared) | 3.x | Shared schemas between API and frontend |
+| Icons | Lucide React | latest | Consistent icon set |
+| Toasts | Sonner | 1.x | Toast notification system |
+| Validation | Zod (via `@devsage/shared`) | 3.x | Shared schemas between API and frontend |
+| Server state | TanStack Query | 5.x | Caching, background refetch, optimistic updates |
 | Variants | class-variance-authority | 0.7 | Component variant management |
 | Class merging | clsx + tailwind-merge | latest | Conditional class composition |
-| Deployment | Cloudflare Workers Static Assets | - | Edge-distributed static hosting |
+| Deployment | Cloudflare Workers Static Assets | - | Edge-distributed static hosting per app |
 | Testing | Vitest + Testing Library | 3.x / 16.x | Unit and component tests (jsdom) |
+| E2E | Playwright | latest | Cross-app user journey testing |
 
-### Deployment Model
+### Shared Configuration
 
-The frontend is a fully static SPA deployed via Cloudflare Workers Static Assets. The `wrangler.jsonc` configuration uses `not_found_handling: "single-page-application"` to serve `index.html` for all unmatched routes, enabling client-side routing.
-
-```
-Build: tsc --noEmit && vite build
-Output: apps/web/dist/
-Deploy: wrangler deploy (Workers Static Assets)
-CDN: Cloudflare global edge network (300+ PoPs)
-```
-
-In production, the SPA communicates with the API at `https://api.devsage.org` via the `VITE_API_ORIGIN` environment variable. In development, Vite proxies API paths to `http://localhost:8787` (wrangler dev).
+| Config | Package | Consumed by |
+|--------|---------|-------------|
+| `tsconfig.react.json` | `packages/config` | All three apps |
+| `eslint.config.mjs` | `packages/config` | All three apps |
+| Tailwind v4 theme tokens | `packages/ui` (exported CSS) | All three apps |
+| Path alias `@/` → `src/` | Per-app `tsconfig.json` + `vite.config.ts` | All three apps |
 
 ---
 
-### Application Bootstrap
+## App 1: `apps/web` — Participant Experience
 
-```mermaid
-graph TD
-    A["index.html"] --> B["main.tsx"]
-    B --> C["StrictMode"]
-    C --> D["BrowserRouter"]
-    D --> E["AuthProvider"]
-    E --> F["App"]
-    E --> G["Toaster (Sonner)"]
-    F --> H["Suspense boundary"]
-    H --> I["Routes"]
+### Purpose
+
+The primary public-facing application. Serves hackathon participants end-to-end: from discovering hackathons, through registration and team formation, to submitting projects and viewing results. Also serves judges with their scoring interface. Contains the marketing landing page and all public content.
+
+### Deployment
+
+```
+Package:  @devsage/web
+Build:    tsc --noEmit && vite build
+Output:   apps/web/dist/
+Deploy:   wrangler deploy → Cloudflare Workers Static Assets
+Domain:   devsage.org
+Env:      VITE_API_ORIGIN=https://api.devsage.org
 ```
 
-The bootstrap sequence in `main.tsx`:
+### v3 Pages & Routes
 
-1. `StrictMode` enables development warnings and double-rendering checks
-2. `BrowserRouter` provides client-side routing context
-3. `AuthProvider` fetches `/auth/me` on mount to hydrate user state
-4. `App` defines all routes inside a top-level `Suspense` boundary
-5. `Toaster` renders the toast notification container at `top-right`
+#### Public Pages (no auth)
 
----
+| Page | Route | Description |
+|------|-------|-------------|
+| **Landing** | `/` | Marketing hero, featured hackathons, testimonials, platform stats, call-to-action. The front door |
+| **Hackathon Directory** | `/hackathons` | Searchable, filterable public listing of all hackathons. Status tabs (upcoming, active, judging, completed). Category tags, date range, location filters. Server-rendered previews for SEO |
+| **Hackathon Public Page** | `/hackathons/:slug` | Public hackathon overview — description, timeline, tracks, sponsor showcase, prize breakdown. Registration CTA when open. Read-only when closed |
+| **Login** | `/login` | OAuth buttons (GitHub + Google). Redirect to `/dashboard` on success |
+| **Auth Callback** | `/auth/callback` | Post-OAuth redirect handler. Hydrates auth state, redirects to intended destination |
+| **Link Required** | `/link-required` | Prompt to link GitHub account when signed in via Google without a GitHub connection |
+| **About** | `/about` | Platform information, team, open-source credits |
+| **Not Found** | `*` | 404 fallback with search suggestions and navigation links |
 
-### Page Structure
+#### Authenticated Pages — Participant
 
-DevSage v2 has 14 page components organized by access level:
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Dashboard** | `/dashboard` | `participant` | Personal home — my hackathons (grouped by status), my teams, upcoming deadlines, recent activity feed, quick-join CTA for open hackathons |
+| **Hackathon Detail** | `/hackathons/:slug/overview` | `participant` | Authenticated hackathon view — everything from public page plus: team status, submission status, phase-aware action buttons, real-time activity feed, announcements stream |
+| **Team Management** | `/hackathons/:slug/team` | `participant` | Create team, join via invite code, manage members (invite/remove), link GitHub repository, view team activity log, repo commit timeline |
+| **Team Discovery** | `/hackathons/:slug/teams` | `participant` | Browse teams looking for members. Filter by skills needed, team size, track. Request to join. Skill-based matching suggestions |
+| **Submission** | `/hackathons/:slug/submit` | `team_leader` | Tag-based submission flow — select git tag, confirm artifacts, add description/demo link. Version history. Validation status. Diff viewer between submission versions |
+| **Submission Detail** | `/hackathons/:slug/submissions/:id` | `participant` | View submission details — code snapshot at tag, attached artifacts (R2), AI review summary (when available), judge feedback (post-judging) |
+| **Leaderboard** | `/hackathons/:slug/leaderboard` | `participant` | Live scores and rankings. Filter by track. Animated rank changes via WebSocket. Expandable score breakdown per rubric criterion. Visibility controlled by organizer |
+| **Mentor Matching** | `/hackathons/:slug/mentors` | `participant` | Browse available mentors by expertise and availability. Request a mentorship session. View upcoming/past sessions. Schedule office hours. Session chat interface |
+| **Notification Center** | `/notifications` | `participant` | In-app notification inbox — team invites, submission confirmations, deadline warnings, announcements, mentor responses. Read/unread state. Filter by type. Email digest preferences |
+| **Profile** | `/profile` | `participant` | User settings — display name, avatar, bio, skill tags. Linked accounts (GitHub, Google). Participation history. Achievement badges. Notification preferences. Danger zone (delete account) |
 
-| Page | File | Route | Auth | Min Role | Description |
-|------|------|-------|------|----------|-------------|
-| Home | `home.tsx` | `/` | Public | - | Landing page with hero, bento grid, gallery (1054 LOC) |
-| Login | `login.tsx` | `/login` | Public | - | OAuth buttons (GitHub + Google) |
-| Auth Callback | `auth-callback.tsx` | `/auth/callback` | Public | - | Post-OAuth redirect handler |
-| Link Required | `link-required.tsx` | `/link-required` | Public | - | GitHub account linking prompt |
-| Dashboard | `dashboard.tsx` | `/dashboard` | Authenticated | participant | Hackathon list with tabs and filtering |
-| Hackathon Detail | `hackathon-detail.tsx` | `/hackathons/:slug` | Authenticated | participant | Hackathon overview, team status, submissions |
-| Team Management | `team-management.tsx` | `/hackathons/:slug/teams` | Authenticated | participant | Team creation, invites, repo linking |
-| Leaderboard | `leaderboard.tsx` | `/hackathons/:slug/leaderboard` | Authenticated | participant | Scores and rankings (public when visible) |
-| Judge Dashboard | `judge-dashboard.tsx` | `/hackathons/:slug/judge` | Authenticated | judge | Assigned submissions, rubric scoring |
-| Organizer Dashboard | `organizer-dashboard.tsx` | `/organiser` | Authenticated | admin | Hackathon management, phase transitions |
-| Profile | `profile.tsx` | `/profile` | Authenticated | participant | User profile and settings |
-| About | `about.tsx` | `/about` | Public | - | Platform information (file exists, no route) |
-| Not Found | `not-found.tsx` | `*` | Public | - | 404 fallback page |
-| Hack001 | `hackathons/hack001.tsx` | - | - | - | Special-case hackathon page |
+#### Authenticated Pages — Judge
 
-#### Route Nesting
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Judge Dashboard** | `/hackathons/:slug/judge` | `judge` | Assigned submissions queue. Rubric scoring interface with inline code viewer. Progress tracker (scored / total). AI review comparison. Submit scores with written feedback. Flag submissions for organizer review |
+| **Judge Leaderboard** | `/hackathons/:slug/judge/leaderboard` | `judge` | Judge-only preliminary results view. Score distribution visualization. Consensus tracking across judges |
+
+### Route Nesting
 
 ```mermaid
 graph TD
-    subgraph Public["Public Routes (no auth)"]
-        R1["/ → HomePage (lazy)"]
-        R2["/login → LoginPage"]
-        R3["/auth/callback → AuthCallbackPage"]
-        R4["/link-required → LinkRequiredPage"]
-        R5["* → NotFoundPage"]
+    subgraph Public["Public Routes"]
+        R1["/ → Landing"]
+        R2["/hackathons → Directory"]
+        R3["/hackathons/:slug → Public Page"]
+        R4["/login → Login"]
+        R5["/auth/callback → Callback"]
+        R6["/link-required → Link Prompt"]
+        R7["/about → About"]
+        R8["* → Not Found"]
     end
 
-    subgraph Protected["Protected Routes (ProtectedRoute wrapper)"]
-        subgraph Dashboard["DashboardLayout (sticky nav + outlet)"]
-            R6["/dashboard → DashboardPage (lazy)"]
-            R7["/hackathons/:slug → HackathonDetailPage (lazy)"]
-            R8["/hackathons/:slug/teams → TeamManagementPage"]
-            R9["/hackathons/:slug/leaderboard → LeaderboardPage"]
-            R10["/hackathons/:slug/judge → JudgeDashboardPage"]
-            R11["/profile → ProfilePage (lazy)"]
+    subgraph Protected["ProtectedRoute Wrapper"]
+        subgraph DashLayout["DashboardLayout"]
+            R9["/dashboard → Dashboard"]
+            R10["/hackathons/:slug/overview → Detail"]
+            R11["/hackathons/:slug/team → Team Mgmt"]
+            R12["/hackathons/:slug/teams → Discovery"]
+            R13["/hackathons/:slug/submit → Submission"]
+            R14["/hackathons/:slug/submissions/:id → Sub Detail"]
+            R15["/hackathons/:slug/leaderboard → Leaderboard"]
+            R16["/hackathons/:slug/mentors → Mentoring"]
+            R17["/hackathons/:slug/judge → Judge Dashboard"]
+            R18["/notifications → Notifications"]
+            R19["/profile → Profile"]
         end
     end
 ```
 
-Four pages are already lazy-loaded via `React.lazy()`: `HomePage`, `DashboardPage`, `HackathonDetailPage`, and `ProfilePage`. The remaining protected pages are eagerly imported.
+### Key Features
 
----
+#### Real-Time Activity Feed
 
-### Component Hierarchy
+Every hackathon detail page streams live events from the WebSocket Gateway DO:
+
+| Event | UI Effect |
+|-------|-----------|
+| `submission_received` | Flash new submission card in activity feed, update submission count badge |
+| `phase_changed` | Update phase indicator badge, show toast, enable/disable phase-gated actions |
+| `score_published` | Animate leaderboard row reorder, flash rank change indicator |
+| `team_joined` | Update participant count, show toast if user's hackathon |
+| `announcement` | Prominent banner notification with dismiss, persist in announcements list |
+| `deadline_warning` | Countdown timer with urgency color progression (green → yellow → red) |
+| `commit_pushed` | Tick team activity graph, show commit summary in team feed |
+| `mentor_session_accepted` | Toast notification, update mentor matching page |
+
+#### Submission Workflow
 
 ```mermaid
-graph TD
-    subgraph Bootstrap["Bootstrap Layer"]
-        Main["main.tsx<br/>StrictMode + BrowserRouter"]
-        Auth["AuthProvider<br/>contexts/auth-context.tsx"]
-        Toast["Toaster (Sonner)"]
-    end
+stateDiagram-v2
+    [*] --> NoTeam: Register for hackathon
+    NoTeam --> TeamFormed: Create or join team
+    TeamFormed --> RepoLinked: Link GitHub repository
+    RepoLinked --> Developing: Push commits (tracked via webhooks)
+    Developing --> TagPushed: Push git tag matching pattern
+    TagPushed --> Validating: System captures submission
+    Validating --> Accepted: Validation passes + exactly-once lock acquired
+    Validating --> Rejected: Validation fails (late, invalid tag, etc.)
+    Accepted --> Versioned: Push new tag → new version captured
+    Accepted --> Judging: Phase transitions to JUDGING
+    Versioned --> Judging: Phase transitions to JUDGING
+    Judging --> Scored: Judge submits scores
+    Scored --> Results: Leaderboard published
+```
 
-    subgraph Routing["Routing Layer"]
-        AppComp["App.tsx<br/>Suspense + Routes"]
-        PR["ProtectedRoute<br/>Auth guard → Outlet"]
-        DL["DashboardLayout<br/>Navbar + Profile dropdown + Outlet"]
-    end
+#### Team Collaboration
 
-    subgraph Pages["Page Layer (14 pages)"]
-        Public["Public Pages<br/>home, login, auth-callback,<br/>link-required, not-found, about"]
-        Authed["Authenticated Pages<br/>dashboard, profile"]
-        Hackathon["Hackathon Pages<br/>hackathon-detail, team-management,<br/>leaderboard, judge-dashboard"]
-        Organizer["Organizer Pages<br/>organizer-dashboard"]
-    end
+- **Invite system**: Generate shareable invite codes. Deep-link: `/hackathons/:slug/team?invite=CODE`
+- **Repo linking**: Connect a GitHub repository. Webhooks auto-track commits, PRs, and tags
+- **Activity timeline**: Real-time commit feed from linked repo. Shows who committed what, when
+- **Member management**: Team leader can invite/remove members, transfer leadership
+- **Skill tags**: Members declare skills; helps with team discovery matching
 
-    subgraph UI["UI Primitives (shadcn/ui)"]
-        Button["Button"]
-        Card["Card"]
-        Dialog["Dialog"]
-        Dropdown["DropdownMenu"]
-        Input["Input"]
-        Tabs["Tabs"]
-        Badge["Badge"]
-        Skeleton["Skeleton"]
-    end
+#### Offline Capability
 
-    subgraph Shared["Shared Components"]
-        Cursor["CustomCursor<br/>Framer Motion animated cursor"]
-    end
+| Layer | Technology | What's cached | Strategy |
+|-------|-----------|---------------|----------|
+| Static assets | Service Worker (Workbox) | JS, CSS, fonts, images | Cache-first, background update |
+| API responses | Service Worker | GET hackathon data, team data | Network-first, cache fallback |
+| Draft data | IndexedDB | Unsaved form inputs, draft scores | Write-through, sync on reconnect |
+| Auth state | Memory only | JWT cookie (HttpOnly) | Not cached (re-auth required) |
 
-    Main --> Auth
-    Main --> Toast
-    Auth --> AppComp
-    AppComp --> Public
-    AppComp --> PR
-    PR --> DL
-    DL --> Authed
-    DL --> Hackathon
-    DL --> Organizer
-    Pages --> UI
-    Pages --> Shared
+### v3 Directory Structure
+
+```
+apps/web/src/
+├── app/
+│   ├── App.tsx                     # Route definitions
+│   ├── main.tsx                    # Bootstrap: providers + router
+│   ├── providers.tsx               # Composed: QueryClient + Auth + Theme + Intl
+│   └── error-boundary.tsx          # App-level error boundary
+├── features/
+│   ├── auth/
+│   │   ├── pages/                  # login, auth-callback, link-required
+│   │   ├── components/             # OAuthButton, AccountLinkForm
+│   │   └── hooks/                  # useAuth
+│   ├── landing/
+│   │   ├── pages/                  # home (marketing landing)
+│   │   └── components/             # Hero, BentoGrid, FeaturedHackathons, Testimonials
+│   ├── directory/
+│   │   ├── pages/                  # hackathon-directory
+│   │   ├── components/             # HackathonCard, FilterBar, SearchInput, CategoryTags
+│   │   └── hooks/                  # useHackathonSearch, useFilterState
+│   ├── dashboard/
+│   │   ├── pages/                  # dashboard
+│   │   ├── components/             # MyHackathonCard, DeadlineWidget, ActivityFeed, QuickJoin
+│   │   └── hooks/                  # useMyHackathons, useDashboardStats
+│   ├── hackathon/
+│   │   ├── pages/                  # hackathon-detail, hackathon-public
+│   │   ├── components/             # PhaseIndicator, Timeline, ActivityFeed, DeadlineTimer, AnnouncementBanner
+│   │   └── hooks/                  # useHackathon, useHackathonTheme, useWebSocket
+│   ├── team/
+│   │   ├── pages/                  # team-management, team-discovery
+│   │   ├── components/             # TeamCard, InviteDialog, MemberList, RepoLink, SkillTags, ActivityTimeline
+│   │   └── hooks/                  # useTeam, useTeamMembers, useTeamDiscovery
+│   ├── submission/
+│   │   ├── pages/                  # submit, submission-detail
+│   │   ├── components/             # TagSelector, VersionHistory, DiffViewer, ValidationStatus, ArtifactList
+│   │   └── hooks/                  # useSubmission, useSubmissionVersions
+│   ├── judging/
+│   │   ├── pages/                  # judge-dashboard, leaderboard
+│   │   ├── components/             # ScoreCard, RubricForm, LeaderboardTable, RankAnimation, ScoreBreakdown
+│   │   └── hooks/                  # useAssignments, useScoring, useLeaderboard
+│   ├── mentoring/
+│   │   ├── pages/                  # mentor-matching
+│   │   ├── components/             # MentorCard, ScheduleCalendar, RequestForm, SessionChat, AvailabilityGrid
+│   │   └── hooks/                  # useMentors, useMentorRequests, useMentorSession
+│   ├── notifications/
+│   │   ├── pages/                  # notification-center
+│   │   ├── components/             # NotificationList, NotificationItem, PreferencesForm, DigestSettings
+│   │   └── hooks/                  # useNotifications, useUnreadCount
+│   └── profile/
+│       ├── pages/                  # profile
+│       ├── components/             # AvatarUpload, LinkedAccounts, SkillEditor, ParticipationHistory, AchievementBadges
+│       └── hooks/                  # useProfile, useParticipationHistory
+├── shared/
+│   ├── components/                 # Cross-feature: ErrorBoundary, LoadingSkeleton, EmptyState, ConfirmDialog
+│   ├── hooks/                      # Cross-feature: useApiQuery, useWebSocket, useRouteFocus, useReducedMotion
+│   └── lib/                        # api.ts, utils.ts, query-keys.ts, websocket.ts
+├── layouts/
+│   ├── dashboard-layout.tsx        # Navbar + sidebar + notification bell + profile dropdown + outlet
+│   └── public-layout.tsx           # Minimal header + footer for unauthenticated pages
+├── i18n/
+│   ├── en.json
+│   ├── es.json
+│   └── hi.json
+└── styles/
+    └── index.css                   # Tailwind v4 theme + global styles
 ```
 
 ---
 
-### Auth Flow
+## App 2: `apps/platform` — Organizer Experience
 
-The frontend authentication flow is entirely cookie-based. The API sets an HttpOnly JWT cookie after OAuth, and the SPA hydrates user state on mount.
+### Purpose
+
+The organizer-facing application. Hackathon organizers use this to create, configure, manage, and analyze their hackathons. Organizers are invited to the platform via invite codes generated by the DevSage admin team. The platform provides full lifecycle control: from hackathon creation through phase management, judge coordination, and post-event analytics.
+
+### Deployment
+
+```
+Package:  @devsage/platform
+Build:    tsc --noEmit && vite build
+Output:   apps/platform/dist/
+Deploy:   wrangler deploy → Cloudflare Workers Static Assets
+Domain:   platform.devsage.org
+Env:      VITE_API_ORIGIN=https://api.devsage.org
+```
+
+### v3 Pages & Routes
+
+#### Public Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Login** | `/login` | OAuth login for organizers. Redirects to `/dashboard` on success. Shows "request access" link for non-organizers |
+| **Auth Callback** | `/auth/callback` | Post-OAuth redirect handler |
+| **Invite Accept** | `/invite/:code` | Accept an organizer invitation. Creates organizer role association. Redirects to dashboard |
+
+#### Authenticated Pages — Organizer Core
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Organizer Dashboard** | `/dashboard` | `moderator` | Home base — all organizer's hackathons grouped by status (draft, active, judging, completed). Key metrics per hackathon (registrations, submissions, judge progress). Quick actions (create new, open registration, advance phase). Recent activity feed across all hackathons |
+| **Hackathon Creation** | `/hackathons/new` | `admin` | Multi-step wizard: (1) Basic info — name, slug, description, dates. (2) Tracks — define challenge tracks with descriptions. (3) Timeline — phase schedule with deadlines, auto-transition toggles. (4) Branding — logo, banner, primary color, custom CSS. (5) Rules — participation rules, code of conduct, eligibility. (6) Review & publish |
+| **Hackathon Settings** | `/hackathons/:slug/settings` | `admin` | Edit all hackathon configuration post-creation. Tabs: General, Branding, Tracks, Rules, Danger Zone (archive, delete). Custom domain mapping. SEO metadata |
+| **Profile** | `/profile` | `moderator` | Organizer profile, notification preferences, linked accounts |
+
+#### Authenticated Pages — Hackathon Management
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Phase Management** | `/hackathons/:slug/phases` | `admin` | Visual state machine diagram. Current phase highlighted. Transition buttons with confirmation dialogs. Phase timeline with past transitions and timestamps. Schedule automatic transitions. Override manual deadlines |
+| **Registration Management** | `/hackathons/:slug/registrations` | `moderator` | All registered participants. Sortable table with search. Approve/reject (if moderated registration). Waitlist management. Bulk actions (approve all, email selected). Registration stats over time chart |
+| **Team Oversight** | `/hackathons/:slug/teams` | `moderator` | All teams with member count, repo link status, submission status, activity score. Filter by track, status, activity level. Click-through to team detail. Flag inactive teams. Intervene (add/remove members, reassign track) |
+| **Submission Management** | `/hackathons/:slug/submissions` | `moderator` | All submissions with validation status, timestamps, team info. Filter by track, status, date. View submission diff between versions. Flag submissions for review. Override late detection. Link to GitHub tag |
+| **Announcements** | `/hackathons/:slug/announcements` | `moderator` | Create announcements with title, body (markdown), urgency level. Broadcast immediately or schedule for later. Target: all participants, specific tracks, or specific teams. Announcement history with delivery stats |
+
+#### Authenticated Pages — Judging Management
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Judge Management** | `/hackathons/:slug/judges` | `admin` | Invite judges by email. Manage judge roster with status (invited, accepted, active, removed). Round-robin assignment configuration. Manual assignment overrides. Track judging progress per judge (scored / assigned). Reassign if judge is unresponsive |
+| **Rubric Configuration** | `/hackathons/:slug/rubric` | `admin` | Create/edit scoring criteria. Set weights per criterion. Per-track rubric overrides. Preview the judge scoring interface. Import/export rubric templates (JSON). Validation: weights must sum to 100% |
+| **Scoring Overview** | `/hackathons/:slug/scoring` | `admin` | Bird's-eye view of all scores. Heatmap: judges × submissions. Outlier detection (flag scores > 2σ from mean). Score dispute resolution workflow. Finalize results (lock scores, compute rankings). Export final results |
+| **Leaderboard Configuration** | `/hackathons/:slug/leaderboard-config` | `admin` | Set leaderboard visibility (hidden, judges-only, public). Choose ranking algorithm (weighted sum, normalized). Enable/disable per-track leaderboards. Configure tie-breaking rules |
+
+#### Authenticated Pages — Engagement & Analytics
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Analytics Dashboard** | `/hackathons/:slug/analytics` | `moderator` | Commit velocity over time (per team, per hackathon). Registration funnel (visited → registered → team formed → submitted). Team activity heatmap. Judge progress tracker. Participation by track. Time-to-submission distribution. Engagement score per team |
+| **Sponsor Management** | `/hackathons/:slug/sponsors` | `admin` | Configure sponsor tiers (Bronze, Silver, Gold, Title). Invite sponsors. Manage sponsor accounts. Upload assets (logos, banners) to R2. Configure branded hackathon pages. Sponsor visibility settings. Lead capture configuration. Sponsor ROI reports |
+| **Mentor Management** | `/hackathons/:slug/mentors` | `admin` | Invite mentors. Define expertise categories. Set availability slots. Track mentor-team sessions. View feedback and ratings. Mentor leaderboard (sessions completed, average rating) |
+| **Export Center** | `/hackathons/:slug/exports` | `admin` | Export participant data (CSV, JSON). Export scores and rankings (CSV, JSON, PDF). Export submission metadata. Export analytics snapshots. Export audit log for hackathon. Scheduled exports via email. All exports generated async, stored in R2, link sent via notification |
+| **Integration Management** | `/hackathons/:slug/integrations` | `admin` | GitHub App installation status. Webhook delivery log with retry controls. Integration health dashboard. Configure additional integrations (Slack notifications, Discord bot, custom webhooks). API key management for hackathon-scoped external access |
+| **Communication Center** | `/hackathons/:slug/communications` | `moderator` | Bulk email to participants (all, by track, by status). In-app message broadcast. Email template editor (markdown). Delivery status tracking. Scheduled sends. Unsubscribe management |
+
+#### Authenticated Pages — Cross-Hackathon
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Notification Center** | `/notifications` | `moderator` | Organizer-specific notifications: new registrations, submissions received, judge completions, deadline reminders, system alerts. Filter by hackathon, type, read status |
+| **Templates** | `/templates` | `admin` | Save hackathon configurations as reusable templates. Clone from template for quick hackathon creation. Share templates across organizers in the same org |
+| **Organization Settings** | `/org/settings` | `owner` | Organization profile, member management (invite/remove organizers), default branding, billing (if applicable) |
+
+### Route Nesting
+
+```mermaid
+graph TD
+    subgraph Public["Public Routes"]
+        P1["/login → Login"]
+        P2["/auth/callback → Callback"]
+        P3["/invite/:code → Invite Accept"]
+    end
+
+    subgraph Protected["ProtectedRoute Wrapper (organizer+)"]
+        subgraph OrgLayout["OrganizerLayout (sidebar + breadcrumbs)"]
+            R1["/dashboard → Organizer Dashboard"]
+            R2["/hackathons/new → Creation Wizard"]
+            R3["/profile → Profile"]
+            R4["/notifications → Notifications"]
+            R5["/templates → Templates"]
+            R6["/org/settings → Org Settings"]
+
+            subgraph HackScope["/hackathons/:slug/*"]
+                H1["/settings → Settings"]
+                H2["/phases → Phase Mgmt"]
+                H3["/registrations → Participants"]
+                H4["/teams → Team Oversight"]
+                H5["/submissions → Submissions"]
+                H6["/announcements → Announcements"]
+                H7["/judges → Judge Mgmt"]
+                H8["/rubric → Rubric Config"]
+                H9["/scoring → Scoring Overview"]
+                H10["/leaderboard-config → LB Config"]
+                H11["/analytics → Analytics"]
+                H12["/sponsors → Sponsors"]
+                H13["/mentors → Mentors"]
+                H14["/exports → Exports"]
+                H15["/integrations → Integrations"]
+                H16["/communications → Communications"]
+            end
+        end
+    end
+```
+
+### Key Features
+
+#### Hackathon Creation Wizard
+
+```mermaid
+stateDiagram-v2
+    [*] --> BasicInfo: Step 1
+    BasicInfo --> Tracks: Step 2
+    Tracks --> Timeline: Step 3
+    Timeline --> Branding: Step 4
+    Branding --> Rules: Step 5
+    Rules --> Review: Step 6
+    Review --> Published: Publish
+    Review --> Draft: Save as Draft
+
+    state BasicInfo {
+        [*] --> name
+        name --> slug
+        slug --> description
+        description --> dates
+    }
+
+    state Timeline {
+        [*] --> phases
+        phases --> deadlines
+        deadlines --> autoTransitions
+    }
+```
+
+Each step auto-saves to draft. Organizers can leave and resume. The wizard validates completeness before allowing publish.
+
+#### Phase Management Control
+
+The organizer sees the hackathon state machine as an interactive diagram:
+
+```mermaid
+graph LR
+    DRAFT["DRAFT"] -->|"Open Registration"| REG_OPEN["REGISTRATION_OPEN"]
+    REG_OPEN -->|"Close Registration"| REG_CLOSED["REGISTRATION_CLOSED"]
+    REG_CLOSED -->|"Start Hackathon"| ACTIVE["ACTIVE"]
+    ACTIVE -->|"Begin Judging"| JUDGING["JUDGING"]
+    JUDGING -->|"Publish Results"| COMPLETED["COMPLETED"]
+    COMPLETED -->|"Archive"| ARCHIVED["ARCHIVED"]
+
+    style ACTIVE fill:#10b981,stroke:#059669,color:#fff
+```
+
+- Current phase is highlighted. Only valid forward transitions are clickable
+- Each transition shows a confirmation dialog with impact summary ("12 teams will be locked from further submissions")
+- Auto-transitions can be scheduled (e.g., "close registration at 2026-03-15 23:59 UTC")
+- Phase history timeline shows who triggered each transition and when
+
+#### Analytics Dashboard
+
+| Metric | Visualization | Data source |
+|--------|--------------|-------------|
+| Registration funnel | Funnel chart | D1 (users → teams → submissions) |
+| Commit velocity | Line chart (per team, per hackathon) | Analytics Engine via D1 snapshots |
+| Team activity heatmap | Calendar heatmap | Webhook events aggregated |
+| Judge progress | Progress bars per judge | D1 (scores / assignments) |
+| Submission timeline | Scatter plot | D1 (submission timestamps) |
+| Track distribution | Pie chart | D1 (teams per track) |
+| Engagement score | Sortable table per team | Computed from commits + PR count + activity |
+
+### v3 Directory Structure
+
+```
+apps/platform/src/
+├── app/
+│   ├── App.tsx                     # Route definitions
+│   ├── main.tsx                    # Bootstrap
+│   ├── providers.tsx               # QueryClient + Auth + Theme
+│   └── error-boundary.tsx
+├── features/
+│   ├── auth/
+│   │   ├── pages/                  # login, auth-callback, invite-accept
+│   │   └── components/             # OAuthButton, InviteAcceptCard
+│   ├── dashboard/
+│   │   ├── pages/                  # organizer-dashboard
+│   │   ├── components/             # HackathonOverviewCard, StatsWidget, QuickActions, ActivityFeed
+│   │   └── hooks/                  # useOrganizerHackathons, useOrgDashboardStats
+│   ├── hackathon-setup/
+│   │   ├── pages/                  # hackathon-creation, hackathon-settings
+│   │   ├── components/             # WizardStepper, BasicInfoForm, TrackEditor, TimelineBuilder, BrandingEditor, RulesEditor
+│   │   └── hooks/                  # useHackathonDraft, useWizardState
+│   ├── phase-management/
+│   │   ├── pages/                  # phase-management
+│   │   ├── components/             # StateMachineVisualization, TransitionDialog, PhaseTimeline, AutoTransitionScheduler
+│   │   └── hooks/                  # usePhaseState, usePhaseTransition
+│   ├── participants/
+│   │   ├── pages/                  # registration-management
+│   │   ├── components/             # ParticipantTable, ApprovalActions, WaitlistManager, BulkActions, RegistrationChart
+│   │   └── hooks/                  # useParticipants, useRegistrationStats
+│   ├── teams/
+│   │   ├── pages/                  # team-oversight
+│   │   ├── components/             # TeamTable, TeamDetailPanel, ActivityScore, InterventionDialog
+│   │   └── hooks/                  # useOrgTeams, useTeamActivity
+│   ├── submissions/
+│   │   ├── pages/                  # submission-management
+│   │   ├── components/             # SubmissionTable, SubmissionDiffViewer, FlagDialog, ValidationBadge
+│   │   └── hooks/                  # useOrgSubmissions, useSubmissionValidation
+│   ├── judging/
+│   │   ├── pages/                  # judge-management, rubric-config, scoring-overview, leaderboard-config
+│   │   ├── components/             # JudgeRoster, AssignmentMatrix, RubricEditor, ScoreHeatmap, OutlierAlert, FinalizeDialog
+│   │   └── hooks/                  # useJudges, useRubric, useOrgScoring, useAssignmentAlgo
+│   ├── announcements/
+│   │   ├── pages/                  # announcements
+│   │   ├── components/             # AnnouncementEditor, SchedulePicker, TargetSelector, DeliveryStats
+│   │   └── hooks/                  # useAnnouncements, useAnnouncementDelivery
+│   ├── analytics/
+│   │   ├── pages/                  # analytics-dashboard
+│   │   ├── components/             # CommitVelocityChart, RegistrationFunnel, ActivityHeatmap, JudgeProgressBar, EngagementTable
+│   │   └── hooks/                  # useAnalytics, useAnalyticsExport
+│   ├── sponsors/
+│   │   ├── pages/                  # sponsor-management
+│   │   ├── components/             # SponsorTierEditor, AssetUploader, BrandedPagePreview, LeadCaptureConfig, ROIReport
+│   │   └── hooks/                  # useSponsors, useSponsorAssets
+│   ├── mentors/
+│   │   ├── pages/                  # mentor-management
+│   │   ├── components/             # MentorRoster, ExpertiseConfig, AvailabilityEditor, SessionLog, FeedbackSummary
+│   │   └── hooks/                  # useOrgMentors, useMentorSessions
+│   ├── exports/
+│   │   ├── pages/                  # export-center
+│   │   ├── components/             # ExportBuilder, FormatSelector, ExportHistory, ScheduledExports
+│   │   └── hooks/                  # useExports, useExportStatus
+│   ├── integrations/
+│   │   ├── pages/                  # integration-management
+│   │   ├── components/             # GitHubAppStatus, WebhookLog, IntegrationHealth, APIKeyManager
+│   │   └── hooks/                  # useIntegrations, useWebhookLog
+│   ├── communications/
+│   │   ├── pages/                  # communication-center
+│   │   ├── components/             # EmailComposer, RecipientSelector, TemplateEditor, DeliveryLog
+│   │   └── hooks/                  # useBulkEmail, useEmailTemplates
+│   ├── templates/
+│   │   ├── pages/                  # templates
+│   │   ├── components/             # TemplateCard, TemplatePreview, CloneDialog
+│   │   └── hooks/                  # useTemplates
+│   ├── organization/
+│   │   ├── pages/                  # org-settings
+│   │   ├── components/             # OrgProfile, MemberManager, DefaultBranding
+│   │   └── hooks/                  # useOrganization
+│   ├── notifications/
+│   │   ├── pages/                  # notification-center
+│   │   └── hooks/                  # useOrgNotifications
+│   └── profile/
+│       ├── pages/                  # profile
+│       └── hooks/                  # useOrgProfile
+├── shared/
+│   ├── components/
+│   ├── hooks/
+│   └── lib/
+├── layouts/
+│   └── organizer-layout.tsx        # Sidebar nav (hackathon-scoped) + breadcrumbs + outlet
+├── i18n/
+└── styles/
+    └── index.css
+```
+
+---
+
+## App 3: `apps/admin` — Internal Administration
+
+### Purpose
+
+Internal tooling for the DevSage team. This app is never exposed to organizers or participants. It provides platform-wide visibility, user management, system configuration, and support tools. Access is restricted to DevSage team members via a team-member-only auth gate.
+
+### Deployment
+
+```
+Package:  @devsage/admin
+Build:    tsc --noEmit && vite build
+Output:   apps/admin/dist/
+Deploy:   wrangler deploy → Cloudflare Workers Static Assets
+Domain:   admin.devsage.org
+Env:      VITE_API_ORIGIN=https://api.devsage.org
+```
+
+### v3 Pages & Routes
+
+#### Public Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Login** | `/login` | OAuth login. Rejects non-team-members with "Access denied" |
+
+#### Authenticated Pages — Core Admin
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Admin Dashboard** | `/` → `/invites` | `platform_admin` | Platform health overview — total users, active hackathons, system status, recent activity across all hackathons. Key alerts (queue backlogs, error spikes, approaching limits) |
+| **Organizer Invites** | `/invites` | `platform_admin` | Generate invite codes for new organizers. Table of all invites: code, status (pending, accepted, expired, revoked), created by, accepted by, timestamps. Bulk invite via CSV upload. Revoke unused invites. Set expiration |
+| **Admin Management** | `/admins` | `platform_admin` | Add/remove DevSage team members. Table of all admins with role, last active, added by. Role levels within admin team (viewer, operator, super-admin). Activity log per admin |
+
+#### Authenticated Pages — User Management
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **User Directory** | `/users` | `platform_admin` | Browse/search all platform users. Table: name, email, GitHub username, registration date, last active, status. Filter by role (participant, organizer, judge), status (active, banned, suspended). Click-through to user detail |
+| **User Detail** | `/users/:id` | `platform_admin` | Full user profile: linked accounts, hackathon participations, teams, submissions, scores. Admin actions: ban, suspend (with duration), remove ban, force password reset, delete account. Impersonation button (opens participant view as this user, with audit trail). Activity timeline |
+
+#### Authenticated Pages — Platform Oversight
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Hackathon Oversight** | `/hackathons` | `platform_admin` | All hackathons across the platform. Table: name, org, status, participant count, submission count, created. Filter by status, org, date range. Admin actions: force phase transition, suspend hackathon, feature/unfeature on landing page. Click-through to read-only hackathon detail |
+| **Organization Management** | `/organizations` | `platform_admin` | All organizations. Table: name, domain, verified status, trust level, hackathon count, member count. Create new organization. Verify domain (trigger DNS check). Manage federation links. Set trust levels. Merge duplicate orgs |
+| **Content Moderation** | `/moderation` | `platform_admin` | Queue of flagged content — reported hackathons, submissions, user profiles. Review with context. Actions: dismiss flag, warn organizer, suspend content, escalate. Moderation log with audit trail |
+
+#### Authenticated Pages — System Management
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Feature Flags** | `/feature-flags` | `platform_admin` | Toggle features globally, per-organization, or per-hackathon. Table: flag name, scope, status, last modified, modified by. Create new flags. A/B test configuration with percentage rollouts. Flag dependency graph |
+| **System Configuration** | `/system` | `platform_admin` | Rate limit thresholds per endpoint. Global quotas (max hackathons per org, max teams per hackathon). Maintenance mode toggle (shows banner on all apps, blocks mutations). Environment info (Workers runtime version, D1 size, KV key count) |
+| **Audit Log Viewer** | `/audit` | `platform_admin` | Search/filter audit events across all hackathons. Filter by actor type (user, system, bot, cron), action, hackathon, date range. Full event detail with before/after state diffs. Export for compliance (CSV, JSON). Hash chain integrity verification |
+| **Queue Monitoring** | `/queues` | `platform_admin` | Real-time queue health: WEBHOOK_QUEUE, NOTIFICATION_QUEUE, ANALYTICS_QUEUE. Metrics: depth, processing rate, error rate, oldest message age. Dead letter queue inspection — view failed messages, retry, discard. Queue pause/resume controls |
+| **System Health** | `/health` | `platform_admin` | Dashboard: API Worker response times (p50, p95, p99), D1 query latency, DO operation latency, external service status (GitHub API, SMTP, AI provider). Error rate trends. Alert configuration |
+
+#### Authenticated Pages — Support
+
+| Page | Route | Min Role | Description |
+|------|-------|----------|-------------|
+| **Support Console** | `/support` | `platform_admin` | User lookup by email, GitHub username, or user ID. Quick view of user's current state (teams, submissions, hackathons). Impersonation launcher (opens any app as the user). Data repair tools: fix orphaned team members, re-process failed webhooks, recalculate scores. Run diagnostics: check user's auth state, verify team membership, validate submission integrity |
+| **Profile** | `/profile` | `platform_admin` | Admin profile settings |
+
+### Route Nesting
+
+```mermaid
+graph TD
+    subgraph Public["Public Routes"]
+        P1["/login → Login"]
+    end
+
+    subgraph Protected["ProtectedRoute (platform_admin only)"]
+        subgraph AdminLayout["AdminLayout (sidebar + system status bar)"]
+            R1["/ → redirect /invites"]
+            R2["/invites → Organizer Invites"]
+            R3["/admins → Admin Management"]
+            R4["/users → User Directory"]
+            R5["/users/:id → User Detail"]
+            R6["/hackathons → Hackathon Oversight"]
+            R7["/organizations → Org Management"]
+            R8["/moderation → Content Moderation"]
+            R9["/feature-flags → Feature Flags"]
+            R10["/system → System Config"]
+            R11["/audit → Audit Log"]
+            R12["/queues → Queue Monitoring"]
+            R13["/health → System Health"]
+            R14["/support → Support Console"]
+            R15["/profile → Profile"]
+        end
+    end
+```
+
+### Key Features
+
+#### Impersonation
+
+Admin impersonation allows support team members to see exactly what a user sees, without requiring their credentials:
+
+```mermaid
+sequenceDiagram
+    participant A as Admin (admin.devsage.org)
+    participant API as API Worker
+    participant AL as Audit Log
+    participant T as Target App (devsage.org)
+
+    A->>API: POST /api/v1/admin/impersonate/:userId
+    API->>API: Verify caller is platform_admin
+    API->>AL: Log impersonation event (admin_id, target_user_id, reason)
+    API-->>A: Set impersonation cookie (short-lived, 30min)
+    A->>T: Open target app in new tab
+    Note over T: App renders as target user<br/>with "Impersonating [user]" banner
+    T->>API: All requests include impersonation context
+    API->>AL: Log all impersonated actions with admin attribution
+```
+
+- All impersonated actions are logged in the audit trail with the admin's identity
+- Impersonation sessions are time-limited (30 minutes)
+- A visible banner prevents accidental actions while impersonating
+- Write operations can be optionally blocked (read-only impersonation mode)
+
+#### Queue Monitoring
+
+| Queue | Key Metrics | Alert Thresholds |
+|-------|------------|-----------------|
+| `WEBHOOK_QUEUE` | Depth, msg/s processed, error rate, p95 latency | Depth > 1000, error rate > 5%, p95 > 30s |
+| `NOTIFICATION_QUEUE` | Depth, delivery rate, bounce rate | Depth > 500, bounce rate > 10% |
+| `ANALYTICS_QUEUE` | Depth, write rate, Analytics Engine errors | Depth > 5000, AE error rate > 1% |
+
+### v3 Directory Structure
+
+```
+apps/admin/src/
+├── app/
+│   ├── App.tsx
+│   ├── main.tsx
+│   ├── providers.tsx
+│   └── error-boundary.tsx
+├── features/
+│   ├── auth/
+│   │   └── pages/                  # login
+│   ├── invites/
+│   │   ├── pages/                  # invites
+│   │   ├── components/             # InviteTable, GenerateDialog, BulkUpload, InviteStatusBadge
+│   │   └── hooks/                  # useInvites, useGenerateInvite
+│   ├── admins/
+│   │   ├── pages/                  # admin-management
+│   │   ├── components/             # AdminTable, AddAdminDialog, RoleSelector, ActivityLog
+│   │   └── hooks/                  # useAdmins, useAdminActivity
+│   ├── users/
+│   │   ├── pages/                  # user-directory, user-detail
+│   │   ├── components/             # UserTable, UserProfile, BanDialog, ImpersonateButton, ActivityTimeline
+│   │   └── hooks/                  # useUsers, useUserDetail, useImpersonate
+│   ├── hackathons/
+│   │   ├── pages/                  # hackathon-oversight
+│   │   ├── components/             # HackathonTable, ForceTransitionDialog, SuspendDialog, FeatureToggle
+│   │   └── hooks/                  # useAllHackathons, useHackathonAdmin
+│   ├── organizations/
+│   │   ├── pages/                  # org-management
+│   │   ├── components/             # OrgTable, VerifyDomainDialog, FederationLinks, TrustLevelSelector
+│   │   └── hooks/                  # useOrganizations, useFederation
+│   ├── moderation/
+│   │   ├── pages/                  # content-moderation
+│   │   ├── components/             # ModerationQueue, FlagDetail, ActionDialog, ModerationLog
+│   │   └── hooks/                  # useFlaggedContent, useModeration
+│   ├── feature-flags/
+│   │   ├── pages/                  # feature-flags
+│   │   ├── components/             # FlagTable, FlagEditor, ScopeSelector, RolloutConfig
+│   │   └── hooks/                  # useFeatureFlags
+│   ├── system/
+│   │   ├── pages/                  # system-config, system-health
+│   │   ├── components/             # RateLimitEditor, QuotaManager, MaintenanceBanner, EnvInfo, LatencyChart, ErrorTrend
+│   │   └── hooks/                  # useSystemConfig, useSystemHealth
+│   ├── audit/
+│   │   ├── pages/                  # audit-log
+│   │   ├── components/             # AuditTable, EventDetail, StateDiff, HashChainVerifier, ExportDialog
+│   │   └── hooks/                  # useAuditLog, useAuditSearch
+│   ├── queues/
+│   │   ├── pages/                  # queue-monitoring
+│   │   ├── components/             # QueueHealthCard, MessageInspector, DLQViewer, RetryDialog, QueueChart
+│   │   └── hooks/                  # useQueueHealth, useDeadLetterQueue
+│   ├── support/
+│   │   ├── pages/                  # support-console
+│   │   ├── components/             # UserLookup, DiagnosticRunner, DataRepairTool, ImpersonationLauncher
+│   │   └── hooks/                  # useSupport, useDiagnostics
+│   └── profile/
+│       └── pages/                  # profile
+├── shared/
+│   ├── components/
+│   ├── hooks/
+│   └── lib/
+├── layouts/
+│   └── admin-layout.tsx            # Sidebar nav + system status bar + outlet
+└── styles/
+    └── index.css
+```
+
+---
+
+## Shared Architecture
+
+### packages/ui — Component Library
+
+All three apps consume a shared component library extracted into `packages/ui`. This ensures visual consistency across the platform.
+
+```
+packages/ui/
+├── src/
+│   ├── primitives/                 # Base components from shadcn/ui
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── dialog.tsx
+│   │   ├── dropdown-menu.tsx
+│   │   ├── input.tsx
+│   │   ├── tabs.tsx
+│   │   ├── badge.tsx
+│   │   ├── skeleton.tsx
+│   │   ├── select.tsx
+│   │   ├── checkbox.tsx
+│   │   ├── textarea.tsx
+│   │   ├── tooltip.tsx
+│   │   ├── progress.tsx
+│   │   ├── switch.tsx
+│   │   └── separator.tsx
+│   ├── composites/                 # Multi-primitive components
+│   │   ├── data-table.tsx          # Sortable, filterable, paginated table
+│   │   ├── form-field.tsx          # Label + input + error message
+│   │   ├── stat-card.tsx           # Metric card with label, value, trend
+│   │   ├── empty-state.tsx         # Illustrated empty state with CTA
+│   │   ├── confirm-dialog.tsx      # Confirmation dialog with danger variant
+│   │   ├── search-input.tsx        # Debounced search with clear button
+│   │   ├── status-badge.tsx        # Color-coded status indicator
+│   │   ├── avatar.tsx              # User avatar with fallback initials
+│   │   ├── date-picker.tsx         # Calendar date picker
+│   │   ├── file-upload.tsx         # Drag-and-drop file upload zone
+│   │   └── markdown-editor.tsx     # Markdown editor with preview
+│   ├── layouts/                    # Layout primitives
+│   │   ├── page-shell.tsx          # Standard page container with title + actions
+│   │   ├── sidebar.tsx             # Collapsible sidebar navigation
+│   │   └── breadcrumbs.tsx         # Breadcrumb navigation
+│   └── index.ts                    # Barrel export
+├── package.json                    # @devsage/ui
+└── tsconfig.json
+```
+
+| Layer | Contents | Example |
+|-------|----------|---------|
+| Primitives | shadcn/ui Radix-based components | `<Button variant="destructive">`, `<Dialog>`, `<Tabs>` |
+| Composites | Multi-primitive compositions | `<DataTable columns={[...]} data={[...]} />`, `<StatCard label="Teams" value={42} trend="+12%">` |
+| Layouts | Structural components | `<PageShell title="Dashboard" actions={<Button>Create</Button>}>` |
+
+### packages/shared — Schemas & Types
+
+Shared Zod schemas and TypeScript types consumed by all three frontend apps and the API:
+
+| Export | Used by | Purpose |
+|--------|---------|---------|
+| Hackathon schemas | web, platform | Validation, type inference |
+| Team/member schemas | web, platform | Validation, type inference |
+| Submission schemas | web, platform | Validation, type inference |
+| User schemas | web, platform, admin | Validation, type inference |
+| API error schemas | web, platform, admin | Error handling, type inference |
+| Constants (roles, phases, etc.) | web, platform, admin | Shared business logic constants |
+
+### packages/realtime — WebSocket Client SDK
+
+Shared WebSocket client with reconnection logic, consumed by `apps/web` and `apps/platform`:
+
+```
+packages/realtime/
+├── src/
+│   ├── client.ts                   # WebSocket client with auto-reconnect
+│   ├── types.ts                    # Protocol message types (subscribe, event, presence)
+│   ├── channels.ts                 # Channel subscription manager
+│   ├── reconnect.ts                # Exponential backoff with jitter (1s → 30s max)
+│   └── index.ts                    # Barrel export
+├── package.json                    # @devsage/realtime
+└── tsconfig.json
+```
+
+`apps/admin` does not use WebSocket — it polls for queue metrics and system health via REST.
+
+### Authentication Pattern
+
+All three apps use the same cookie-based JWT auth pattern, but with different audience expectations:
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant SPA as React SPA
-    participant AP as AuthProvider
+    participant APP as Any Frontend App
     participant API as API Worker
-    participant GH as GitHub/Google
+    participant OAuth as GitHub / Google
 
-    U->>SPA: Navigate to /login
-    SPA->>U: Render OAuth buttons
-
-    U->>API: Click "Sign in with GitHub"<br/>GET /auth/github?origin=https://devsage.org
-    API->>GH: Redirect to OAuth consent
-    GH->>API: Callback with auth code
-    API->>API: Exchange code → access token<br/>Fetch profile → Upsert user<br/>Sign JWT
-    API->>SPA: Set-Cookie: session=JWT (HttpOnly)<br/>302 → /auth/callback
-
-    SPA->>SPA: AuthCallbackPage renders
-    SPA->>AP: AuthProvider already mounted
-
-    Note over AP: On mount (useEffect)
-    AP->>API: GET /auth/me<br/>(credentials: include)
-    API->>API: Verify JWT from cookie<br/>Resolve user from DB
-    API-->>AP: { ok: true, data: { user } }
-    AP->>AP: setUser(user)<br/>isAuthenticated = true<br/>isLoading = false
-    AP->>SPA: Re-render with authenticated state
-    SPA->>U: Redirect to /dashboard
+    U->>APP: Navigate to /login
+    APP->>U: Render OAuth buttons
+    U->>API: Click OAuth → GET /auth/github?origin={app_url}
+    API->>OAuth: Redirect to consent screen
+    OAuth->>API: Callback with auth code
+    API->>API: Exchange code → token → fetch profile → upsert user → sign JWT
+    API->>APP: Set-Cookie: session=JWT (HttpOnly, Secure, SameSite=Lax)
+    API->>APP: 302 → {origin}/auth/callback
+    APP->>API: GET /auth/me (credentials: include)
+    API-->>APP: { ok: true, data: { user, roles } }
+    APP->>APP: Hydrate auth state → redirect to dashboard
 ```
 
-#### AuthContext API
+**Per-app auth gates:**
 
-```typescript
-interface AuthContextType {
-  user: User | null;          // Current user (id, github_username, display_name, email, avatar_url, organizerRoles)
-  isAuthenticated: boolean;   // Derived: !!user
-  isLoading: boolean;         // True during initial /auth/me check
-  logout: () => Promise<void>; // POST /auth/logout → clear state → redirect /login
-}
+| App | Auth gate logic |
+|-----|----------------|
+| `apps/web` | Any authenticated user can access. Role checks per-route (participant, judge) |
+| `apps/platform` | Must have at least one organizer role (`moderator`+) for any hackathon. No organizer role → "Request access" page |
+| `apps/admin` | Must be a DevSage team member (`platform_admin`). Non-team-members → "Access denied" |
 
-const { user, isAuthenticated, isLoading, logout } = useAuth();
-```
-
----
+Each app has its own `AuthProvider` and `ProtectedRoute` implementation with audience-appropriate logic. The underlying `apiRequest()` and cookie mechanism are identical.
 
 ### API Client Pattern
 
-All API communication flows through `apiRequest<T>()` in `lib/api.ts`:
+Each app has its own `lib/api.ts` with the same `apiRequest<T>()` function:
 
 ```typescript
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T>
@@ -228,289 +911,52 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
 | Base URL | `VITE_API_ORIGIN` in production, relative path (Vite proxy) in dev |
 | Credentials | `credentials: 'include'` on every request (sends HttpOnly cookie) |
 | Content-Type | `application/json` by default |
-| 401 handling | Auto-redirect to `/login` (except for `/auth/me` to avoid loops) |
-| Error handling | Throws `ApiError(status, message)` on non-OK responses |
-| 204 handling | Returns `{}` for No Content responses |
+| 401 handling | Auto-redirect to `/login` (except `/auth/me`) |
+| Error handling | Throws structured error with status + API error code |
 
-#### Dev Proxy Configuration
+### Dev Proxy Configuration
 
-Vite proxies four path prefixes to the local API worker during development:
+Each app proxies API routes to the local Worker during development:
 
-| Path prefix | Target |
-|-------------|--------|
-| `/api/v1` | `http://localhost:8787` |
-| `/auth` | `http://localhost:8787` |
-| `/hackathons` | `http://localhost:8787` |
-| `/webhooks` | `http://localhost:8787` |
+| App | Port | Proxied paths | Target |
+|-----|------|---------------|--------|
+| `apps/web` | 5173 | `/api/v1`, `/auth`, `/hackathons`, `/webhooks` | `http://localhost:8787` |
+| `apps/platform` | 5174 | `/api/v1`, `/auth` | `http://localhost:8787` |
+| `apps/admin` | 5175 | `/api/v1`, `/auth` | `http://localhost:8787` |
 
 ---
 
-### State Management
-
-v2 uses a minimal state management approach:
-
-| State type | Solution | Scope |
-|-----------|----------|-------|
-| Auth state | React Context (`AuthProvider`) | Global — user, isAuthenticated, isLoading |
-| Page state | `useState` / `useEffect` | Local — form inputs, filters, toggles |
-| URL state | React Router params/search | Per-route — `:slug`, query params |
-| Server data | Direct `apiRequest()` in `useEffect` | Per-component — no caching layer |
-| Notifications | Sonner `toast()` | Ephemeral — auto-dismiss |
-
-There is no global state management library (no Redux, Zustand, or Jotai). Server data is fetched imperatively in `useEffect` hooks with local `useState` for loading/error/data states.
-
----
-
-### Styling System
-
-#### Tailwind CSS v4 with CSS Variables
-
-The theme is defined in `src/index.css` using Tailwind v4's `@theme` directive and CSS custom properties:
-
-| Variable | Light | Dark | Usage |
-|----------|-------|------|-------|
-| `--background` | `0 0% 100%` | `222.2 84% 4.9%` | Page background |
-| `--foreground` | `222.2 84% 4.9%` | `210 40% 98%` | Primary text |
-| `--primary` | `222.2 47.4% 11.2%` | `210 40% 98%` | Primary actions |
-| `--accent` | `210 40% 96.1%` | `217.2 32.6% 17.5%` | Accent surfaces |
-| `--destructive` | `0 84.2% 60.2%` | `0 62.8% 30.6%` | Error/danger states |
-| `--border` | `214.3 31.8% 91.4%` | `217.2 32.6% 17.5%` | Border color |
-| `--ring` | `222.2 84% 4.9%` | `212.7 26.8% 83.9%` | Focus ring |
-| `--radius` | `0.5rem` | `0.5rem` | Border radius base |
-
-The brand accent color `#CCFF00` is used directly in component classes (not via CSS variables) for the distinctive neon-green highlights throughout the dashboard.
-
-#### Fonts
-
-| Token | Font | Usage |
-|-------|------|-------|
-| `--font-sans` | Inter | Body text, UI elements |
-| `--font-mono` | Geist Mono | Code blocks, technical data |
-
-#### shadcn/ui Component System
-
-Eight Radix-based primitives are installed in `components/ui/`:
-
-| Component | File | Radix dependency | Usage |
-|-----------|------|-------------------|-------|
-| Button | `button.tsx` | `@radix-ui/react-slot` | Primary actions, OAuth buttons |
-| Card | `card.tsx` | - | Content containers, hackathon cards |
-| Dialog | `dialog.tsx` | `@radix-ui/react-dialog` | Modals (team invite, confirmations) |
-| DropdownMenu | `dropdown-menu.tsx` | `@radix-ui/react-dropdown-menu` | Profile menu, action menus |
-| Input | `input.tsx` | - | Form fields |
-| Tabs | `tabs.tsx` | `@radix-ui/react-tabs` | Dashboard filtering, detail views |
-| Badge | `badge.tsx` | - | Status indicators, role labels |
-| Skeleton | `skeleton.tsx` | - | Loading placeholders |
-
-All components use `class-variance-authority` (CVA) for variant management and `cn()` (clsx + tailwind-merge) for class composition.
-
----
-
-### Protected Routes Pattern
-
-The `ProtectedRoute` component wraps all authenticated routes:
-
-```mermaid
-flowchart TD
-    A["Request to protected route"] --> B{"isLoading?"}
-    B -->|Yes| C["Render Skeleton loading state"]
-    B -->|No| D{"isAuthenticated && user?"}
-    D -->|No| E["Navigate to /login (replace)"]
-    D -->|Yes| F["Render Outlet (child routes)"]
-```
-
-Protected routes are nested inside `DashboardLayout`, which provides:
-- Sticky top navbar with DEVSAGE branding
-- Navigation links with active state highlighting (`#CCFF00` accent)
-- Profile dropdown (avatar, display name, email, profile link, logout)
-- Background effects (grid pattern, gradient blurs)
-- Content area via `<Outlet />`
-
----
-
-### Current Directory Structure
-
-```
-apps/web/
-├── src/
-│   ├── main.tsx                    # Bootstrap: StrictMode + BrowserRouter + AuthProvider + Toaster
-│   ├── App.tsx                     # All route definitions (single file)
-│   ├── index.css                   # Tailwind v4 theme (CSS vars, scrollbar, animations)
-│   ├── vite-env.d.ts               # Vite client type declarations
-│   ├── pages/                      # Page components (flat structure)
-│   │   ├── home.tsx                # Landing page (1054 LOC)
-│   │   ├── login.tsx               # OAuth login
-│   │   ├── auth-callback.tsx       # Post-OAuth handler
-│   │   ├── link-required.tsx       # GitHub linking prompt
-│   │   ├── dashboard.tsx           # Hackathon list + tabs
-│   │   ├── hackathon-detail.tsx    # Hackathon overview
-│   │   ├── team-management.tsx     # Team CRUD + invites
-│   │   ├── leaderboard.tsx         # Scores + rankings
-│   │   ├── judge-dashboard.tsx     # Judge scoring interface
-│   │   ├── organizer-dashboard.tsx # Organizer management
-│   │   ├── profile.tsx             # User profile
-│   │   ├── about.tsx               # About page (no route)
-│   │   ├── not-found.tsx           # 404 page
-│   │   └── hackathons/
-│   │       └── hack001.tsx         # Special-case hackathon
-│   ├── components/
-│   │   ├── protected-route.tsx     # Auth guard with skeleton loading
-│   │   ├── dashboard-layout.tsx    # Navbar + profile dropdown + outlet
-│   │   ├── custom-cursor.tsx       # Framer Motion animated cursor
-│   │   └── ui/                     # shadcn/ui primitives
-│   │       ├── button.tsx
-│   │       ├── card.tsx
-│   │       ├── dialog.tsx
-│   │       ├── dropdown-menu.tsx
-│   │       ├── input.tsx
-│   │       ├── tabs.tsx
-│   │       ├── badge.tsx
-│   │       └── skeleton.tsx
-│   ├── contexts/
-│   │   └── auth-context.tsx        # AuthProvider + useAuth() hook
-│   ├── lib/
-│   │   ├── api.ts                  # apiRequest() fetch wrapper
-│   │   └── utils.ts                # cn() class merging utility
-│   └── __tests__/
-│       ├── auth-context.test.tsx   # AuthProvider unit tests
-│       └── login.test.tsx          # Login page tests
-├── index.html                      # SPA entry point
-├── vite.config.ts                  # Vite + React + Tailwind + dev proxy
-├── vitest.config.ts                # Vitest + jsdom + path aliases
-├── tsconfig.json                   # TypeScript (extends config/tsconfig.react.json)
-├── wrangler.jsonc                  # Cloudflare Workers Static Assets config
-├── package.json                    # Dependencies and scripts
-└── .env.production                 # VITE_API_ORIGIN=https://api.devsage.org
-```
-
----
-
-## v3 Frontend Vision
-
-v3 evolves the frontend from a simple SPA with imperative data fetching into a production-grade application with real-time capabilities, intelligent caching, offline support, and comprehensive accessibility.
-
-### Design Principles
-
-| ID | Principle | Implication |
-|----|-----------|-------------|
-| F1 | **Server state is not client state** | TanStack Query manages all server data; React Context reserved for client-only state (auth, theme) |
-| F2 | **Optimistic by default** | Mutations update UI immediately; reconcile on server response or rollback on error |
-| F3 | **Progressive enhancement** | Core flows work without JS hydration; real-time and offline are additive layers |
-| F4 | **Accessible first** | WCAG 2.1 AA compliance is a requirement, not an afterthought |
-| F5 | **Performance budgeted** | Every page has measurable targets; regressions block deployment |
-| F6 | **Feature-isolated** | Each feature owns its components, hooks, and queries; no cross-feature imports except through shared layers |
-
----
+## Cross-Cutting v3 Concerns
 
 ### Real-Time Updates
 
-WebSocket connections via Durable Objects provide live updates for time-sensitive hackathon data.
+`apps/web` and `apps/platform` connect to the WebSocket Gateway Durable Object for live hackathon updates. Each app subscribes to different channels based on audience.
 
-```mermaid
-sequenceDiagram
-    participant SPA as React SPA
-    participant WS as WebSocket Client
-    participant DO as HackathonStateMachine (DO)
-    participant API as API Worker
-    participant DB as D1
+| Channel | `apps/web` (participants) | `apps/platform` (organizers) | Purpose |
+|---------|--------------------------|------------------------------|---------|
+| `announcements` | ✓ subscribe | ✓ publish + subscribe | Phase changes, organizer messages |
+| `submissions` | ✓ (own team only) | ✓ (all teams) | New submissions, version updates |
+| `activity` | ✓ subscribe | ✓ subscribe | Commits, PRs, general activity |
+| `judging` | ✗ | ✓ subscribe | Score submissions, judge progress |
+| `leaderboard` | ✓ subscribe (if public) | ✓ subscribe | Rank changes, score updates |
+| `mentorship` | ✓ subscribe | ✓ subscribe | Session requests, availability |
+| `presence` | ✓ subscribe | ✓ subscribe | User join/leave, typing |
+| `registrations` | ✗ | ✓ subscribe | New registrations, approvals |
 
-    SPA->>WS: Connect to /ws/hackathon/:slug
-    WS->>DO: WebSocket upgrade
-    DO-->>WS: Connection accepted
+`apps/admin` does **not** use WebSocket. System health and queue metrics are polled via REST on configurable intervals (default 30s).
 
-    Note over DO: Event occurs (submission, phase change, score)
-    DO->>WS: { type: "submission_received", data: {...} }
-    WS->>SPA: onMessage event
+### State Management
 
-    SPA->>SPA: TanStack Query invalidation<br/>queryClient.invalidateQueries(['submissions', slug])
-    SPA->>API: GET /api/v1/hackathons/:slug/submissions (background refetch)
-    API->>DB: Query latest data
-    DB-->>API: Updated results
-    API-->>SPA: Fresh data
-    SPA->>SPA: UI updates seamlessly
-```
+All three apps use TanStack Query for server state. React Context is reserved for client-only concerns.
 
-#### Event Types
-
-| Event | Payload | UI Effect |
-|-------|---------|-----------|
-| `submission_received` | `{ team_id, tag, timestamp }` | Flash new submission in activity feed, update submission count |
-| `phase_changed` | `{ from, to, timestamp }` | Update phase badge, show toast, enable/disable actions |
-| `score_published` | `{ team_id, total_score }` | Animate leaderboard reorder |
-| `team_joined` | `{ team_id, user_id }` | Update participant count |
-| `announcement` | `{ title, body }` | Show prominent toast notification |
-| `deadline_warning` | `{ deadline, remaining_minutes }` | Show countdown timer, change urgency color |
-
-#### Fallback Strategy
-
-If WebSocket connection fails or is unavailable, the client falls back to polling:
-
-| Condition | Strategy | Interval |
-|-----------|----------|----------|
-| WebSocket connected | Real-time push | Instant |
-| WebSocket disconnected | Exponential backoff reconnect | 1s, 2s, 4s, 8s, max 30s |
-| WebSocket unavailable | Polling via TanStack Query `refetchInterval` | 30s (active tab), disabled (background) |
-
----
-
-### Optimistic UI
-
-Mutations update the UI immediately before the server confirms, providing instant feedback.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant UI as React Component
-    participant TQ as TanStack Query
-    participant API as API Worker
-
-    U->>UI: Click "Join Team"
-    UI->>TQ: useMutation.mutate()
-
-    Note over TQ: onMutate callback
-    TQ->>TQ: Snapshot current cache
-    TQ->>TQ: Optimistically update cache<br/>(add user to team members)
-    TQ->>UI: Re-render with optimistic data
-    UI->>U: Button shows "Joined" immediately
-
-    TQ->>API: POST /api/v1/hackathons/:slug/teams/:id/join
-
-    alt Success
-        API-->>TQ: 200 { ok: true, data: {...} }
-        TQ->>TQ: Replace optimistic data with server response
-        TQ->>UI: Re-render (usually no visible change)
-    else Error
-        API-->>TQ: 4xx/5xx error
-        TQ->>TQ: Rollback to snapshot
-        TQ->>UI: Re-render with original data
-        UI->>U: Show error toast, button reverts to "Join"
-    end
-```
-
-#### Optimistic Mutation Candidates
-
-| Action | Optimistic behavior | Rollback |
-|--------|-------------------|----------|
-| Join team | Add user to member list | Remove user, show error |
-| Submit score (judge) | Update score in local cache | Revert score, show error |
-| Update profile | Show new values immediately | Revert to previous values |
-| Create team | Show team in list with pending state | Remove team, show error |
-| Toggle leaderboard visibility | Flip visibility flag | Revert flag, show error |
-
----
-
-### Advanced State Management
-
-v3 introduces TanStack Query for server state while keeping React Context lean.
-
-| State category | v2 solution | v3 solution | Rationale |
-|---------------|-------------|-------------|-----------|
-| Auth state | React Context | React Context (unchanged) | Client-only, rarely changes, needs synchronous access |
-| Theme/preferences | - | React Context | Client-only, affects entire tree |
-| Server data | `useEffect` + `useState` | TanStack Query | Caching, deduplication, background refetch, optimistic updates |
-| Form state | `useState` | `useState` (unchanged) | Ephemeral, component-scoped |
-| URL state | React Router | React Router (unchanged) | Already correct abstraction |
-| Real-time events | - | WebSocket + Query invalidation | Push-based updates trigger cache refresh |
+| State category | Solution | Scope |
+|---------------|----------|-------|
+| Auth state | React Context (`AuthProvider`) per app | Global — user, roles, isAuthenticated |
+| Theme/preferences | React Context (`ThemeProvider`) | Global — dark mode, per-hackathon theme |
+| Server data | TanStack Query | Per-query — caching, deduplication, background refetch |
+| Form state | `useState` | Component-scoped — ephemeral |
+| URL state | React Router params/search | Per-route |
+| Real-time events | WebSocket → TanStack Query invalidation | Push-triggered cache refresh |
 
 #### TanStack Query Configuration
 
@@ -521,8 +967,8 @@ const queryClient = new QueryClient({
       staleTime: 30_000,          // 30s before background refetch
       gcTime: 5 * 60_000,         // 5min garbage collection
       retry: 2,                    // Retry failed requests twice
-      refetchOnWindowFocus: true,  // Refetch when tab regains focus
-      refetchOnReconnect: true,    // Refetch when network reconnects
+      refetchOnWindowFocus: true,  // Refetch on tab focus
+      refetchOnReconnect: true,    // Refetch on network reconnect
     },
     mutations: {
       retry: 0,                    // No automatic retry on mutations
@@ -533,148 +979,119 @@ const queryClient = new QueryClient({
 
 #### Query Key Convention
 
+Consistent across all three apps:
+
 ```typescript
-// Hierarchical keys for granular invalidation
 ['hackathons']                                    // All hackathons
 ['hackathons', slug]                              // Single hackathon
 ['hackathons', slug, 'teams']                     // Teams for a hackathon
 ['hackathons', slug, 'submissions']               // Submissions
 ['hackathons', slug, 'leaderboard']               // Leaderboard
-['hackathons', slug, 'judge', 'assignments']      // Judge assignments
-['user', 'me']                                    // Current user profile
+['hackathons', slug, 'judges']                    // Judges
+['hackathons', slug, 'analytics']                 // Analytics snapshots
+['hackathons', slug, 'sponsors']                  // Sponsors
+['hackathons', slug, 'mentors']                   // Mentors
+['user', 'me']                                    // Current user
 ['notifications']                                 // User notifications
+['admin', 'users']                                // All users (admin only)
+['admin', 'invites']                              // Invites (admin only)
+['admin', 'queues']                               // Queue health (admin only)
 ```
 
----
+### Optimistic UI
 
-### Code Splitting and Lazy Loading
+Mutations in `apps/web` and `apps/platform` update UI immediately before server confirmation:
 
-v2 already lazy-loads 4 pages. v3 extends this to all page components and adds Suspense boundaries with meaningful loading states.
+| App | Action | Optimistic behavior | Rollback |
+|-----|--------|-------------------|----------|
+| web | Join team | Add user to member list | Remove user, error toast |
+| web | Submit score (judge) | Update score in cache | Revert score, error toast |
+| web | Create team | Show team with pending state | Remove team, error toast |
+| web | Update profile | Show new values | Revert values, error toast |
+| platform | Advance phase | Update phase indicator | Revert phase, error toast |
+| platform | Approve registration | Move to approved list | Revert to pending, error toast |
+| platform | Publish announcement | Add to announcement list | Remove, error toast |
 
-#### Lazy Loading Strategy
+`apps/admin` does **not** use optimistic updates — admin actions (bans, phase overrides, system config) require confirmed server responses before UI update.
+
+### Code Splitting & Lazy Loading
+
+All pages in all three apps are lazy-loaded via `React.lazy()` + Suspense:
 
 | Component type | Strategy | Loading state |
 |---------------|----------|---------------|
-| Page components | `React.lazy()` + dynamic import | Route-level Suspense with skeleton |
-| Heavy UI components (charts, editors) | `React.lazy()` | Inline Suspense with spinner |
-| shadcn/ui primitives | Eager import | N/A (small, shared) |
-| Utility libraries | Vite dynamic import | N/A (loaded on demand) |
+| Page components | `React.lazy()` + dynamic import | Route-level skeleton |
+| Heavy components (charts, editors) | `React.lazy()` | Inline spinner |
+| `packages/ui` primitives | Eager import | N/A (small, shared) |
 
 #### Suspense Boundary Hierarchy
 
-```mermaid
-graph TD
-    A["App-level Suspense<br/>(minimal fallback)"] --> B["Route-level Suspense<br/>(page skeleton)"]
-    B --> C["Feature-level Suspense<br/>(section skeleton)"]
-    C --> D["Component-level Suspense<br/>(inline spinner)"]
-
-    style A fill:#1a1a2e,stroke:#6366f1,color:#e8e8ff
-    style B fill:#1a1a2e,stroke:#6366f1,color:#e8e8ff
-    style C fill:#1a1a2e,stroke:#6366f1,color:#e8e8ff
-    style D fill:#1a1a2e,stroke:#6366f1,color:#e8e8ff
 ```
-
-Each boundary provides progressively more specific loading UI:
-- **App-level**: Empty container (prevents flash of unstyled content)
-- **Route-level**: Full page skeleton matching the target page layout
-- **Feature-level**: Section skeleton (e.g., leaderboard table placeholder)
-- **Component-level**: Inline spinner or shimmer for individual widgets
-
----
+App-level Suspense (minimal fallback)
+  └── Route-level Suspense (page skeleton)
+       └── Feature-level Suspense (section skeleton)
+            └── Component-level Suspense (inline spinner)
+```
 
 ### Offline Capability
 
-Service Worker caching and IndexedDB storage enable core functionality without network connectivity.
+Applicable to `apps/web` only. Organizer and admin apps require live connectivity.
 
 | Layer | Technology | Cached content | Strategy |
 |-------|-----------|----------------|----------|
-| Static assets | Service Worker (Workbox) | JS bundles, CSS, fonts, images | Cache-first, background update |
-| API responses | Service Worker | GET requests for hackathon data | Network-first, cache fallback |
-| Draft data | IndexedDB | Unsaved form data, draft scores | Write-through, sync on reconnect |
-| Auth state | Memory only | JWT cookie (HttpOnly) | Not cached offline (re-auth required) |
-
-#### Offline User Experience
-
-| Scenario | Behavior |
-|----------|----------|
-| Viewing cached hackathon | Serve from cache, show "offline" indicator |
-| Submitting a score (judge) | Save to IndexedDB, queue for sync, show "pending sync" badge |
-| Navigating to uncached page | Show offline fallback page with cached navigation |
-| Network restored | Background sync queued mutations, refresh stale caches |
-
----
+| Static assets | Service Worker (Workbox) | JS, CSS, fonts, images | Cache-first, background update |
+| API responses | Service Worker | GET hackathon data, team data | Network-first, cache fallback |
+| Draft data | IndexedDB | Unsaved forms, draft judge scores | Write-through, sync on reconnect |
+| Auth state | Memory only | JWT cookie | Not cached (re-auth required) |
 
 ### Accessibility (a11y)
 
-WCAG 2.1 AA compliance plan for v3:
+WCAG 2.1 AA compliance across all three apps:
 
-| Category | Requirement | Implementation |
-|----------|-------------|----------------|
-| Keyboard navigation | All interactive elements reachable via Tab | Radix primitives handle focus management; custom components use `tabIndex` and `onKeyDown` |
-| Focus management | Focus moves logically on route change | `useEffect` to focus main content heading on navigation |
-| Screen readers | All content accessible via ARIA | `aria-label`, `aria-describedby`, `aria-live` regions for dynamic content |
-| Color contrast | 4.5:1 minimum for normal text, 3:1 for large text | Audit all CSS variable combinations; `#CCFF00` on dark backgrounds passes AA |
-| Motion sensitivity | Respect `prefers-reduced-motion` | Framer Motion `useReducedMotion()` hook; disable animations globally |
-| Form accessibility | Labels, error messages, required indicators | `<label>` elements, `aria-invalid`, `aria-errormessage` on inputs |
-| Live regions | Dynamic content announced to screen readers | `aria-live="polite"` for toast notifications, `aria-live="assertive"` for errors |
-| Skip navigation | Skip to main content link | Hidden skip link visible on focus, targets `<main>` element |
-| Image alt text | All images have descriptive alt text | `alt` attributes on avatars, hackathon images; decorative images use `alt=""` |
-
-#### Focus Management on Route Change
-
-```typescript
-// Custom hook for route-change focus management
-function useRouteFocus() {
-  const location = useLocation();
-  const mainRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    // Move focus to main content on route change
-    mainRef.current?.focus({ preventScroll: false });
-  }, [location.pathname]);
-
-  return mainRef;
-}
-```
-
----
+| Category | Implementation |
+|----------|---------------|
+| Keyboard navigation | Radix primitives handle focus management. Custom components use `tabIndex` + `onKeyDown` |
+| Focus management | `useRouteFocus()` hook — moves focus to main heading on route change |
+| Screen readers | `aria-label`, `aria-describedby`, `aria-live` regions for dynamic content |
+| Color contrast | 4.5:1 minimum for normal text. `#CCFF00` on dark backgrounds passes AA |
+| Motion sensitivity | `prefers-reduced-motion` via Framer Motion `useReducedMotion()` |
+| Forms | `<label>` elements, `aria-invalid`, `aria-errormessage` on all inputs |
+| Live regions | `aria-live="polite"` for toasts, `aria-live="assertive"` for errors |
+| Skip navigation | Hidden skip link visible on focus, targets `<main>` |
 
 ### Internationalization (i18n)
 
-Multi-language support via `react-intl` (FormatJS):
+Multi-language support via `react-intl` (FormatJS) in `apps/web` and `apps/platform`:
 
 | Aspect | Decision |
 |--------|----------|
-| Library | `react-intl` (ICU MessageFormat, mature ecosystem) |
+| Library | `react-intl` (ICU MessageFormat) |
 | Default locale | `en-US` |
-| Initial languages | English, Spanish, Hindi |
-| Message extraction | `@formatjs/cli extract` from source |
-| Message storage | `src/i18n/{locale}.json` per locale |
-| Number/date formatting | `Intl.NumberFormat` / `Intl.DateTimeFormat` via react-intl |
-| Pluralization | ICU plural rules (`{count, plural, one {# team} other {# teams}}`) |
-| Loading strategy | Lazy-load locale bundles (only load active locale) |
+| Planned languages | English, Spanish, Hindi |
+| Message extraction | `@formatjs/cli extract` |
+| Message storage | `src/i18n/{locale}.json` per app |
+| Loading strategy | Lazy-load locale bundles (only active locale) |
 
----
+`apps/admin` is English-only (internal tool).
 
 ### Theme System
 
-v3 extends the existing CSS variable system to support dark mode toggling and per-hackathon custom themes.
-
 #### Dark Mode
+
+All three apps support dark mode:
 
 | Property | Implementation |
 |----------|---------------|
-| Toggle mechanism | React Context (`ThemeProvider`) with `localStorage` persistence |
-| CSS strategy | `.dark` class on `<html>` element (already defined in `index.css`) |
+| Toggle | `ThemeProvider` React Context + `localStorage` persistence |
+| CSS | `.dark` class on `<html>` element |
 | System preference | `prefers-color-scheme` media query as default |
-| Transition | `transition-colors duration-200` on `<body>` for smooth switching |
+| Transition | `transition-colors duration-200` on `<body>` |
 
-#### Per-Hackathon Themes
+#### Per-Hackathon Themes (apps/web + apps/platform)
 
-Hackathons can define a `primary_color` that overrides the default `#CCFF00` accent:
+Hackathons can define a `primary_color` that overrides the `#CCFF00` accent:
 
 ```typescript
-// Applied when viewing a hackathon page
 function useHackathonTheme(hackathon: Hackathon) {
   useEffect(() => {
     if (hackathon.primary_color) {
@@ -687,52 +1104,41 @@ function useHackathonTheme(hackathon: Hackathon) {
 }
 ```
 
-CSS variables cascade naturally, so hackathon-scoped overrides apply to all child components without prop drilling.
+### Error Boundaries
+
+Each app has a three-level error boundary hierarchy:
+
+| Level | Fallback | Recovery |
+|-------|----------|----------|
+| **App** | Full-screen error page with branding | "Reload page" button |
+| **Route** | Error card within layout (nav still visible) | "Try again" + nav links |
+| **Feature** | Inline error replacing failed section | "Retry" button |
 
 ---
 
-### Component Library
+## Performance Budget
 
-v3 extracts reusable UI components into a shared package:
+### Per-App Budgets
 
-```
-packages/ui/                        # NEW: Shared component library
-├── src/
-│   ├── primitives/                 # Base components (Button, Input, Card, etc.)
-│   ├── composites/                 # Multi-primitive components (DataTable, FormField, etc.)
-│   ├── layouts/                    # Layout components (PageShell, Sidebar, etc.)
-│   └── index.ts                    # Barrel export
-├── package.json                    # @devsage/ui
-└── tsconfig.json
-```
+| Metric | `apps/web` | `apps/platform` | `apps/admin` |
+|--------|-----------|-----------------|-------------|
+| Lighthouse Performance | 90+ | 85+ | 80+ |
+| JS bundle (gzipped) | < 200 KB | < 250 KB | < 200 KB |
+| CSS bundle (gzipped) | < 30 KB | < 30 KB | < 25 KB |
+| LCP | < 3.0s | < 3.5s | < 4.0s |
+| FID | < 100ms | < 100ms | < 150ms |
+| CLS | < 0.1 | < 0.1 | < 0.15 |
+| TTI | < 4.0s | < 5.0s | < 5.0s |
+| TBT | < 200ms | < 250ms | < 300ms |
 
-| Layer | Contents | Consumers |
-|-------|----------|-----------|
-| Primitives | Current `components/ui/*` (Button, Card, Dialog, etc.) | All apps |
-| Composites | DataTable, FormField, StatCard, EmptyState, ConfirmDialog | All apps |
-| Layouts | PageShell, DashboardLayout, PublicLayout, AdminLayout | `apps/web` |
+`apps/web` has the strictest budget (public-facing, SEO-relevant). `apps/admin` is more relaxed (internal, data-heavy tables).
 
-This enables future apps (e.g., a mobile-optimized judge interface) to share the same component system.
+### Bundle Splitting Strategy
 
----
-
-### Performance Budget
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Lighthouse Performance | 90+ | CI check on every PR |
-| JS bundle (gzipped) | < 200 KB | Vite build output + `rollup-plugin-visualizer` |
-| CSS bundle (gzipped) | < 30 KB | Tailwind purge + minification |
-| Largest Contentful Paint (LCP) | < 3.0s | Lighthouse + Web Vitals |
-| First Input Delay (FID) | < 100ms | Web Vitals |
-| Cumulative Layout Shift (CLS) | < 0.1 | Lighthouse + Web Vitals |
-| Time to Interactive (TTI) | < 4.0s | Lighthouse |
-| Total Blocking Time (TBT) | < 200ms | Lighthouse |
-
-#### Bundle Budget Enforcement
+Each app uses manual chunks to optimize cache hit rates:
 
 ```typescript
-// vite.config.ts — chunk size warnings
+// Shared across all three apps in vite.config.ts
 build: {
   rollupOptions: {
     output: {
@@ -744,501 +1150,191 @@ build: {
       },
     },
   },
-  chunkSizeWarningLimit: 150, // KB — warn on large chunks
+  chunkSizeWarningLimit: 150,
 }
 ```
 
 ---
 
-### Testing Strategy
+## Testing Strategy
 
-v3 expands testing from unit tests to a comprehensive three-tier strategy:
+### Per-App Testing
 
-| Tier | Tool | Scope | Target |
-|------|------|-------|--------|
-| Unit | Vitest + jsdom | Hooks, utilities, pure functions | 90% coverage on `lib/`, `contexts/`, custom hooks |
-| Component | Vitest + Testing Library | Component rendering, user interactions | All shared components, critical page flows |
-| E2E | Playwright | Full user journeys across pages | Auth flow, hackathon creation, team join, submission, judging |
-
-#### E2E Test Scenarios (Playwright)
-
-| Scenario | Steps |
-|----------|-------|
-| Auth flow | Login via GitHub OAuth mock → verify dashboard loads → logout → verify redirect |
-| Hackathon lifecycle | Create hackathon → open registration → join as participant → create team → submit → judge scores → view leaderboard |
-| Role-based access | Verify participant cannot access organizer dashboard; judge cannot access admin panel |
-| Responsive design | Run critical flows at mobile (375px), tablet (768px), and desktop (1440px) viewports |
-| Offline resilience | Disconnect network → verify cached pages load → reconnect → verify sync |
+| Tier | Tool | Scope |
+|------|------|-------|
+| Unit | Vitest + jsdom | Hooks, utilities, pure functions |
+| Component | Vitest + Testing Library | Component rendering, interactions |
+| E2E | Playwright | Full user journeys across apps |
 
 #### Test File Convention
 
 ```
-src/__tests__/                      # v2 location (kept for backward compat)
-src/features/*/tests/               # v3 feature-colocated tests
-e2e/                                # Playwright E2E tests (new in v3)
-  ├── auth.spec.ts
-  ├── hackathon-lifecycle.spec.ts
-  ├── judging.spec.ts
-  └── fixtures/
-      └── test-data.ts
+apps/{app}/src/features/{feature}/tests/    # Feature-colocated tests
+apps/{app}/e2e/                             # Playwright E2E tests
 ```
+
+### E2E Test Scenarios (Playwright)
+
+E2E tests span across apps where user journeys cross boundaries:
+
+| Scenario | Apps involved | Steps |
+|----------|--------------|-------|
+| **Participant auth flow** | web | Login via OAuth mock → dashboard loads → logout → redirect |
+| **Hackathon lifecycle** | platform → web | Organizer creates hackathon → participant registers → forms team → submits → judge scores → leaderboard |
+| **Organizer invite flow** | admin → platform | Admin generates invite → organizer accepts → organizer dashboard loads |
+| **Judge scoring** | web | Judge logs in → views assignments → scores submission → submits feedback → leaderboard updates |
+| **Role-based access** | web, platform, admin | Participant cannot access platform. Organizer cannot access admin. Judge cannot access organizer views |
+| **Admin impersonation** | admin → web | Admin impersonates user → sees user's dashboard → banner visible → actions logged |
+| **Real-time updates** | web × 2 | Two participants: one submits, other sees live update on activity feed |
+| **Responsive design** | web | Critical flows at 375px, 768px, 1440px viewports |
 
 ---
 
-### Error Boundaries
+## Deployment Topology
 
-Per-route error boundaries with fallback UI and error reporting:
+### Production
 
 ```mermaid
 graph TD
-    A["App Error Boundary<br/>(catastrophic fallback)"] --> B["Route Error Boundary<br/>(per-page fallback)"]
-    B --> C["Feature Error Boundary<br/>(per-section fallback)"]
+    subgraph DNS["Cloudflare DNS"]
+        D1["devsage.org"]
+        D2["platform.devsage.org"]
+        D3["admin.devsage.org"]
+        D4["api.devsage.org"]
+    end
 
-    A -->|catches| A1["Unrecoverable errors<br/>→ Full-page error with reload button"]
-    B -->|catches| B1["Page-level errors<br/>→ Error card with retry + nav links"]
-    C -->|catches| C1["Section errors<br/>→ Inline error with retry button"]
+    subgraph Workers["Cloudflare Workers Static Assets"]
+        W1["web Worker<br/>SPA: apps/web/dist/"]
+        W2["platform Worker<br/>SPA: apps/platform/dist/"]
+        W3["admin Worker<br/>SPA: apps/admin/dist/"]
+    end
+
+    subgraph API["Cloudflare Worker"]
+        W4["API Worker<br/>Hono + DO + Queues"]
+    end
+
+    D1 --> W1
+    D2 --> W2
+    D3 --> W3
+    D4 --> W4
+
+    W1 -->|"REST + WS"| W4
+    W2 -->|"REST + WS"| W4
+    W3 -->|"REST"| W4
 ```
 
-#### Error Boundary Behavior
+### Deploy Commands
 
-| Boundary level | Fallback UI | Recovery action | Error reporting |
-|---------------|-------------|-----------------|-----------------|
-| App | Full-screen error page with DevSage branding | "Reload page" button | `console.error` + future: error tracking service |
-| Route | Error card within layout (navbar still visible) | "Try again" button + navigation links | Log route + error details |
-| Feature | Inline error message replacing the failed section | "Retry" button | Log component + error details |
+```bash
+# Deploy all frontend apps
+pnpm deploy:web          # apps/web → devsage.org
+pnpm deploy:platform     # apps/platform → platform.devsage.org
+pnpm deploy:admin        # apps/admin → admin.devsage.org
+pnpm deploy:api          # apps/api → api.devsage.org
+
+# Dev environment
+pnpm deploy:web:dev      # apps/web → web-dev.workers.dev
+pnpm deploy:platform:dev # apps/platform → platform-dev.workers.dev
+pnpm deploy:admin:dev    # apps/admin → admin-dev.workers.dev
+```
+
+### Environment Variables
+
+| App | Variable | Production value |
+|-----|----------|-----------------|
+| `apps/web` | `VITE_API_ORIGIN` | `https://api.devsage.org` |
+| `apps/platform` | `VITE_API_ORIGIN` | `https://api.devsage.org` |
+| `apps/admin` | `VITE_API_ORIGIN` | `https://api.devsage.org` |
+
+All three apps have `.env.production` committed (contains only `VITE_*` client-visible variables — no secrets).
+
+### Preview Deployments
+
+Each app gets independent preview deployments on PR:
+
+```yaml
+# .github/workflows/preview.yml
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'apps/platform/**'
+      - 'apps/admin/**'
+      - 'packages/ui/**'
+      - 'packages/shared/**'
+      - 'packages/realtime/**'
+
+jobs:
+  preview-web:
+    if: contains(github.event.pull_request.changed_files, 'apps/web/')
+    # ... build + wrangler deploy --env dev
+
+  preview-platform:
+    if: contains(github.event.pull_request.changed_files, 'apps/platform/')
+    # ... build + wrangler deploy --env dev
+
+  preview-admin:
+    if: contains(github.event.pull_request.changed_files, 'apps/admin/')
+    # ... build + wrangler deploy --env dev
+```
+
+Changes to `packages/ui` or `packages/shared` trigger preview deploys for all three apps.
 
 ---
 
-### New Pages Planned
-
-v3 adds 6 new pages to support analytics, sponsorship, mentoring, notifications, and platform administration:
-
-| Page | Route | Auth | Min Role | Description |
-|------|-------|------|----------|-------------|
-| Analytics Dashboard | `/hackathon/:slug/analytics` | Authenticated | admin | Submission trends, team activity heatmaps, participation metrics, GitHub commit graphs |
-| Sponsor Portal | `/hackathon/:slug/sponsors` | Authenticated | admin | Sponsor tier management, logo uploads, perk configuration, sponsor visibility settings |
-| Mentor Matching | `/hackathon/:slug/mentors` | Authenticated | participant | Browse available mentors, request mentorship, schedule office hours, mentor-team pairing |
-| Notification Center | `/notifications` | Authenticated | participant | In-app notification inbox, read/unread state, notification preferences, email digest settings |
-| Admin Panel | `/admin` | Authenticated | platform_admin | Platform-wide user management, hackathon oversight, system health, feature flags |
-| Public Directory | `/` (redesigned) | Public | - | Searchable/filterable hackathon directory, featured events, category tags, location/date filters |
-
----
-
-## Component Architecture (v3)
-
-### Feature-Based Folder Structure
-
-v3 migrates from the flat `pages/` structure to a feature-based organization:
-
-```
-apps/web/src/
-├── app/
-│   ├── App.tsx                     # Route definitions
-│   ├── main.tsx                    # Bootstrap
-│   ├── providers.tsx               # Composed providers (Auth, Theme, Query, Intl)
-│   └── error-boundary.tsx          # App-level error boundary
-├── features/
-│   ├── auth/
-│   │   ├── pages/                  # login, auth-callback, link-required
-│   │   ├── components/             # OAuthButton, AccountLinkForm
-│   │   ├── hooks/                  # useAuth (moved from contexts/)
-│   │   └── tests/
-│   ├── dashboard/
-│   │   ├── pages/                  # dashboard
-│   │   ├── components/             # HackathonCard, FilterBar, StatsGrid
-│   │   ├── hooks/                  # useHackathonList, useDashboardStats
-│   │   └── tests/
-│   ├── hackathon/
-│   │   ├── pages/                  # hackathon-detail, analytics
-│   │   ├── components/             # PhaseIndicator, ActivityFeed, DeadlineTimer
-│   │   ├── hooks/                  # useHackathon, useHackathonTheme, useWebSocket
-│   │   └── tests/
-│   ├── team/
-│   │   ├── pages/                  # team-management
-│   │   ├── components/             # TeamCard, InviteDialog, MemberList
-│   │   ├── hooks/                  # useTeam, useTeamMembers
-│   │   └── tests/
-│   ├── judging/
-│   │   ├── pages/                  # judge-dashboard, leaderboard
-│   │   ├── components/             # ScoreCard, RubricForm, LeaderboardTable
-│   │   ├── hooks/                  # useAssignments, useScoring
-│   │   └── tests/
-│   ├── organizer/
-│   │   ├── pages/                  # organizer-dashboard, sponsor-portal
-│   │   ├── components/             # PhaseControl, SettingsForm, SponsorTierEditor
-│   │   ├── hooks/                  # useOrganizerHackathons, usePhaseTransition
-│   │   └── tests/
-│   ├── mentoring/
-│   │   ├── pages/                  # mentor-matching
-│   │   ├── components/             # MentorCard, ScheduleCalendar, RequestForm
-│   │   ├── hooks/                  # useMentors, useMentorRequests
-│   │   └── tests/
-│   ├── notifications/
-│   │   ├── pages/                  # notification-center
-│   │   ├── components/             # NotificationList, PreferencesForm
-│   │   ├── hooks/                  # useNotifications, useUnreadCount
-│   │   └── tests/
-│   ├── admin/
-│   │   ├── pages/                  # admin-panel
-│   │   ├── components/             # UserTable, SystemHealth, FeatureFlags
-│   │   ├── hooks/                  # useAdminStats, useUserManagement
-│   │   └── tests/
-│   └── profile/
-│       ├── pages/                  # profile
-│       ├── components/             # AvatarUpload, LinkedAccounts
-│       ├── hooks/                  # useProfile
-│       └── tests/
-├── shared/
-│   ├── components/                 # Cross-feature components
-│   │   ├── error-boundary.tsx
-│   │   ├── loading-skeleton.tsx
-│   │   ├── empty-state.tsx
-│   │   └── confirm-dialog.tsx
-│   ├── hooks/                      # Cross-feature hooks
-│   │   ├── use-api-query.ts        # TanStack Query wrapper around apiRequest()
-│   │   ├── use-websocket.ts        # WebSocket connection manager
-│   │   ├── use-route-focus.ts      # a11y focus management
-│   │   └── use-reduced-motion.ts   # Motion preference detection
-│   └── lib/                        # Utilities
-│       ├── api.ts                  # apiRequest() (unchanged)
-│       ├── utils.ts                # cn() (unchanged)
-│       ├── query-keys.ts           # Centralized query key factory
-│       └── websocket.ts            # WebSocket client with reconnection
-├── layouts/
-│   ├── dashboard-layout.tsx        # Authenticated pages (navbar + sidebar)
-│   ├── public-layout.tsx           # Public pages (minimal header + footer)
-│   └── admin-layout.tsx            # Admin pages (sidebar nav + breadcrumbs)
-├── i18n/
-│   ├── en.json                     # English messages
-│   ├── es.json                     # Spanish messages
-│   ├── hi.json                     # Hindi messages
-│   └── provider.tsx                # IntlProvider wrapper with lazy locale loading
-└── styles/
-    └── index.css                   # Tailwind v4 theme + global styles
-```
-
-### Component Tree (v3)
-
-```mermaid
-graph TD
-    subgraph Providers["Provider Layer"]
-        QP["QueryClientProvider<br/>(TanStack Query)"]
-        IP["IntlProvider<br/>(react-intl)"]
-        TP["ThemeProvider<br/>(dark mode + hackathon themes)"]
-        AP["AuthProvider<br/>(user state)"]
-    end
-
-    subgraph Layouts["Layout Layer"]
-        PL["PublicLayout<br/>Header + Footer"]
-        DL["DashboardLayout<br/>Navbar + Sidebar + Outlet"]
-        AL["AdminLayout<br/>Sidebar nav + Breadcrumbs + Outlet"]
-    end
-
-    subgraph Features["Feature Layer"]
-        Auth["auth/<br/>Login, Callback, LinkRequired"]
-        Dash["dashboard/<br/>HackathonList, Stats"]
-        Hack["hackathon/<br/>Detail, Analytics, ActivityFeed"]
-        Team["team/<br/>Management, Invites"]
-        Judge["judging/<br/>Scoring, Leaderboard"]
-        Org["organizer/<br/>Dashboard, Sponsors"]
-        Mentor["mentoring/<br/>Matching, Schedule"]
-        Notif["notifications/<br/>Center, Preferences"]
-        Admin["admin/<br/>Panel, Users, Health"]
-        Prof["profile/<br/>Settings, Accounts"]
-    end
-
-    subgraph Shared["Shared Layer"]
-        EB["ErrorBoundary"]
-        LS["LoadingSkeleton"]
-        ES["EmptyState"]
-        CD["ConfirmDialog"]
-    end
-
-    subgraph UILib["@devsage/ui (packages/ui)"]
-        Btn["Button"]
-        Crd["Card"]
-        Dlg["Dialog"]
-        DD["DropdownMenu"]
-        Inp["Input"]
-        Tab["Tabs"]
-        Bdg["Badge"]
-        Skl["Skeleton"]
-        DT["DataTable"]
-        FF["FormField"]
-    end
-
-    QP --> IP --> TP --> AP
-    AP --> PL
-    AP --> DL
-    AP --> AL
-    PL --> Auth
-    DL --> Dash
-    DL --> Hack
-    DL --> Team
-    DL --> Judge
-    DL --> Prof
-    DL --> Mentor
-    DL --> Notif
-    AL --> Org
-    AL --> Admin
-    Features --> Shared
-    Features --> UILib
-    Shared --> UILib
-```
-
-### Layout System
-
-| Layout | Routes | Features |
-|--------|--------|----------|
-| `PublicLayout` | `/`, `/login`, `/auth/callback`, `/link-required`, `/about` | Minimal header with logo, footer with links, no auth required |
-| `DashboardLayout` | `/dashboard`, `/hackathons/*`, `/profile`, `/notifications`, `/hackathon/:slug/mentors` | Sticky navbar, collapsible sidebar, profile dropdown, notification bell, breadcrumbs |
-| `AdminLayout` | `/organiser`, `/admin`, `/hackathon/:slug/analytics`, `/hackathon/:slug/sponsors` | Sidebar navigation, breadcrumbs, role indicator, system status bar |
-
----
-
-## Data Flow (v3)
-
-### Query Data Flow
+## Dependency Graph
 
 ```mermaid
 graph LR
-    subgraph Component["React Component"]
-        Hook["useQuery / useMutation"]
-    end
+    WEB["apps/web"] --> SHARED["packages/shared"]
+    WEB --> UI["packages/ui"]
+    WEB --> RT["packages/realtime"]
 
-    subgraph TQ["TanStack Query"]
-        Cache["Query Cache"]
-        BG["Background Refetch"]
-        OPT["Optimistic Update"]
-    end
+    PLAT["apps/platform"] --> SHARED
+    PLAT --> UI
+    PLAT --> RT
 
-    subgraph Network["Network Layer"]
-        API_FN["apiRequest()"]
-        WS["WebSocket Client"]
-    end
+    ADMIN["apps/admin"] --> SHARED
+    ADMIN --> UI
 
-    subgraph Backend["API Worker"]
-        HN["Hono Routes"]
-        D1["D1 Database"]
-        DO["Durable Objects"]
-    end
+    API["apps/api"] --> SHARED
+    API --> DB["packages/db"]
+    API --> CONFIG["packages/config"]
+    API --> RT
 
-    Hook -->|"read"| Cache
-    Hook -->|"mutate"| OPT
-    OPT -->|"update cache"| Cache
-    Cache -->|"stale?"| BG
-    BG -->|"fetch"| API_FN
-    OPT -->|"send"| API_FN
-    API_FN -->|"HTTPS"| HN
-    HN --> D1
-    HN --> DO
-    D1 -->|"response"| API_FN
-    API_FN -->|"update"| Cache
-    Cache -->|"re-render"| Hook
-
-    WS -->|"event"| TQ
-    DO -->|"push"| WS
+    DB --> CONFIG
+    UI --> CONFIG
+    RT --> SHARED
 ```
 
-### Real-Time Data Flow
-
-```mermaid
-sequenceDiagram
-    participant DO as Durable Object
-    participant WS as WebSocket
-    participant EH as Event Handler
-    participant QC as QueryClient
-    participant UI as React Component
-
-    DO->>WS: Push event<br/>{ type: "score_published", data: {...} }
-    WS->>EH: onMessage callback
-    EH->>EH: Parse event type
-
-    alt Invalidation strategy
-        EH->>QC: invalidateQueries(['hackathons', slug, 'leaderboard'])
-        QC->>QC: Mark query as stale
-        QC->>QC: Background refetch (if component mounted)
-        QC->>UI: Re-render with fresh data
-    else Direct cache update
-        EH->>QC: setQueryData(['hackathons', slug, 'leaderboard'], updater)
-        QC->>UI: Re-render immediately (no network request)
-    end
-```
-
-### Mutation Flow with Error Recovery
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Mutating: User action
-    Mutating --> OptimisticUpdate: onMutate
-    OptimisticUpdate --> Pending: Cache updated, request sent
-    Pending --> Success: Server 2xx
-    Pending --> Error: Server 4xx/5xx or network error
-    Success --> Idle: onSuccess (replace optimistic with server data)
-    Error --> Rollback: onError (restore snapshot)
-    Rollback --> Idle: Show error toast
-```
-
----
-
-## Build and Deploy (v3)
-
-### Vite Build Optimizations
-
-| Optimization | Configuration | Impact |
-|-------------|---------------|--------|
-| Code splitting | `React.lazy()` for all pages | Smaller initial bundle, faster first load |
-| Manual chunks | Vendor splitting (react, radix, motion, query) | Better cache hit rates on deploys |
-| Tree shaking | ESM imports + Vite default | Remove unused code paths |
-| CSS purging | Tailwind v4 automatic purge | Only ship used utility classes |
-| Asset hashing | Vite default content hashing | Aggressive CDN caching with cache busting |
-| Minification | esbuild (JS) + Lightning CSS (CSS) | Smaller output |
-| Compression | gzip + brotli via Cloudflare | 60-70% size reduction |
-| Bundle analysis | `rollup-plugin-visualizer` (ANALYZE=true) | Visual treemap of bundle composition |
-
-### Bundle Splitting Strategy
-
-```mermaid
-graph TD
-    subgraph Entry["Entry Point"]
-        Main["main.js<br/>(bootstrap + providers)"]
-    end
-
-    subgraph Vendor["Vendor Chunks"]
-        VR["vendor-react.js<br/>react, react-dom, react-router-dom<br/>~45 KB gz"]
-        VU["vendor-ui.js<br/>radix-ui primitives<br/>~20 KB gz"]
-        VM["vendor-motion.js<br/>framer-motion<br/>~35 KB gz"]
-        VQ["vendor-query.js<br/>@tanstack/react-query<br/>~12 KB gz"]
-    end
-
-    subgraph Pages["Page Chunks (lazy)"]
-        PH["home.js<br/>~25 KB gz"]
-        PD["dashboard.js<br/>~15 KB gz"]
-        PHD["hackathon-detail.js<br/>~18 KB gz"]
-        PJ["judge-dashboard.js<br/>~12 KB gz"]
-        PO["organizer-dashboard.js<br/>~14 KB gz"]
-        PP["profile.js<br/>~8 KB gz"]
-        PA["analytics.js<br/>~20 KB gz"]
-        PN["admin.js<br/>~16 KB gz"]
-    end
-
-    subgraph Shared["Shared Chunk"]
-        SC["shared.js<br/>components, hooks, utils<br/>~10 KB gz"]
-    end
-
-    Main --> VR
-    Main --> SC
-    Pages --> VU
-    Pages --> VM
-    Pages --> VQ
-    Pages --> SC
-```
-
-**Total initial load** (home page): ~80 KB gzipped (main + vendor-react + shared + home chunk). Well within the 200 KB budget.
-
-### CDN Strategy with Cloudflare
-
-| Asset type | Cache behavior | TTL |
-|-----------|---------------|-----|
-| Hashed JS/CSS (`*.abc123.js`) | Immutable | 1 year (`Cache-Control: public, max-age=31536000, immutable`) |
-| `index.html` | Revalidate on every request | 0 (`Cache-Control: no-cache`) |
-| Static images/fonts | Long-lived | 30 days |
-| Service Worker (`sw.js`) | Revalidate | 0 (browser checks for updates) |
-
-Cloudflare Workers Static Assets automatically serves files from the `dist/` directory at the edge. The `not_found_handling: "single-page-application"` setting ensures all unmatched routes serve `index.html` for client-side routing.
-
-### Preview Deployments for PRs
-
-| Feature | Implementation |
-|---------|---------------|
-| Trigger | GitHub PR opened/updated |
-| Environment | Wrangler `--env dev` deployment |
-| URL pattern | `https://web-dev.<account>.workers.dev` |
-| Cleanup | Automatic on PR close/merge |
-| API target | Dev API worker (`api-dev`) |
-
-```yaml
-# .github/workflows/preview.yml (planned)
-on:
-  pull_request:
-    paths: ['apps/web/**', 'packages/shared/**', 'packages/ui/**']
-
-jobs:
-  preview:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @devsage/web build
-        env:
-          VITE_API_ORIGIN: https://api-dev.devsage.org
-      - run: pnpm --filter @devsage/web exec wrangler deploy --env dev
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: 'Preview deployed: https://web-dev.cf3386ad6d48a38a199781a39b2324ad.workers.dev'
-            })
-```
+**Key constraints:**
+- `apps/admin` does **not** depend on `packages/realtime` (no WebSocket)
+- No frontend app depends on `packages/db` (database is API-only)
+- `packages/ui` depends on `packages/config` for shared tsconfig + ESLint
+- All three frontend apps depend on `packages/shared` for Zod schemas and types
 
 ---
 
 ## File References
 
-### Current Frontend Files (v2)
+### Configuration Files (per app)
 
-| File | Purpose | LOC |
-|------|---------|-----|
-| `apps/web/src/main.tsx` | Bootstrap: StrictMode + BrowserRouter + AuthProvider + Toaster | 19 |
-| `apps/web/src/App.tsx` | Route definitions with Suspense + lazy loading | 46 |
-| `apps/web/src/index.css` | Tailwind v4 theme, CSS variables, scrollbar styles | 154 |
-| `apps/web/src/vite-env.d.ts` | Vite client type declarations | - |
-| `apps/web/src/pages/home.tsx` | Landing page (hero, bento grid, gallery) | 1054 |
-| `apps/web/src/pages/login.tsx` | OAuth login buttons (GitHub + Google) | - |
-| `apps/web/src/pages/auth-callback.tsx` | Post-OAuth redirect handler | - |
-| `apps/web/src/pages/link-required.tsx` | GitHub account linking prompt | - |
-| `apps/web/src/pages/dashboard.tsx` | Hackathon list with tabs and filtering | - |
-| `apps/web/src/pages/hackathon-detail.tsx` | Hackathon overview, team status, submissions | - |
-| `apps/web/src/pages/team-management.tsx` | Team creation, invites, repo linking | - |
-| `apps/web/src/pages/leaderboard.tsx` | Scores and rankings table | - |
-| `apps/web/src/pages/judge-dashboard.tsx` | Judge scoring interface | - |
-| `apps/web/src/pages/organizer-dashboard.tsx` | Organizer management panel | - |
-| `apps/web/src/pages/profile.tsx` | User profile and settings | - |
-| `apps/web/src/pages/about.tsx` | About page (no route in App.tsx) | - |
-| `apps/web/src/pages/not-found.tsx` | 404 fallback page | - |
-| `apps/web/src/pages/hackathons/hack001.tsx` | Special-case hackathon page | - |
-| `apps/web/src/components/protected-route.tsx` | Auth guard with skeleton loading state | 26 |
-| `apps/web/src/components/dashboard-layout.tsx` | Sticky navbar + profile dropdown + outlet | 125 |
-| `apps/web/src/components/custom-cursor.tsx` | Framer Motion animated cursor effect | - |
-| `apps/web/src/components/ui/button.tsx` | shadcn/ui Button (CVA variants) | - |
-| `apps/web/src/components/ui/card.tsx` | shadcn/ui Card container | - |
-| `apps/web/src/components/ui/dialog.tsx` | shadcn/ui Dialog (Radix) | - |
-| `apps/web/src/components/ui/dropdown-menu.tsx` | shadcn/ui DropdownMenu (Radix) | - |
-| `apps/web/src/components/ui/input.tsx` | shadcn/ui Input field | - |
-| `apps/web/src/components/ui/tabs.tsx` | shadcn/ui Tabs (Radix) | - |
-| `apps/web/src/components/ui/badge.tsx` | shadcn/ui Badge | - |
-| `apps/web/src/components/ui/skeleton.tsx` | shadcn/ui Skeleton loader | - |
-| `apps/web/src/contexts/auth-context.tsx` | AuthProvider + useAuth() hook | 72 |
-| `apps/web/src/lib/api.ts` | apiRequest() fetch wrapper with 401 redirect | 46 |
-| `apps/web/src/lib/utils.ts` | cn() class merging (clsx + tailwind-merge) | 7 |
-| `apps/web/src/__tests__/auth-context.test.tsx` | AuthProvider unit tests | - |
-| `apps/web/src/__tests__/login.test.tsx` | Login page component tests | - |
+| File | Purpose | apps/web | apps/platform | apps/admin |
+|------|---------|----------|---------------|------------|
+| `package.json` | Dependencies + scripts | ✓ | ✓ | ✓ |
+| `vite.config.ts` | Vite + React + Tailwind + dev proxy | ✓ | ✓ | ✓ |
+| `vitest.config.ts` | Vitest + jsdom + path aliases | ✓ | ✓ | ✓ |
+| `tsconfig.json` | TypeScript (extends `config/tsconfig.react.json`) | ✓ | ✓ | ✓ |
+| `wrangler.jsonc` | Cloudflare Workers Static Assets config | ✓ | ✓ | ✓ |
+| `.env.production` | `VITE_API_ORIGIN` (client-visible only) | ✓ | ✓ | ✓ |
+| `index.html` | SPA entry point (`#root`) | ✓ | ✓ | ✓ |
 
-### Configuration Files
+### Shared Package Files
 
 | File | Purpose |
 |------|---------|
-| `apps/web/package.json` | Dependencies, scripts (`dev`, `build`, `test`, `deploy`) |
-| `apps/web/vite.config.ts` | Vite plugins (React, Tailwind), path aliases, dev proxy, bundle analyzer |
-| `apps/web/vitest.config.ts` | Vitest config (jsdom, globals, path aliases) |
-| `apps/web/tsconfig.json` | TypeScript config (extends `config/tsconfig.react.json`, strict, path aliases) |
-| `apps/web/wrangler.jsonc` | Cloudflare Workers Static Assets deployment config |
-| `apps/web/.env.production` | `VITE_API_ORIGIN=https://api.devsage.org` |
-| `apps/web/index.html` | SPA entry point (mounts `#root`) |
+| `packages/ui/src/index.ts` | Barrel export for all UI components |
+| `packages/shared/src/index.ts` | Barrel export for schemas + types |
+| `packages/realtime/src/index.ts` | Barrel export for WebSocket client SDK |
+| `packages/config/tsconfig.react.json` | Shared TypeScript config for all React apps |
+| `packages/config/eslint.config.mjs` | Shared ESLint flat config |
