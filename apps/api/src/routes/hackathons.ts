@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, ne, desc, count } from 'drizzle-orm';
+import { eq, ne, desc, count, and } from 'drizzle-orm';
 import { createDbClient, hackathons as hackathonsTable, organizerRoles } from '@devsage/db';
 import {
   CreateHackathonRequestSchema,
@@ -83,45 +83,67 @@ hackathons.get('/:slug', async (c) => {
   } catch {}
 
   let hackathon;
-  if (userId) {
-    // Check if user is an organizer (owner, admin, moderator) for this hackathon
-    const orgRole = await db
-      .select({ role: organizerRoles.role })
-      .from(organizerRoles)
-      .where(
-        and(
-          eq(organizerRoles.hackathon_id, db
-            .select({ id: hackathonsTable.id })
-            .from(hackathonsTable)
-            .where(eq(hackathonsTable.slug, slug))
-            .get().then(r => r?.id || ''),
-          ),
-          eq(organizerRoles.user_id, userId),
-        ),
-      )
+  // Fetch hackathon ID first
+  let hackathonId: string | undefined = undefined;
+  try {
+    const hackathonIdResult = await db
+      .select({ id: hackathonsTable.id })
+      .from(hackathonsTable)
+      .where(eq(hackathonsTable.slug, slug))
       .get();
-    if (orgRole && ['owner', 'admin', 'moderator'].includes(orgRole.role)) {
-      // Organizer: can see any hackathon (including draft)
-      hackathon = await db
-        .select()
-        .from(hackathonsTable)
-        .where(eq(hackathonsTable.slug, slug))
+    hackathonId = hackathonIdResult?.id;
+  } catch (err) {
+    console.error('Error fetching hackathonId:', err);
+    return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to fetch hackathonId');
+  }
+
+  if (userId && hackathonId) {
+    try {
+      // Check if user is an organizer (owner, admin, moderator) for this hackathon
+      const orgRole = await db
+        .select({ role: organizerRoles.role })
+        .from(organizerRoles)
+        .where(
+          and(
+            eq(organizerRoles.hackathon_id, hackathonId),
+            eq(organizerRoles.user_id, userId)
+          )
+        )
         .get();
+      if (orgRole && ['owner', 'admin', 'moderator'].includes(orgRole.role)) {
+        // Organizer: can see any hackathon (including draft)
+        hackathon = await db
+          .select()
+          .from(hackathonsTable)
+          .where(eq(hackathonsTable.slug, slug))
+          .get();
+      }
+    } catch (err) {
+      console.error('Error checking organizer role:', err);
+      return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to check organizer role');
     }
   }
   if (!hackathon) {
-    // Fallback: only allow non-draft hackathons
-    hackathon = await db
-      .select()
-      .from(hackathonsTable)
-      .where(
-        and(
-          eq(hackathonsTable.slug, slug),
-          // Only non-draft
-          ne(hackathonsTable.status, 'draft')
+    try {
+      // Fallback: only allow non-draft hackathons
+      hackathon = await db
+        .select()
+        .from(hackathonsTable)
+        .where(
+          and(
+            eq(hackathonsTable.slug, slug),
+            ne(hackathonsTable.status, 'draft')
+          )
         )
-      )
-      .get();
+        .get();
+    } catch (err) {
+      console.error('Error fetching fallback hackathon:', err);
+      return errorResponse(c, 500, 'INTERNAL_ERROR', 'Failed to fetch hackathon');
+    }
+  }
+  // If hackathonId is missing, return not found
+  if (!hackathonId) {
+    return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
   }
 
   if (!hackathon) {

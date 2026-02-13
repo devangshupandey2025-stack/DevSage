@@ -33,7 +33,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, errorData.error || response.statusText || 'API Request Failed');
+    const message = errorData.error?.message || errorData.error || response.statusText || 'API Request Failed';
+    throw new ApiError(response.status, message);
   }
 
   // Handle 204 No Content

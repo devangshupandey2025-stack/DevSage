@@ -35,20 +35,16 @@ function toRecipients(
     .map((r) => ({ email: r.email, name: r.name }));
 }
 
-/** Fetch all members of a team (optionally restricted to leaders). */
+/** Fetch all members of a team. */
 async function fetchTeamMembers(
   db: DbClient,
   teamId: string,
-  roleFilter?: 'leader',
 ): Promise<Recipient[]> {
-  const baseQuery = db
+  const rows = await db
     .select({ email: users.email, name: users.display_name })
     .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.user_id, users.id));
-
-  const rows = roleFilter
-    ? await baseQuery.where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.role, roleFilter)))
-    : await baseQuery.where(eq(teamMembers.team_id, teamId));
+    .innerJoin(users, eq(teamMembers.user_id, users.id))
+    .where(eq(teamMembers.team_id, teamId));
 
   return toRecipients(rows);
 }
@@ -109,7 +105,7 @@ export async function resolveRecipients(
       return fetchTeamMembers(db, message.teamId);
 
     case 'submission_invalid':
-      return fetchTeamMembers(db, message.teamId, 'leader');
+      return fetchTeamMembers(db, message.teamId);
 
     case 'force_push_alert': {
       const organizers = await db
@@ -152,7 +148,6 @@ export async function resolveRecipients(
         INNER JOIN teams t ON tm.team_id = t.id
         INNER JOIN users u ON tm.user_id = u.id
         WHERE t.hackathon_id = ?
-          AND tm.role = 'leader'
           AND NOT EXISTS (
             SELECT 1 FROM submissions s
             WHERE s.team_id = tm.team_id

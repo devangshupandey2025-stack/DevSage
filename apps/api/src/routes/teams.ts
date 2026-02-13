@@ -60,7 +60,6 @@ teamsRouter.post(
         id: memberId,
         team_id: teamId,
         user_id: user.sub,
-        role: 'leader',
         joined_at: now,
       }),
     ]);
@@ -135,7 +134,6 @@ teamsRouter.get('/:slug/teams/:teamId', requireRole('participant'), async (c) =>
   const members = await db
     .select({
       user_id: teamMembers.user_id,
-      role: teamMembers.role,
       joined_at: teamMembers.joined_at,
       display_name: users.display_name,
     })
@@ -207,7 +205,6 @@ teamsRouter.post(
       id: memberId,
       team_id: teamId,
       user_id: user.sub,
-      role: 'member',
       joined_at: now,
     });
 
@@ -251,16 +248,15 @@ teamsRouter.delete(
     }
 
     const actorMembership = await db
-      .select({ role: teamMembers.role })
+      .select()
       .from(teamMembers)
       .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
       .get();
 
-    const isLeader = actorMembership?.role === 'leader';
     const isAdmin = isRoleAtLeast(role, 'admin');
 
-    if (!isLeader && !isAdmin) {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader or admin can remove members');
+    if (!actorMembership && !isAdmin) {
+      return errorResponse(c, 403, 'FORBIDDEN', 'Only team member or admin can remove members');
     }
 
     const targetMembership = await db
@@ -317,13 +313,13 @@ teamsRouter.post(
     }
 
     const actorMembership = await db
-      .select({ role: teamMembers.role })
+      .select()
       .from(teamMembers)
       .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
       .get();
 
-    if (actorMembership?.role !== 'leader') {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader can connect repository');
+    if (!actorMembership) {
+      return errorResponse(c, 403, 'FORBIDDEN', 'Only team member can connect repository');
     }
 
     const existingRepo = await db
