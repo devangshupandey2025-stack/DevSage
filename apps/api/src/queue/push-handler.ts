@@ -3,13 +3,8 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { NormalizedPushEvent } from '../lib/webhook-normalize.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import type { Env } from '../types/env.js';
-
-const MAX_COMMITS_PER_PUSH = 20;
-
-interface TeamRow {
-  id: string;
-  hackathon_id: string;
-}
+import { MAX_COMMITS_PER_PUSH } from '../lib/constants.js';
+import type { TeamRow } from '../types/db-rows.js';
 
 export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<void> {
   const team = await env.DB.prepare(
@@ -28,21 +23,31 @@ export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<
   const boundedCommits = event.commits.slice(0, MAX_COMMITS_PER_PUSH);
   const now = new Date().toISOString();
 
-  for (const commit of boundedCommits) {
-    await db.insert(commitLog).values({
-      id: crypto.randomUUID(),
-      team_id: team.id,
-      hackathon_id: team.hackathon_id,
-      commit_sha: commit.sha,
-      message: commit.message?.substring(0, 500) ?? null,
-      author_username: commit.author?.substring(0, 100) ?? null,
-      branch: event.branch,
-      pushed_at: event.timestamp,
-      is_force_push: event.forced ? 1 : 0,
-      commits_in_push: event.commits.length,
-      webhook_delivery_id: event.deliveryId,
-      created_at: now,
+  // Log commits — failures here should not block force-push detection
+  try {
+    for (const commit of boundedCommits) {
+      await db.insert(commitLog).values({
+        id: crypto.randomUUID(),
+        team_id: team.id,
+        hackathon_id: team.hackathon_id,
+        commit_sha: commit.sha,
+        message: commit.message?.substring(0, 500) ?? null,
+        author_username: commit.author?.substring(0, 100) ?? null,
+        branch: event.branch,
+        pushed_at: event.timestamp,
+        is_force_push: event.forced ? 1 : 0,
+        commits_in_push: event.commits.length,
+        webhook_delivery_id: event.deliveryId,
+        created_at: now,
+      });
+    }
+  } catch (error) {
+    console.error('push-handler: failed to log commits:', {
+      teamId: team.id,
+      deliveryId: event.deliveryId,
+      error: error instanceof Error ? error.message : String(error),
     });
+    // Continue to force-push detection — logging failure is non-critical
   }
 
   if (event.forced) {

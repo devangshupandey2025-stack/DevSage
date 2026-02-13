@@ -5,7 +5,7 @@ import type { Env } from '../types/env.js';
 import { clearSessionCookie, getSessionCookie, setSessionCookie } from '../lib/cookies.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
 import { errorResponse, successResponse } from '../lib/response.js';
-import type { GitHubOAuthProfile, GoogleOAuthProfile } from '../lib/oauth.js';
+import { upsertGitHubUser, linkGoogleToUser, callbackUrl } from '../lib/user-service.js';
 import {
   buildGitHubAuthorizationUrl,
   buildGoogleAuthorizationUrl,
@@ -19,89 +19,6 @@ import {
 } from '../lib/oauth.js';
 
 const auth = new Hono<{ Bindings: Env }>();
-
-async function upsertGitHubUser(env: Env, profile: GitHubOAuthProfile) {
-  const db = createDbClient(env.DB);
-  const now = new Date().toISOString();
-
-  const existing = await db
-    .select()
-    .from(users)
-    .where(eq(users.github_id, profile.githubId))
-    .get();
-
-  if (existing) {
-    await db
-      .update(users)
-      .set({
-        github_username: profile.githubUsername,
-        display_name: profile.displayName,
-        email: profile.email,
-        avatar_url: profile.avatarUrl,
-        updated_at: now,
-      })
-      .where(eq(users.id, existing.id));
-
-    return {
-      id: existing.id,
-      github_id: existing.github_id,
-      github_username: profile.githubUsername,
-    };
-  }
-
-  const id = crypto.randomUUID();
-  await db.insert(users).values({
-    id,
-    github_id: profile.githubId,
-    github_username: profile.githubUsername,
-    display_name: profile.displayName,
-    email: profile.email,
-    avatar_url: profile.avatarUrl,
-    created_at: now,
-    updated_at: now,
-  });
-
-  return {
-    id,
-    github_id: profile.githubId,
-    github_username: profile.githubUsername,
-  };
-}
-
-async function linkGoogleToUser(env: Env, profile: GoogleOAuthProfile) {
-  const db = createDbClient(env.DB);
-  const now = new Date().toISOString();
-
-  const existing = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, profile.email))
-    .get();
-
-  if (!existing) {
-    return null;
-  }
-
-  await db
-    .update(users)
-    .set({
-      google_id: profile.googleId,
-      display_name: profile.displayName,
-      avatar_url: profile.avatarUrl ?? existing.avatar_url,
-      updated_at: now,
-    })
-    .where(eq(users.id, existing.id));
-
-  return {
-    id: existing.id,
-    github_id: existing.github_id,
-    github_username: existing.github_username,
-  };
-}
-
-function callbackUrl(requestUrl: string, provider: 'google' | 'github'): string {
-  return new URL(`/auth/callback/${provider}`, requestUrl).toString();
-}
 
 auth.get('/google', async (c) => {
   const state = generateOAuthState();
@@ -141,7 +58,8 @@ auth.get('/callback/google', async (c) => {
     const profile = await fetchGoogleUserProfile(accessToken);
     const user = await linkGoogleToUser(c.env, profile);
     if (!user) {
-      return errorResponse(c, 400, 'NO_GITHUB_ACCOUNT', 'Sign in with GitHub first');
+      const linkUrl = new URL('/link-required', c.env.FRONTEND_URL).toString();
+      return c.redirect(linkUrl, 302);
     }
 
     const token = await signJWT(
@@ -153,9 +71,8 @@ auth.get('/callback/google', async (c) => {
     const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
     return c.redirect(dashboardUrl, 302);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('Google OAuth failed', err);
-    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', `Google OAuth failed: ${message}`);
+    console.error('Google OAuth failed:', err instanceof Error ? err.message : String(err));
+    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', 'Google authentication failed. Please try again.');
   }
 });
 
@@ -205,9 +122,8 @@ auth.get('/callback/github', async (c) => {
     const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
     return c.redirect(dashboardUrl, 302);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('GitHub OAuth failed', err);
-    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', `GitHub OAuth failed: ${message}`);
+    console.error('GitHub OAuth failed:', err instanceof Error ? err.message : String(err));
+    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', 'GitHub authentication failed. Please try again.');
   }
 });
 

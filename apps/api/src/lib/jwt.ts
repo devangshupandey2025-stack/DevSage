@@ -45,10 +45,12 @@ async function importSigningKey(secret: string): Promise<CryptoKey> {
   );
 }
 
+import { JWT_EXPIRY_SECONDS } from './constants.js';
+
 export async function signJWT(
   payload: Omit<JWTPayload, 'iat' | 'exp'>,
   secret: string,
-  expiresInSeconds = 7 * 24 * 60 * 60
+  expiresInSeconds = JWT_EXPIRY_SECONDS,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const fullPayload: JWTPayload = {

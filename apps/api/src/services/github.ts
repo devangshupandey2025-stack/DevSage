@@ -1,4 +1,5 @@
 import type { Env } from '../types/env.js';
+import { SERVICE_TIMEOUT_MS } from '../lib/constants.js';
 
 interface CommitStatusParams {
   repoFullName: string;
@@ -23,7 +24,7 @@ export async function postCommitStatus(env: Env, params: CommitStatusParams): Pr
   const url = `https://api.github.com/repos/${params.repoFullName}/statuses/${params.sha}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), SERVICE_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {

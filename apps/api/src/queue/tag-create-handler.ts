@@ -4,20 +4,10 @@ import { matchSubmissionTag } from '../lib/submission-tag.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { postCommitStatus } from '../services/github.js';
 import type { Env } from '../types/env.js';
-
-interface TeamRow {
-  id: string;
-  hackathon_id: string;
-}
-
-interface HackathonRow {
-  submission_tag_pattern: string;
-  submission_deadline: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+import { isRecord } from '../lib/utils.js';
+import { getStateMachineStub, fetchDO } from '../lib/do-client.js';
+import { DO_PATHS } from '../lib/constants.js';
+import type { TeamRow, HackathonRow } from '../types/db-rows.js';
 
 export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env): Promise<void> {
   const team = await env.DB.prepare(
@@ -45,52 +35,53 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   const submissionId = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const doId = env.HACKATHON_SM.idFromName(team.hackathon_id);
-  const doStub = env.HACKATHON_SM.get(doId);
+  const doStub = getStateMachineStub(env, team.hackathon_id);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
-  let doResponse: Response;
+  let doResult: Awaited<ReturnType<typeof fetchDO>>;
   try {
-    doResponse = await doStub.fetch('http://do/accept-submission', {
+    doResult = await fetchDO(doStub, DO_PATHS.ACCEPT_SUBMISSION, {
       method: 'POST',
-      body: JSON.stringify({
+      body: {
         teamId: team.id,
         submissionId,
         tagName: event.tagName,
         commitSha: event.sha,
         timestamp: event.timestamp,
         webhookDeliveryId: event.deliveryId,
-      }),
-      signal: controller.signal,
+      },
     });
-  } finally {
-    clearTimeout(timeoutId);
+  } catch (error) {
+    console.error('tag-create: DO fetch failed:', {
+      hackathonId: team.hackathon_id,
+      teamId: team.id,
+      tag: event.tagName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error; // re-throw so queue retries
   }
 
-  const doResult = await doResponse.json();
-  if (!isRecord(doResult)) return;
+  if (!isRecord(doResult.data)) return;
+  const doData = doResult.data;
 
-   const accepted = doResult.accepted === true;
-   if (!accepted) {
-     await insertAuditEvent(db, {
-       hackathonId: team.hackathon_id,
-       actorType: 'bot',
-       action: 'submission.rejected',
-       entityType: 'submission',
-       entityId: submissionId,
-       details: { tagName: event.tagName, reason: doResult.reason },
-     });
-     await postCommitStatus(env, {
-       repoFullName: event.repoFullName,
-       sha: event.sha,
-       state: 'failure',
-       description: `Submission rejected: ${doResult.reason}`,
-       context: 'devsage/submission',
-     });
-     return;
-   }
+  const accepted = doData.accepted === true;
+  if (!accepted) {
+    await insertAuditEvent(db, {
+      hackathonId: team.hackathon_id,
+      actorType: 'bot',
+      action: 'submission.rejected',
+      entityType: 'submission',
+      entityId: submissionId,
+      details: { tagName: event.tagName, reason: doData.reason },
+    });
+    await postCommitStatus(env, {
+      repoFullName: event.repoFullName,
+      sha: event.sha,
+      state: 'failure',
+      description: `Submission rejected: ${doData.reason}`,
+      context: 'devsage/submission',
+    });
+    return;
+  }
 
   const deadlineMs = Date.parse(hackathon.submission_deadline);
   const submittedMs = Date.parse(event.timestamp);

@@ -6,8 +6,11 @@ import { handleTagDelete } from './tag-delete-handler.js';
 import { handleInstallation } from './installation-handler.js';
 import type { NotificationMessage } from './notification-handler.js';
 import { handleNotification } from './notification-handler.js';
-
-const MAX_RETRIES = 3;
+import {
+  MAX_QUEUE_RETRIES,
+  MAX_RETRY_DELAY_SECONDS,
+  RETRY_BACKOFF_BASE_SECONDS,
+} from '../lib/constants.js';
 
 function isValidWebhookEvent(body: unknown): body is NormalizedGitHubEvent {
   if (!body || typeof body !== 'object') return false;
@@ -78,11 +81,11 @@ export async function processWebhookBatch(
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('Queue handler error', { type: (message.body as unknown as Record<string, unknown>)?.type, error: errorMsg, attempt: message.attempts });
 
-      if (message.attempts >= MAX_RETRIES) {
+      if (message.attempts >= MAX_QUEUE_RETRIES) {
         await logDeadLetter(env, 'github-webhooks', message.body, errorMsg);
         message.ack();
       } else {
-        message.retry({ delaySeconds: Math.min(300, 30 * message.attempts) });
+        message.retry({ delaySeconds: Math.min(MAX_RETRY_DELAY_SECONDS, RETRY_BACKOFF_BASE_SECONDS * message.attempts) });
       }
     }
   }
@@ -90,7 +93,7 @@ export async function processWebhookBatch(
 
 export async function processNotificationBatch(
   batch: MessageBatch<NotificationMessage>,
-  env: Env
+  env: Env,
 ): Promise<void> {
   for (const message of batch.messages) {
     try {
@@ -106,11 +109,11 @@ export async function processNotificationBatch(
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('Notification handler error', { type: (message.body as Record<string, unknown>)?.type, error: errorMsg, attempt: message.attempts });
 
-      if (message.attempts >= MAX_RETRIES) {
+      if (message.attempts >= MAX_QUEUE_RETRIES) {
         await logDeadLetter(env, 'devsage-notifications', message.body, errorMsg);
         message.ack();
       } else {
-        message.retry({ delaySeconds: Math.min(300, 30 * message.attempts) });
+        message.retry({ delaySeconds: Math.min(MAX_RETRY_DELAY_SECONDS, RETRY_BACKOFF_BASE_SECONDS * message.attempts) });
       }
     }
   }

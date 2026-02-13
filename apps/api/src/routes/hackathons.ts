@@ -14,6 +14,15 @@ import { authMiddleware } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { isRecord } from '../lib/utils.js';
+import { getStateMachineStub, fetchDO } from '../lib/do-client.js';
+import {
+  DEFAULT_SUBMISSION_TAG_PATTERN,
+  DEFAULT_PRIMARY_COLOR,
+  DEFAULT_MIN_TEAM_SIZE,
+  DEFAULT_MAX_TEAM_SIZE,
+  DO_PATHS,
+} from '../lib/constants.js';
 
 const hackathons = new Hono<AuthAppEnv>();
 
@@ -22,23 +31,6 @@ function generateSlug(title: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-function getStateMachineStub(env: AuthAppEnv['Bindings'], hackathonId: string) {
-  const doId = env.HACKATHON_SM.idFromName(hackathonId);
-  return env.HACKATHON_SM.get(doId);
 }
 
 hackathons.get('/', async (c) => {
@@ -121,13 +113,13 @@ hackathons.post(
       submission_deadline: body.submissionDeadline,
       judging_starts: body.judgingStarts ?? null,
       judging_ends: body.judgingEnds ?? null,
-      min_team_size: body.minTeamSize ?? 1,
-      max_team_size: body.maxTeamSize ?? 5,
+      min_team_size: body.minTeamSize ?? DEFAULT_MIN_TEAM_SIZE,
+      max_team_size: body.maxTeamSize ?? DEFAULT_MAX_TEAM_SIZE,
       max_teams: body.maxTeams ?? null,
-      submission_tag_pattern: body.submissionTagPattern ?? 'submission_v%',
+      submission_tag_pattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
       max_submissions_per_team: body.maxSubmissionsPerTeam ?? null,
       allow_late_submissions: body.allowLateSubmissions ?? 0,
-      primary_color: body.primaryColor ?? '#6366f1',
+      primary_color: body.primaryColor ?? DEFAULT_PRIMARY_COLOR,
       status: 'draft',
       created_by: user.sub,
       created_at: now,
@@ -143,10 +135,9 @@ hackathons.post(
     });
 
     const smStub = getStateMachineStub(c.env, id);
-    const initResponse = await smStub.fetch('http://do/initialize', {
+    const initResult = await fetchDO(smStub, DO_PATHS.INITIALIZE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         hackathonId: id,
         config: {
           registrationOpens: body.registrationOpens,
@@ -157,18 +148,17 @@ hackathons.post(
           maxTeams: body.maxTeams ?? null,
           maxSubmissionsPerTeam: body.maxSubmissionsPerTeam ?? null,
           allowLateSubmissions: body.allowLateSubmissions ?? 0,
-          submissionTagPattern: body.submissionTagPattern ?? 'submission_v%',
+          submissionTagPattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
         },
-      }),
+      },
     });
 
-    if (!initResponse.ok) {
+    if (!initResult.ok) {
       await db.delete(hackathonsTable).where(eq(hackathonsTable.id, id));
       await db.delete(organizerRoles).where(eq(organizerRoles.hackathon_id, id));
-      const details = await readJson(initResponse);
       return errorResponse(
         c, 500, 'LIFECYCLE_INIT_FAILED', 'Failed to initialize hackathon state machine',
-        isRecord(details) ? details as Record<string, unknown> : undefined,
+        isRecord(initResult.data) ? initResult.data as Record<string, unknown> : undefined,
       );
     }
 
@@ -269,27 +259,22 @@ hackathons.patch(
     const targetStatus = body.targetStatus;
 
     const smStub = getStateMachineStub(c.env, hackathon.id);
-    const transitionResponse = await smStub.fetch('http://do/transition', {
+    const transitionResult = await fetchDO(smStub, DO_PATHS.TRANSITION, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        targetStatus,
-        expectedVersion: body.expectedVersion,
-      }),
+      body: { targetStatus, expectedVersion: body.expectedVersion },
     });
 
-    const payload = await readJson(transitionResponse);
-
-    if (!transitionResponse.ok) {
-      const errPayload = isRecord(payload) ? payload : {};
+    if (!transitionResult.ok) {
+      const errPayload = isRecord(transitionResult.data) ? transitionResult.data : {};
       return errorResponse(
         c,
-        transitionResponse.status as 400,
+        transitionResult.status as 400,
         String(errPayload.code ?? 'TRANSITION_FAILED'),
         String(errPayload.error ?? 'Transition failed'),
       );
     }
 
+    const payload = transitionResult.data;
     const newStatus = (isRecord(payload) && typeof payload.status === 'string' ? payload.status : targetStatus) as HackathonStatus;
     await db
       .update(hackathonsTable)

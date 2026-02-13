@@ -3,6 +3,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoginPage } from '@/pages/login';
 import { AuthCallbackPage } from '@/pages/auth-callback';
+import { LinkRequiredPage } from '@/pages/link-required';
 import { DashboardPage } from '@/pages/dashboard';
 import { OrganiserDashboardPage } from '@/pages/organiser-dashboard';
 import { HackathonDetailPage } from '@/pages/hackathon-detail';
@@ -18,6 +19,7 @@ export default function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/link-required" element={<LinkRequiredPage />} />
       
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>

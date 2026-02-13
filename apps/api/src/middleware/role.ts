@@ -3,6 +3,7 @@ import type { DbClient } from '@devsage/db';
 import { hackathons, organizerRoles, judges, teams, teamMembers } from '@devsage/db';
 import { eq, and } from 'drizzle-orm';
 import { createDbClient } from '@devsage/db';
+import { errorResponse } from '../lib/response.js';
 import type { AuthAppEnv } from '../types/auth.js';
 
 /** Highest privilege first: owner > admin > moderator > judge > team_leader > participant > anonymous */
@@ -98,10 +99,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
   return async (c, next) => {
     const slug = c.req.param('slug');
     if (!slug) {
-      return c.json(
-        { ok: false, error: { code: 'BAD_REQUEST', message: 'Missing hackathon slug' } },
-        400,
-      );
+      return errorResponse(c, 400, 'BAD_REQUEST', 'Missing hackathon slug');
     }
     const db = createDbClient(c.env.DB);
 
@@ -112,10 +110,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
       .get();
 
     if (!hackathon) {
-      return c.json(
-        { ok: false, error: { code: 'NOT_FOUND', message: 'Hackathon not found' } },
-        404,
-      );
+      return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
     }
 
     const user = c.get('user');
@@ -127,10 +122,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
         await next();
         return;
       }
-      return c.json(
-        { ok: false, error: { code: 'NO_TOKEN', message: 'Authentication required' } },
-        401,
-      );
+      return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
     }
 
     const resolvedRole = await resolveRole(user.sub, hackathon.id, db);
@@ -139,16 +131,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
     c.set('hackathon', hackathon);
 
     if (!isRoleAtLeast(resolvedRole, minRole)) {
-      return c.json(
-        {
-          ok: false,
-          error: {
-            code: 'INSUFFICIENT_ROLE',
-            message: `Requires ${minRole} role or higher`,
-          },
-        },
-        403,
-      );
+      return errorResponse(c, 403, 'INSUFFICIENT_ROLE', `Requires ${minRole} role or higher`);
     }
 
     await next();

@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { HACKATHON_STATUS_TRANSITIONS, type HackathonStatus } from '@devsage/shared';
 import type { Env } from '../types/env.js';
+import { isRecord } from '../lib/utils.js';
 
 // ─── Interfaces ──────────────────────────────────────────────
 
@@ -50,10 +51,6 @@ interface SubmissionResult {
 }
 
 // ─── Type Guards ─────────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 function isHackathonStatus(value: string): value is HackathonStatus {
   return Object.prototype.hasOwnProperty.call(HACKATHON_STATUS_TRANSITIONS, value);

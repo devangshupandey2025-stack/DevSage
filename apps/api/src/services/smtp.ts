@@ -1,4 +1,5 @@
 import type { Env } from '../types/env.js';
+import { SERVICE_TIMEOUT_MS } from '../lib/constants.js';
 
 interface SendEmailParams {
   to: string;
@@ -36,7 +37,7 @@ export async function sendEmail(env: Env, params: SendEmailParams): Promise<Send
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), SERVICE_TIMEOUT_MS);
 
   try {
     // Prepare Basic Auth header

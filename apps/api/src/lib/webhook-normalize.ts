@@ -52,9 +52,7 @@ export type NormalizedGitHubEvent =
   | NormalizedTagDeleteEvent
   | NormalizedInstallationEvent;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+import { isRecord } from './utils.js';
 
 function extractBranchFromRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
