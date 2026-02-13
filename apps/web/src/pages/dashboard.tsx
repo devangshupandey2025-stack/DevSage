@@ -190,16 +190,55 @@ function SkeletonCard() {
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
+  const [error, setError] = useState<string | null>(null);
+
+  // Show loading skeleton
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="max-w-lg w-full p-8 rounded-xl border border-blue-500 bg-blue-900/20">
+          <h2 className="text-2xl font-bold mb-4 text-blue-400">Loading Dashboard...</h2>
+          <div className="animate-pulse h-6 w-2/3 bg-white/10 rounded mb-4" />
+          <div className="animate-pulse h-6 w-1/2 bg-white/10 rounded" />
+        </div>
+      </div>
+    );
+  }
+  // Show error fallback
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="max-w-lg w-full p-8 rounded-xl border border-red-500 bg-red-900/20">
+          <h2 className="text-2xl font-bold mb-4 text-red-400">Error</h2>
+          <p className="mb-6 text-red-200">{error}</p>
+          <button className="mt-4 px-4 py-2 rounded bg-red-700 text-white" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+  // Show empty fallback
+  if (!hackathons || hackathons.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="max-w-lg w-full p-8 rounded-xl border border-yellow-500 bg-yellow-900/20">
+          <h2 className="text-2xl font-bold mb-4 text-yellow-400">No Hackathons Found</h2>
+          <p className="mb-6 text-yellow-200">There are currently no hackathons available. Please check back later or contact support if this persists.</p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     async function load() {
+      setError(null);
       try {
         const res = await apiRequest<HackathonListResponse>('/api/v1/hackathons');
         setHackathons(res.data);
-      } catch {
+      } catch (err) {
+        setError('Failed to load dashboard. Please check your connection or try again later.');
         toast.error('Failed to load hackathons');
       } finally {
         setLoading(false);
@@ -207,6 +246,17 @@ export function DashboardPage() {
     }
     load();
   }, []);
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="max-w-lg w-full p-8 rounded-xl border border-red-500 bg-red-900/20">
+          <h2 className="text-2xl font-bold mb-4 text-red-400">Error</h2>
+          <p className="mb-6 text-red-200">{error}</p>
+          <button className="mt-4 px-4 py-2 rounded bg-red-700 text-white" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   const { upcoming, ongoing, past } = categorise(hackathons);
   const buckets: Record<Tab, Hackathon[]> = { upcoming, ongoing, past };

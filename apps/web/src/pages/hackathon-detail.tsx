@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeft, FileText, Calendar, Ticket } from 'lucide-react';
+import { error } from 'console';
 
 // Local interfaces matching snake_case API response
 interface Hackathon {
@@ -212,7 +213,8 @@ export function HackathonDetailPage() {
 
   const mySubmission = myTeam ? submissions.find(s => s.team_id === myTeam.id) : null;
 
-  if (loading || !hackathon) {
+  // Remove invalid error rendering block
+  if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-1/3" />
@@ -220,9 +222,18 @@ export function HackathonDetailPage() {
       </div>
     );
   }
-
-  // If a custom page component exists (file at src/pages/hackathons/<slug>.tsx), render it.
-  if (customPageComp) {
+  if (!hackathon) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="max-w-lg w-full p-8 rounded-xl border border-red-500 bg-red-900/20">
+          <h2 className="text-2xl font-bold mb-4 text-red-400">Error</h2>
+          <p className="mb-6 text-red-200">Failed to load hackathon details. Please check your connection or try again later.</p>
+          <Button variant="outline" onClick={() => window.location.reload()}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
+  if (customPageComp && hackathon) {
     const Custom = customPageComp;
     return <Custom hackathon={hackathon} />;
   }
