@@ -11,7 +11,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeft, FileText, Calendar, Ticket } from 'lucide-react';
-import { error } from 'console';
+
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Local interfaces matching snake_case API response
 interface Hackathon {
@@ -71,7 +72,7 @@ export function HackathonDetailPage() {
 
   // Dynamic custom-page loader: any file placed under `src/pages/hackathons/*.tsx`
   // will be picked up at build-time by Vite and can override the default template.
-  const pages = import.meta.glob('./hackathons/*.tsx');
+  const pages = import.meta.glob('/src/pages/hackathons/*.tsx');
 
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -234,10 +235,15 @@ export function HackathonDetailPage() {
       </div>
     );
   }
-  if (customPageComp && hackathon) {
-    const Custom = customPageComp;
-    return <Custom hackathon={hackathon} />;
-  }
+  // if (customPageComp && hackathon) {
+  //   const Custom = customPageComp;
+  //   return (
+  //     <ErrorBoundary>
+  //       <Custom hackathon={hackathon} />
+  //     </ErrorBoundary>
+  //   );
+  // }
+
 
   // derive accent color (fallback to neon green)
   const accent = hackathon.primary_color ?? '#CCFF00';

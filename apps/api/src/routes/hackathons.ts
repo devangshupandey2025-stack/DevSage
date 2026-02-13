@@ -66,12 +66,63 @@ hackathons.get('/', async (c) => {
 hackathons.get('/:slug', async (c) => {
   const slug = c.req.param('slug');
   const db = createDbClient(c.env.DB);
+  let userId: string | undefined = undefined;
+  let userRole: string | undefined = undefined;
 
-  const hackathon = await db
-    .select()
-    .from(hackathonsTable)
-    .where(eq(hackathonsTable.slug, slug))
-    .get();
+  // Try to get user from auth (if present)
+  try {
+    const token = c.req.header('cookie')?.match(/session=([^;]+)/)?.[1];
+    if (token) {
+      // Use the same JWT verify logic as authMiddleware
+      const { verifyJWT } = await import('../lib/jwt.js');
+      const payload = await verifyJWT(token, c.env.JWT_SECRET);
+      if (payload && payload.sub) {
+        userId = payload.sub;
+      }
+    }
+  } catch {}
+
+  let hackathon;
+  if (userId) {
+    // Check if user is an organizer (owner, admin, moderator) for this hackathon
+    const orgRole = await db
+      .select({ role: organizerRoles.role })
+      .from(organizerRoles)
+      .where(
+        and(
+          eq(organizerRoles.hackathon_id, db
+            .select({ id: hackathonsTable.id })
+            .from(hackathonsTable)
+            .where(eq(hackathonsTable.slug, slug))
+            .get().then(r => r?.id || ''),
+          ),
+          eq(organizerRoles.user_id, userId),
+        ),
+      )
+      .get();
+    if (orgRole && ['owner', 'admin', 'moderator'].includes(orgRole.role)) {
+      // Organizer: can see any hackathon (including draft)
+      hackathon = await db
+        .select()
+        .from(hackathonsTable)
+        .where(eq(hackathonsTable.slug, slug))
+        .get();
+    }
+  }
+  if (!hackathon) {
+    // Fallback: only allow non-draft hackathons
+    hackathon = await db
+      .select()
+      .from(hackathonsTable)
+      .where(
+        and(
+          eq(hackathonsTable.slug, slug),
+          // Only non-draft
+          ne(hackathonsTable.status, 'draft')
+        )
+      )
+      .get();
+  }
 
   if (!hackathon) {
     return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
