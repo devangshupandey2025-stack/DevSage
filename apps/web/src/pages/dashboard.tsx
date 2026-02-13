@@ -19,21 +19,23 @@ import {
 
 interface Hackathon {
   id: string;
+  slug: string;
   title: string;
-  description: string;
-  status: 'DRAFT' | 'REGISTRATION_OPEN' | 'HACKING' | 'SUBMISSION_CLOSED' | 'COMPLETED';
-  registration_start_date: string;
-  hacking_start_date: string;
+  description: string | null;
+  status: 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
+  registration_opens: string;
+  registration_closes: string;
   submission_deadline: string;
   max_team_size: number;
-  organiser_id: string;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
 
 interface HackathonListResponse {
+  ok: boolean;
   data: Hackathon[];
-  total: number;
+  meta: { total: number; limit: number; offset: number };
 }
 
 /* ──────────── Helpers ──────────── */
@@ -67,9 +69,9 @@ function categorise(hackathons: Hackathon[]) {
   const past: Hackathon[] = [];
 
   for (const h of hackathons) {
-    if (h.status === 'DRAFT' || h.status === 'REGISTRATION_OPEN') {
+    if (h.status === 'draft' || h.status === 'registration_open') {
       upcoming.push(h);
-    } else if (h.status === 'HACKING') {
+    } else if (h.status === 'registration_closed' || h.status === 'active') {
       ongoing.push(h);
     } else {
       past.push(h);
@@ -88,20 +90,22 @@ function formatDate(iso: string) {
 }
 
 const STATUS_PILL: Record<string, { label: string; bg: string; text: string }> = {
-  DRAFT: { label: 'Draft', bg: 'bg-white/10', text: 'text-white/60' },
-  REGISTRATION_OPEN: { label: 'Registration Open', bg: 'bg-[#CCFF00]/20', text: 'text-[#CCFF00]' },
-  HACKING: { label: 'Hacking', bg: 'bg-[#00D4FF]/20', text: 'text-[#00D4FF]' },
-  SUBMISSION_CLOSED: { label: 'Submissions Closed', bg: 'bg-orange-500/20', text: 'text-orange-400' },
-  COMPLETED: { label: 'Completed', bg: 'bg-white/10', text: 'text-white/50' },
+  draft: { label: 'Draft', bg: 'bg-white/10', text: 'text-white/60' },
+  registration_open: { label: 'Registration Open', bg: 'bg-[#CCFF00]/20', text: 'text-[#CCFF00]' },
+  registration_closed: { label: 'Registration Closed', bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
+  active: { label: 'Hacking', bg: 'bg-[#00D4FF]/20', text: 'text-[#00D4FF]' },
+  judging: { label: 'Judging', bg: 'bg-purple-500/20', text: 'text-purple-400' },
+  completed: { label: 'Completed', bg: 'bg-white/10', text: 'text-white/50' },
+  archived: { label: 'Archived', bg: 'bg-white/5', text: 'text-white/30' },
 };
 
 /* ──────────── Components ──────────── */
 
 function HackathonCard({ hackathon }: { hackathon: Hackathon }) {
-  const pill = STATUS_PILL[hackathon.status] ?? STATUS_PILL.DRAFT;
+  const pill = STATUS_PILL[hackathon.status] ?? STATUS_PILL.draft;
 
   return (
-    <Link to={`/hackathons/${hackathon.id}`} className="group block">
+    <Link to={`/hackathons/${hackathon.slug}`} className="group block">
       <motion.div
         whileHover={{ y: -4 }}
         className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/3 p-6 transition-colors hover:border-[#CCFF00]/30 hover:bg-white/6"
@@ -128,7 +132,7 @@ function HackathonCard({ hackathon }: { hackathon: Hackathon }) {
         <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-white/40">
           <span className="flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
-            Starts {formatDate(hackathon.hacking_start_date)}
+            Opens {formatDate(hackathon.registration_opens)}
           </span>
           <span className="flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
@@ -173,7 +177,7 @@ export function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await apiRequest<HackathonListResponse>('/hackathons');
+        const res = await apiRequest<HackathonListResponse>('/api/v1/hackathons');
         setHackathons(res.data);
       } catch {
         toast.error('Failed to load hackathons');

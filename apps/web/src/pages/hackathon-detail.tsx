@@ -13,8 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // Local interfaces matching snake_case API response
 interface Hackathon {
   id: string;
+  slug?: string;
   title: string;
   description: string;
+  primary_color?: string | null;
+  banner_r2_key?: string | null;
+  logo_r2_key?: string | null;
   status: 'DRAFT' | 'REGISTRATION_OPEN' | 'HACKING' | 'SUBMISSION_CLOSED' | 'COMPLETED';
   registration_start_date: string;
   hacking_start_date: string;
@@ -179,17 +183,38 @@ export function HackathonDetailPage() {
     );
   }
 
+  // derive accent color (fallback to neon green)
+  const accent = hackathon.primary_color ?? '#CCFF00';
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">{hackathon.title}</h2>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/hackathons/${id}/leaderboard`}>Leaderboard</Link>
-          </Button>
-          <Badge variant={hackathon.status === 'HACKING' ? 'default' : 'secondary'}>
-            {hackathon.status.replace('_', ' ')}
-          </Badge>
+      {/* Hero with per-hackathon theme */}
+      <div
+        className="rounded-2xl overflow-hidden bg-linear-to-br p-6"
+        style={{
+          background: hackathon.banner_r2_key
+            ? `url('/r2/${hackathon.banner_r2_key}') center/cover no-repeat, linear-gradient(135deg, rgba(0,0,0,0.6), rgba(0,0,0,0.3))`
+            : `linear-gradient(135deg, ${accent}20 0%, #00000000 60%)`,
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-black text-white tracking-tight">{hackathon.title}</h1>
+            <p className="mt-2 text-sm text-white/80 max-w-2xl">{hackathon.description}</p>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold" style={{ background: `${accent}22`, color: accent }}>
+                {hackathon.status.replace('_', ' ')}
+              </span>
+              <span className="text-sm text-white/60">Max team size: <strong className="text-white/90">{hackathon.max_team_size}</strong></span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {hackathon.logo_r2_key ? (
+              <img src={`/r2/${hackathon.logo_r2_key}`} alt="logo" className="h-20 w-20 rounded-lg object-cover" />
+            ) : (
+              <div className="h-20 w-20 rounded-lg bg-white/5 flex items-center justify-center text-xl font-bold text-white/80">S</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -213,6 +238,46 @@ export function HackathonDetailPage() {
                 <span>Deadline:</span>
                 <span className="font-medium">{formatDate(hackathon.submission_deadline)}</span>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Basic site / theme details for this hackathon */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Site / Theme</CardTitle>
+            <CardDescription>Basic website details for this hackathon</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Primary color</p>
+                <p className="font-medium mt-1">{hackathon.primary_color ?? '—'}</p>
+              </div>
+              <div className="h-8 w-8 rounded bg-white/5 border" style={{ background: hackathon.primary_color ?? '#111' }} />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Banner</p>
+                <p className="font-medium mt-1">{hackathon.banner_r2_key ? 'Uploaded' : 'None'}</p>
+              </div>
+              <div className="h-8 w-12 rounded bg-white/5 flex items-center justify-center text-xs text-white/50">
+                {hackathon.banner_r2_key ? 'Yes' : '—'}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Logo</p>
+                <p className="font-medium mt-1">{hackathon.logo_r2_key ? 'Uploaded' : 'None'}</p>
+              </div>
+              <div className="h-8 w-8 rounded bg-white/5 flex items-center justify-center">{hackathon.logo_r2_key ? '✔' : '—'}</div>
+            </div>
+
+            <div>
+              <p className="text-xs text-muted-foreground">Theme preview</p>
+              <div className="mt-2 h-12 w-full rounded" style={{ background: `linear-gradient(90deg, ${accent}10, transparent)` }} />
             </div>
           </CardContent>
         </Card>
