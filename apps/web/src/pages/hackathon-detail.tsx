@@ -13,6 +13,7 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, Dialog
 import { ArrowLeft, FileText, Calendar, Ticket } from 'lucide-react';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useCustomHackathonPage } from '@/hooks/use-custom-hackathon-page';
 
 // Local interfaces matching snake_case API response
 interface Hackathon {
@@ -70,17 +71,13 @@ export function HackathonDetailPage() {
   const id = slug; // route uses :slug
   const { user } = useAuth();
 
-  // Dynamic custom-page loader: any file placed under `src/pages/hackathons/*.tsx`
-  // will be picked up at build-time by Vite and can override the default template.
-  const pages = import.meta.glob('/src/pages/hackathons/*.tsx');
+  const { CustomPage } = useCustomHackathonPage(slug);
 
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [registrations, setRegistrations] = useState<User[]>([]); // Organiser only
   const [loading, setLoading] = useState(true);
-  const [customPageComp, setCustomPageComp] = useState<React.ComponentType<any> | null>(null);
-
   // Local UI state for hero modals
   const [openRegister, setOpenRegister] = useState(false);
   const [openRules, setOpenRules] = useState(false);
@@ -98,29 +95,7 @@ export function HackathonDetailPage() {
     }
   }, [id, user]);
 
-  // Try to load a custom per-hackathon page (if a file exists under src/pages/hackathons/<slug>.tsx)
-  useEffect(() => {
-    if (!id) return;
-    const slug = id; // this route uses slug
-    const key = `./hackathons/${slug}.tsx`;
-    if (pages[key]) {
-      (async () => {
-        try {
-          const mod = await pages[key]();
-          // Always extract .default if present, else assume mod itself is the component
-          setCustomPageComp(
-            (mod && typeof mod === 'object' && 'default' in mod && mod.default)
-              ? (mod.default as React.ComponentType<any>)
-              : (mod as React.ComponentType<any>)
-          );
-        } catch (err) {
-          console.error('Failed to load custom hackathon page', err);
-        }
-      })();
-    } else {
-      setCustomPageComp(null);
-    }
-  }, [id]);
+
 
   const fetchData = async () => {
     if (!id) return;
@@ -235,15 +210,13 @@ export function HackathonDetailPage() {
       </div>
     );
   }
-  // if (customPageComp && hackathon) {
-  //   const Custom = customPageComp;
-  //   return (
-  //     <ErrorBoundary>
-  //       <Custom hackathon={hackathon} />
-  //     </ErrorBoundary>
-  //   );
-  // }
-
+  if (CustomPage && hackathon) {
+    return (
+      <ErrorBoundary>
+        <CustomPage hackathon={hackathon} />
+      </ErrorBoundary>
+    );
+  }
 
   // derive accent color (fallback to neon green)
   const accent = hackathon.primary_color ?? '#CCFF00';
