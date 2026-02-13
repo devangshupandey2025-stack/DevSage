@@ -119,4 +119,4 @@ Early development. Building toward the first 3 hackathons with ~500 users.
 
 ---
 
-Built by [Srijan Guchhait](https://github.com/qwertystars)
+Built by [SHIKDD](https://github.com/SHIKDD-org)
