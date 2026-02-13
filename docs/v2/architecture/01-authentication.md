@@ -150,8 +150,8 @@ flowchart LR
     B -->|No| C[401 NO_TOKEN]
     B -->|Yes| D{JWT valid?}
     D -->|No| E[401 INVALID_TOKEN]
-    D -->|Yes| F["Set c.user = { sub, ghid, ghu }"]
-    F --> G[next()]
+    D -->|Yes| F["Set c.user = #123; sub, ghid, ghu #125;"]
+    F --> G["next()"]
 ```
 
 ### `optionalAuth` (lenient)
@@ -161,11 +161,11 @@ Used on public routes that benefit from knowing the user (e.g., leaderboard visi
 ```mermaid
 flowchart LR
     A[Request] --> B{Cookie present?}
-    B -->|No| C[next() — user = null]
+    B -->|No| C["next() — user = null"]
     B -->|Yes| D{JWT valid?}
     D -->|No| C
-    D -->|Yes| E["Set c.user = { sub, ghid, ghu }"]
-    E --> F[next()]
+    D -->|Yes| E["Set c.user = #123; sub, ghid, ghu #125;"]
+    E --> F["next()"]
 ```
 
 ---
