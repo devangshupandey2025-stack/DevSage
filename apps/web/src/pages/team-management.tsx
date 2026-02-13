@@ -60,7 +60,7 @@ export function TeamManagementPage() {
     if (!id || !user) return;
     setLoading(true);
     try {
-      const teamsResponse = await apiRequest<ListResponse<Partial<Team>>>(`/hackathons/${id}/teams`);
+      const teamsResponse = await apiRequest<ListResponse<Partial<Team>>>(`/api/v1/hackathons/${id}/teams`);
       const myTeam = teamsResponse.data.find((t: any) => 
         t.captain_id === user?.id || 
         t.members?.some((m: any) => m.user_id === user?.id)
@@ -72,7 +72,7 @@ export function TeamManagementPage() {
         return;
       }
 
-      const teamDetails = await apiRequest<Team>(`/hackathons/${id}/teams/${myTeam.id}`);
+      const teamDetails = await apiRequest<Team>(`/api/v1/hackathons/${id}/teams/${myTeam.id}`);
       setTeam(teamDetails);
       
       if (teamDetails.repo_full_name) {
@@ -80,7 +80,7 @@ export function TeamManagementPage() {
       }
 
       try {
-        const submissions = await apiRequest<Submission[]>(`/hackathons/${id}/submissions`);
+        const submissions = await apiRequest<Submission[]>(`/api/v1/hackathons/${id}/submissions`);
         const mySubmission = submissions.find(s => s.team_id === myTeam.id);
         if (mySubmission) {
           setSubmission(mySubmission);
@@ -119,7 +119,7 @@ export function TeamManagementPage() {
 
     setSubmitting(true);
     try {
-      await apiRequest(`/hackathons/${id}/teams/${team.id}/repo`, {
+      await apiRequest(`/api/v1/hackathons/${id}/teams/${team.id}/repo`, {
         method: 'POST',
         body: JSON.stringify({ repoFullName: repoUrl.trim() }),
       });
@@ -136,7 +136,7 @@ export function TeamManagementPage() {
     if (!id || !team || !confirm('Are you sure you want to leave this team?')) return;
     setSubmitting(true);
     try {
-      await apiRequest(`/hackathons/${id}/teams/${team.id}/leave`, {
+      await apiRequest(`/api/v1/hackathons/${id}/teams/${team.id}/leave`, {
         method: 'POST',
       });
       toast.success('Left team');

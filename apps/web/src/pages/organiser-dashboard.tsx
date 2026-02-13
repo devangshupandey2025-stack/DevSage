@@ -79,7 +79,7 @@ export function OrganiserDashboardPage() {
 
   const fetchHackathons = async () => {
     try {
-      const response = await apiRequest<HackathonListResponse>('/hackathons');
+      const response = await apiRequest<HackathonListResponse>('/api/v1/hackathons');
       setHackathons(response.data);
     } catch (error) {
       toast.error('Failed to load hackathons');
@@ -139,9 +139,9 @@ export function OrganiserDashboardPage() {
     if (!confirm(`Are you sure you want to ${NEXT_PHASE_LABEL[currentStatus]}?`)) return;
 
     try {
-      const lifecycle = await apiRequest<LifecycleResponse>(`/hackathons/${hackathonId}/lifecycle`);
+      const lifecycle = await apiRequest<LifecycleResponse>(`/api/v1/hackathons/${hackathonId}/lifecycle`);
       
-      await apiRequest(`/hackathons/${hackathonId}/transition`, {
+      await apiRequest(`/api/v1/hackathons/${hackathonId}/transition`, {
         method: 'POST',
         body: JSON.stringify({
           action,

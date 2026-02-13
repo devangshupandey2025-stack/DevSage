@@ -87,12 +87,12 @@ export function HackathonDetailPage() {
     try {
       // Parallel fetch
       const promises: Promise<any>[] = [
-        apiRequest<Hackathon>(`/hackathons/${id}`),
-        apiRequest<ListResponse<Team>>(`/hackathons/${id}/teams`),
+        apiRequest<Hackathon>(`/api/v1/hackathons/${id}`),
+        apiRequest<ListResponse<Team>>(`/api/v1/hackathons/${id}/teams`),
       ];
 
        // Fetch submissions (available to all users)
-       promises.push(apiRequest<Submission[]>(`/hackathons/${id}/submissions`));
+       promises.push(apiRequest<Submission[]>(`/api/v1/hackathons/${id}/submissions`));
 
        const results = await Promise.all(promises);
        setHackathon(results[0]);
@@ -111,7 +111,7 @@ export function HackathonDetailPage() {
     if (!id) return;
     setActionLoading(true);
     try {
-      await apiRequest(`/hackathons/${id}/teams`, {
+      await apiRequest(`/api/v1/hackathons/${id}/teams`, {
         method: 'POST',
         body: JSON.stringify({ name: teamName, hackathonId: id }),
       });
@@ -130,7 +130,7 @@ export function HackathonDetailPage() {
     if (!id) return;
     setActionLoading(true);
     try {
-      await apiRequest(`/hackathons/${id}/teams/join`, {
+      await apiRequest(`/api/v1/hackathons/${id}/teams/join`, {
         method: 'POST',
         body: JSON.stringify({ joinCode }),
       });
@@ -148,7 +148,7 @@ export function HackathonDetailPage() {
     if (!id || !confirm('Are you sure you want to leave this team?')) return;
     setActionLoading(true);
     try {
-      await apiRequest(`/hackathons/${id}/teams/${teamId}/leave`, {
+      await apiRequest(`/api/v1/hackathons/${id}/teams/${teamId}/leave`, {
         method: 'POST',
       });
       toast.success('Left team');
