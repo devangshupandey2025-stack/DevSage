@@ -41,7 +41,7 @@ interface ListResponse<T> {
 }
 
 export function LeaderboardPage() {
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -50,13 +50,13 @@ export function LeaderboardPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!id) return;
+      if (!slug) return;
       setLoading(true);
       try {
         const promises = [
-          apiRequest<Hackathon>(`/hackathons/${id}`),
-          apiRequest<ListResponse<Team>>(`/hackathons/${id}/teams`),
-          apiRequest<Submission[]>(`/hackathons/${id}/submissions`),
+          apiRequest<Hackathon>(`/api/v1/hackathons/${slug}`),
+          apiRequest<ListResponse<Team>>(`/api/v1/hackathons/${slug}/teams`),
+          apiRequest<Submission[]>(`/api/v1/hackathons/${slug}/submissions`),
         ];
 
         const [hackathonData, teamsData, submissionsData] = await Promise.all(promises) as [Hackathon, ListResponse<Team>, Submission[]];
@@ -82,10 +82,10 @@ export function LeaderboardPage() {
       }
     };
 
-    if (id) {
+    if (slug) {
       fetchData();
     }
-  }, [id]);
+  }, [slug]);
 
   const getRankIcon = (index: number) => {
     if (index === 0) return <Trophy className="h-5 w-5 text-yellow-500" />;
@@ -115,7 +115,7 @@ export function LeaderboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/hackathons/${id}`)}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/hackathons/${slug}`)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>

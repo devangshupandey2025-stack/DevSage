@@ -49,7 +49,8 @@ export function LoginPage() {
   const handleLogin = (provider: 'google' | 'github') => {
     const apiOriginRaw = import.meta.env.VITE_API_ORIGIN as string | undefined;
     const apiOrigin = apiOriginRaw ? apiOriginRaw.replace(/\/$/, '') : '';
-    window.location.href = `${apiOrigin}/auth/${provider}`;
+    const origin = encodeURIComponent(window.location.origin);
+    window.location.href = `${apiOrigin}/auth/${provider}?origin=${origin}`;
   };
 
   return (

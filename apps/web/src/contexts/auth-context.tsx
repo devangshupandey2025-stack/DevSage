@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { apiRequest } from '@/lib/api';
 
+interface OrganizerRole {
+  hackathon_id: string;
+  hackathon_slug: string;
+  role: string;
+}
+
 interface User {
   id: string;
   github_id: number;
@@ -9,6 +15,7 @@ interface User {
   email: string | null;
   avatar_url: string | null;
   created_at: string;
+  organizerRoles?: OrganizerRole[];
 }
 
 interface AuthContextType {

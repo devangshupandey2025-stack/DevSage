@@ -1,26 +1,24 @@
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../types/env.js';
 
-function isAllowedCorsOrigin(origin: string, frontendUrl: string): boolean {
-  if (origin === frontendUrl) {
-    return true;
-  }
+const DEV_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+];
 
-  if (origin === 'http://localhost:5173') {
-    return true;
-  }
-
-  return false;
+function getAllowedOrigins(env: Env): string[] {
+  return [
+    env.FRONTEND_URL,
+    env.PLATFORM_URL,
+    env.ADMIN_URL,
+    ...DEV_ORIGINS,
+  ].filter(Boolean);
 }
 
-/**
- * CORS middleware for cross-origin requests.
- * Allows the configured FRONTEND_URL and localhost dev server.
- * Handles OPTIONS preflight with a 204 response.
- */
 export const corsMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   const origin = c.req.header('Origin');
-  if (origin && isAllowedCorsOrigin(origin, c.env.FRONTEND_URL)) {
+  if (origin && getAllowedOrigins(c.env).includes(origin)) {
     c.header('Access-Control-Allow-Origin', origin);
     c.header('Access-Control-Allow-Credentials', 'true');
     c.header('Access-Control-Allow-Headers', 'Content-Type');

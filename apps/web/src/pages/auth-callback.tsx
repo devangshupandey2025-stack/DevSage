@@ -10,7 +10,13 @@ export function AuthCallbackPage() {
   useEffect(() => {
     if (!isLoading) {
       if (isAuthenticated && user) {
-        navigate('/dashboard');
+        // If user signed in via Google but has no linked GitHub account,
+        // redirect to the link-required page
+        if (!user.github_username) {
+          navigate('/link-required');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         navigate('/login');
       }

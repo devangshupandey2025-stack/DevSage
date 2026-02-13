@@ -23,6 +23,10 @@ async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_user_unique ON judges (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY NOT NULL, team_id TEXT NOT NULL, hackathon_id TEXT NOT NULL, tag_name TEXT NOT NULL, commit_sha TEXT NOT NULL, commit_message TEXT, commit_author TEXT, branch TEXT DEFAULT 'main', submitted_at TEXT NOT NULL, received_at TEXT NOT NULL, is_late INTEGER DEFAULT 0 NOT NULL, is_final INTEGER DEFAULT 0 NOT NULL, version INTEGER NOT NULL, status TEXT DEFAULT 'received' NOT NULL, validation_errors TEXT, locked_at TEXT, webhook_delivery_id TEXT UNIQUE, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS platform_admins (id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS platform_admins_user_id_unique ON platform_admins (user_id)`,
+    `CREATE TABLE IF NOT EXISTS organizer_invites (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, invite_code TEXT NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, invited_by TEXT NOT NULL, accepted_by TEXT, accepted_at TEXT, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (invited_by) REFERENCES users(id), FOREIGN KEY (accepted_by) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS organizer_invites_invite_code_unique ON organizer_invites (invite_code)`,
   ];
 
   for (const sql of statements) {
@@ -32,6 +36,8 @@ async function ensureSchema() {
 
 async function resetDb() {
   await env.DB.prepare('DELETE FROM audit_events').run();
+  await env.DB.prepare('DELETE FROM organizer_invites').run();
+  await env.DB.prepare('DELETE FROM platform_admins').run();
   await env.DB.prepare('DELETE FROM submissions').run();
   await env.DB.prepare('DELETE FROM judges').run();
   await env.DB.prepare('DELETE FROM organizer_roles').run();
@@ -119,6 +125,8 @@ describe('notification queue consumer', () => {
     testEnv = {
       ...env,
       FRONTEND_URL: 'https://devsage.org',
+      PLATFORM_URL: 'https://platform.devsage.org',
+      ADMIN_URL: 'https://shikdd.devsage.org',
       SMTP_URL: 'https://smtp.example.com',
       SMTP_USERNAME: 'test',
       SMTP_PASSWORD: 'test',

@@ -2,11 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/auth-context';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface ProtectedRouteProps {
-  allowedRoles?: ('participant' | 'organiser')[];
-}
-
-export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute() {
   const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {

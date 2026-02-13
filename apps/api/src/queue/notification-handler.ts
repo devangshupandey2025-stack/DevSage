@@ -60,6 +60,12 @@ export type NotificationMessage =
       type: 'deadline_reminder';
       hackathonId: string;
       hoursRemaining: number;
+    }
+  | {
+      type: 'organizer_invited';
+      inviteId: string;
+      email: string;
+      inviteCode: string;
     };
 
 /**
@@ -113,7 +119,7 @@ export async function handleNotification(message: NotificationMessage, env: Env)
     // 4. Log send status to audit_events
     const action = result.success ? 'notification.sent' : 'notification.failed';
     await insertAuditEvent(db, {
-      hackathonId: message.hackathonId,
+      hackathonId: 'hackathonId' in message ? message.hackathonId : undefined,
       actorType: 'system',
       action,
       entityType: 'notification',

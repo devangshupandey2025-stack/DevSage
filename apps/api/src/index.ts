@@ -11,6 +11,8 @@ import teams from './routes/teams.js';
 import webhooks from './routes/webhooks.js';
 import submissions from './routes/submissions.js';
 import judging from './routes/judging.js';
+import admin from './routes/admin.js';
+import invites from './routes/invites.js';
 import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 import type { NotificationMessage } from './queue/notification-handler.js';
@@ -32,6 +34,8 @@ app.route('/api/v1/hackathons', teams);
 app.route('/webhooks', webhooks);
 app.route('/api/v1/hackathons', submissions);
 app.route('/api/v1/hackathons', judging);
+app.route('/api/v1/admin', admin);
+app.route('/api/v1/invites', invites);
 
 // Health check
 app.get('/', (c) => {

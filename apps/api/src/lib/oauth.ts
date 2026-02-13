@@ -1,8 +1,9 @@
 export type OAuthProvider = 'google' | 'github';
 
-interface OAuthStateRecord {
+export interface OAuthStateRecord {
   provider: OAuthProvider;
   redirectUri: string;
+  frontendOrigin: string;
   createdAt: string;
 }
 

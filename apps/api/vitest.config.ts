@@ -7,6 +7,7 @@ export default defineWorkersConfig({
       workers: {
         wrangler: { configPath: './wrangler.jsonc' },
         singleWorker: true,
+        isolatedStorage: false,
         miniflare: {
           bindings: {
             JWT_SECRET: 'dev-secret-key-min-32-chars-long!!',
@@ -16,6 +17,8 @@ export default defineWorkersConfig({
             GITHUB_CLIENT_SECRET: 'test-github-client-secret',
             GITHUB_WEBHOOK_SECRET: 'test-webhook-secret-min-32-chars!!',
             FRONTEND_URL: 'http://localhost:5173',
+            PLATFORM_URL: 'http://localhost:5174',
+            ADMIN_URL: 'http://localhost:5175',
           },
         },
       },

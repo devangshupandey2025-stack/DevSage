@@ -65,7 +65,8 @@ interface ListResponse<T> {
 }
 
 export function HackathonDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
+  const id = slug; // route uses :slug
   const { user } = useAuth();
 
   // Dynamic custom-page loader: any file placed under `src/pages/hackathons/*.tsx`

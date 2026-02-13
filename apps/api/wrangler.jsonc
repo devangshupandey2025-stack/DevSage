@@ -110,7 +110,9 @@
          ]
        },
       "vars": {
-        "FRONTEND_URL": "http://localhost:5173"
+        "FRONTEND_URL": "http://localhost:5173",
+        "PLATFORM_URL": "http://localhost:5174",
+        "ADMIN_URL": "http://localhost:5175"
       }
     }
   }

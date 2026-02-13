@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
-import { createDbClient, users, organizerRoles } from '@devsage/db';
+import { eq, and } from 'drizzle-orm';
+import { createDbClient, users, organizerRoles, platformAdmins, organizerInvites } from '@devsage/db';
 import type { Env } from '../types/env.js';
 import { clearSessionCookie, getSessionCookie, setSessionCookie } from '../lib/cookies.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
 import { errorResponse, successResponse } from '../lib/response.js';
 import { upsertGitHubUser, linkGoogleToUser, callbackUrl } from '../lib/user-service.js';
+import type { OAuthStateRecord } from '../lib/oauth.js';
 import {
   buildGitHubAuthorizationUrl,
   buildGoogleAuthorizationUrl,
@@ -17,16 +18,107 @@ import {
   generateOAuthState,
   storeOAuthState,
 } from '../lib/oauth.js';
+import type { Context } from 'hono';
+import type { UserIdentity } from '../lib/user-service.js';
+
+type AppOrigin = 'participant' | 'platform' | 'admin';
+
+function resolveAppOrigin(frontendOrigin: string, env: Env): AppOrigin {
+  if (frontendOrigin === env.ADMIN_URL) return 'admin';
+  if (frontendOrigin === env.PLATFORM_URL) return 'platform';
+  return 'participant';
+}
+
+function resolveFrontendOrigin(origin: string | undefined, env: Env): string {
+  if (origin && [env.FRONTEND_URL, env.PLATFORM_URL, env.ADMIN_URL].includes(origin)) {
+    return origin;
+  }
+  return env.FRONTEND_URL;
+}
+
+async function isPlatformAdmin(userId: string, env: Env): Promise<boolean> {
+  const db = createDbClient(env.DB);
+  const admin = await db
+    .select({ id: platformAdmins.id })
+    .from(platformAdmins)
+    .where(eq(platformAdmins.user_id, userId))
+    .get();
+  return !!admin;
+}
+
+async function hasAcceptedOrganizerInvite(userId: string, env: Env): Promise<boolean> {
+  const db = createDbClient(env.DB);
+  const invite = await db
+    .select({ id: organizerInvites.id })
+    .from(organizerInvites)
+    .where(
+      and(
+        eq(organizerInvites.accepted_by, userId),
+        eq(organizerInvites.status, 'accepted'),
+      ),
+    )
+    .get();
+  return !!invite;
+}
+
+async function checkLoginAccess(
+  userId: string,
+  appOrigin: AppOrigin,
+  env: Env,
+): Promise<{ allowed: boolean; reason?: string }> {
+  if (appOrigin === 'participant') return { allowed: true };
+
+  const isAdmin = await isPlatformAdmin(userId, env);
+  if (isAdmin) return { allowed: true };
+
+  if (appOrigin === 'admin') {
+    return { allowed: false, reason: 'Platform admin access required' };
+  }
+
+  const hasInvite = await hasAcceptedOrganizerInvite(userId, env);
+  if (hasInvite) return { allowed: true };
+
+  return { allowed: false, reason: 'Organizer access required. You need an accepted invite.' };
+}
+
+async function handleOAuthSuccess(
+  c: Context<{ Bindings: Env }>,
+  user: UserIdentity,
+  stateRecord: OAuthStateRecord,
+) {
+  const frontendOrigin = stateRecord.frontendOrigin;
+  const appOrigin = resolveAppOrigin(frontendOrigin, c.env);
+
+  const access = await checkLoginAccess(user.id, appOrigin, c.env);
+  if (!access.allowed) {
+    const loginUrl = new URL('/login', frontendOrigin);
+    loginUrl.searchParams.set('error', 'access_denied');
+    loginUrl.searchParams.set('message', access.reason ?? 'Access denied');
+    return c.redirect(loginUrl.toString(), 302);
+  }
+
+  const token = await signJWT(
+    { sub: user.id, ghid: user.github_id, ghu: user.github_username },
+    c.env.JWT_SECRET,
+  );
+
+  setSessionCookie(c, token, frontendOrigin);
+
+  const dashboardUrl = new URL('/dashboard', frontendOrigin).toString();
+  return c.redirect(dashboardUrl, 302);
+}
 
 const auth = new Hono<{ Bindings: Env }>();
 
 auth.get('/google', async (c) => {
   const state = generateOAuthState();
   const redirectUri = callbackUrl(c.req.url, 'google');
+  const frontendOrigin = resolveFrontendOrigin(c.req.query('origin'), c.env);
 
   await storeOAuthState(c.env.KV, state, {
     provider: 'google',
     redirectUri,
+    frontendOrigin,
     createdAt: new Date().toISOString(),
   });
 
@@ -58,31 +150,28 @@ auth.get('/callback/google', async (c) => {
     const profile = await fetchGoogleUserProfile(accessToken);
     const user = await linkGoogleToUser(c.env, profile);
     if (!user) {
-      const linkUrl = new URL('/link-required', c.env.FRONTEND_URL).toString();
+      const linkUrl = new URL('/link-required', stateRecord.frontendOrigin).toString();
       return c.redirect(linkUrl, 302);
     }
 
-    const token = await signJWT(
-      { sub: user.id, ghid: user.github_id, ghu: user.github_username },
-      c.env.JWT_SECRET
-    );
-
-    setSessionCookie(c, token, c.env.FRONTEND_URL);
-    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
-    return c.redirect(dashboardUrl, 302);
+    return handleOAuthSuccess(c, user, stateRecord);
   } catch (err) {
     console.error('Google OAuth failed:', err instanceof Error ? err.message : String(err));
-    return errorResponse(c, 500, 'GOOGLE_OAUTH_FAILED', 'Google authentication failed. Please try again.');
+    const loginUrl = new URL('/login', stateRecord.frontendOrigin);
+    loginUrl.searchParams.set('error', 'oauth_failed');
+    return c.redirect(loginUrl.toString(), 302);
   }
 });
 
 auth.get('/github', async (c) => {
   const state = generateOAuthState();
   const redirectUri = callbackUrl(c.req.url, 'github');
+  const frontendOrigin = resolveFrontendOrigin(c.req.query('origin'), c.env);
 
   await storeOAuthState(c.env.KV, state, {
     provider: 'github',
     redirectUri,
+    frontendOrigin,
     createdAt: new Date().toISOString(),
   });
 
@@ -113,17 +202,13 @@ auth.get('/callback/github', async (c) => {
 
     const profile = await fetchGitHubUserProfile(accessToken);
     const user = await upsertGitHubUser(c.env, profile);
-    const token = await signJWT(
-      { sub: user.id, ghid: user.github_id, ghu: user.github_username },
-      c.env.JWT_SECRET
-    );
 
-    setSessionCookie(c, token, c.env.FRONTEND_URL);
-    const dashboardUrl = new URL('/dashboard', c.env.FRONTEND_URL).toString();
-    return c.redirect(dashboardUrl, 302);
+    return handleOAuthSuccess(c, user, stateRecord);
   } catch (err) {
     console.error('GitHub OAuth failed:', err instanceof Error ? err.message : String(err));
-    return errorResponse(c, 500, 'GITHUB_OAUTH_FAILED', 'GitHub authentication failed. Please try again.');
+    const loginUrl = new URL('/login', stateRecord.frontendOrigin);
+    loginUrl.searchParams.set('error', 'oauth_failed');
+    return c.redirect(loginUrl.toString(), 302);
   }
 });
 
@@ -150,14 +235,31 @@ auth.get('/me', async (c) => {
     return errorResponse(c, 404, 'USER_NOT_FOUND', 'User not found');
   }
 
-  const roles = await db
-    .select({
-      hackathon_id: organizerRoles.hackathon_id,
-      role: organizerRoles.role,
-    })
-    .from(organizerRoles)
-    .where(eq(organizerRoles.user_id, user.id))
-    .all();
+  const [roles, adminRecord, acceptedInvite] = await Promise.all([
+    db
+      .select({
+        hackathon_id: organizerRoles.hackathon_id,
+        role: organizerRoles.role,
+      })
+      .from(organizerRoles)
+      .where(eq(organizerRoles.user_id, user.id))
+      .all(),
+    db
+      .select({ id: platformAdmins.id })
+      .from(platformAdmins)
+      .where(eq(platformAdmins.user_id, user.id))
+      .get(),
+    db
+      .select({ id: organizerInvites.id })
+      .from(organizerInvites)
+      .where(
+        and(
+          eq(organizerInvites.accepted_by, user.id),
+          eq(organizerInvites.status, 'accepted'),
+        ),
+      )
+      .get(),
+  ]);
 
   return successResponse(c, {
     user: {
@@ -170,6 +272,8 @@ auth.get('/me', async (c) => {
       created_at: user.created_at,
     },
     roles,
+    isPlatformAdmin: !!adminRecord,
+    isOrganizer: !!acceptedInvite || !!adminRecord,
   });
 });
 

@@ -10,6 +10,7 @@ const NOTIFICATION_TYPES: ReadonlySet<string> = new Set<NotificationMessage['typ
   'judge_assignment',
   'scores_finalized',
   'deadline_reminder',
+  'organizer_invited',
 ]);
 
 /**

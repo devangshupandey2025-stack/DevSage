@@ -37,6 +37,10 @@ async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS scores (id TEXT PRIMARY KEY NOT NULL, submission_id TEXT NOT NULL, judge_id TEXT NOT NULL, criteria_id TEXT NOT NULL, score INTEGER NOT NULL, comment TEXT, scored_at TEXT NOT NULL, FOREIGN KEY (submission_id) REFERENCES submissions(id), FOREIGN KEY (judge_id) REFERENCES judges(id), FOREIGN KEY (criteria_id) REFERENCES rubric_criteria(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS scores_submission_judge_criteria_unique ON scores (submission_id, judge_id, criteria_id)`,
     `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS platform_admins (id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS platform_admins_user_id_unique ON platform_admins (user_id)`,
+    `CREATE TABLE IF NOT EXISTS organizer_invites (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, invite_code TEXT NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, invited_by TEXT NOT NULL, accepted_by TEXT, accepted_at TEXT, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (invited_by) REFERENCES users(id), FOREIGN KEY (accepted_by) REFERENCES users(id))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS organizer_invites_invite_code_unique ON organizer_invites (invite_code)`,
   ];
 
   for (const sql of statements) {
@@ -46,6 +50,8 @@ async function ensureSchema() {
 
 async function resetDb() {
   await env.DB.prepare('DELETE FROM audit_events').run();
+  await env.DB.prepare('DELETE FROM organizer_invites').run();
+  await env.DB.prepare('DELETE FROM platform_admins').run();
   await env.DB.prepare('DELETE FROM scores').run();
   await env.DB.prepare('DELETE FROM judge_assignments').run();
   await env.DB.prepare('DELETE FROM submissions').run();

@@ -163,6 +163,9 @@ export async function resolveRecipients(
       return toRecipients(leadersWithoutFinal.results || []);
     }
 
+    case 'organizer_invited':
+      return [{ email: message.email, name: message.email }];
+
     default:
       return [];
   }
@@ -181,8 +184,23 @@ export async function renderEmailTemplate(
   message: NotificationMessage,
   env: Env,
 ): Promise<EmailTemplate> {
+  if (message.type === 'organizer_invited') {
+    const acceptUrl = `${env.PLATFORM_URL}/invite/${message.inviteCode}`;
+    return {
+      subject: `[DevSage] Organizer Invitation`,
+      body: `Hi,
+
+You've been invited to become an organizer on DevSage.
+
+Accept your invitation and set up your account: ${acceptUrl}
+
+This invite expires in 14 days. If you didn't expect this email, you can safely ignore it.`,
+    };
+  }
+
   const db = createDbClient(env.DB);
-  const { title, slug } = await fetchHackathonMeta(db, message.hackathonId);
+  const hackathonId = (message as { hackathonId: string }).hackathonId;
+  const { title, slug } = await fetchHackathonMeta(db, hackathonId);
   const baseUrl = env.FRONTEND_URL;
 
   switch (message.type) {
@@ -312,7 +330,9 @@ Submit now: ${baseUrl}/hackathons/${slug}/team`,
  * Combines type + hackathonId + discriminator fields.
  */
 export function notificationIdempotencyKey(message: NotificationMessage): string {
-  const parts = [message.type, message.hackathonId];
+  const parts: string[] = [message.type];
+  if ('hackathonId' in message) parts.push(message.hackathonId);
+  if ('inviteId' in message) parts.push(message.inviteId);
   if ('teamId' in message && message.teamId) parts.push(message.teamId);
   if ('judgeId' in message && message.judgeId) parts.push(message.judgeId);
   if ('forcePushId' in message && message.forcePushId) parts.push(message.forcePushId);

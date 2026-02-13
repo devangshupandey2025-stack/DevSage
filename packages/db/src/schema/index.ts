@@ -12,3 +12,5 @@ export { judgeAssignments } from './judge-assignments.js';
 export { scores } from './scores.js';
 export { aiReviews } from './ai-reviews.js';
 export { auditEvents } from './audit-events.js';
+export { platformAdmins } from './platform-admins.js';
+export { organizerInvites } from './organizer-invites.js';

@@ -12,6 +12,7 @@ import {
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
+import { requireOrganizer } from '../middleware/require-organizer.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { isRecord } from '../lib/utils.js';
@@ -82,6 +83,7 @@ hackathons.get('/:slug', async (c) => {
 hackathons.post(
   '/',
   authMiddleware,
+  requireOrganizer,
   zValidator('json', CreateHackathonRequestSchema),
   async (c) => {
     const user = c.get('user');

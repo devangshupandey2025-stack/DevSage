@@ -11,6 +11,8 @@ export interface Env {
   GITHUB_CLIENT_SECRET: string;
   GITHUB_WEBHOOK_SECRET: string;
   FRONTEND_URL: string;
+  PLATFORM_URL: string;
+  ADMIN_URL: string;
   SMTP_URL: string;
   SMTP_USERNAME: string;
   SMTP_PASSWORD: string;

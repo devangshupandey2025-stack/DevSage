@@ -13,28 +13,45 @@ function isProduction(frontendUrl: string): boolean {
   }
 }
 
+function extractRootDomain(frontendUrl: string): string | undefined {
+  try {
+    const hostname = new URL(frontendUrl).hostname;
+    const parts = hostname.split('.');
+    if (parts.length >= 2) {
+      return `.${parts.slice(-2).join('.')}`;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getSessionCookie(c: Context): string | undefined {
   return getCookie(c, SESSION_COOKIE_NAME);
 }
 
 export function setSessionCookie(c: Context, token: string, frontendUrl: string): void {
   const production = isProduction(frontendUrl);
+  const domain = production ? extractRootDomain(frontendUrl) : undefined;
 
   setCookie(c, SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: production ? 'Strict' : 'Lax',
+    sameSite: 'Lax',
     secure: production,
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
+    ...(domain ? { domain } : {}),
   });
 }
 
 export function clearSessionCookie(c: Context, frontendUrl: string): void {
   const production = isProduction(frontendUrl);
+  const domain = production ? extractRootDomain(frontendUrl) : undefined;
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: '/',
     secure: production,
-    sameSite: production ? 'Strict' : 'Lax',
+    sameSite: 'Lax',
+    ...(domain ? { domain } : {}),
   });
 }

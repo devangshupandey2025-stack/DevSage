@@ -23,6 +23,8 @@ describe('sendEmail', () => {
       GITHUB_CLIENT_SECRET: 'github-secret',
       GITHUB_WEBHOOK_SECRET: 'webhook-secret',
       FRONTEND_URL: 'http://localhost:3000',
+      PLATFORM_URL: 'http://localhost:5174',
+      ADMIN_URL: 'http://localhost:5175',
       SMTP_URL: 'https://smtp.example.com/send',
       SMTP_USERNAME: 'user@example.com',
       SMTP_PASSWORD: 'password123',

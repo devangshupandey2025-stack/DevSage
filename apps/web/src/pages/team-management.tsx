@@ -46,7 +46,8 @@ interface ListResponse<T> {
 }
 
 export function TeamManagementPage() {
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
+  const id = slug; // route uses :slug
   const navigate = useNavigate();
   const { user } = useAuth();
   
