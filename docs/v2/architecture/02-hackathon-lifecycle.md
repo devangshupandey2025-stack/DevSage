@@ -12,29 +12,20 @@
 stateDiagram-v2
     [*] --> draft
     draft --> registration_open : Organizer publishes
-    registration_open --> registration_closed : Registration deadline (auto/manual)
+    registration_open --> registration_closed : Registration deadline
     registration_closed --> active : Organizer starts hackathon
-    active --> judging : Submission deadline passes (auto via Cron/DO alarm)
+    active --> judging : Submission deadline passes
     judging --> completed : All judges scored OR organizer finalizes
-    completed --> archived : Organizer archives (read-only)
-
-    note right of draft
-        Requires: title, description,
-        deadlines, >= 1 rubric criterion
-    end note
-
-    note right of active
-        Submissions accepted.
-        Commits tracked.
-        Force pushes flagged.
-    end note
-
-    note right of judging
-        Submissions locked.
-        Judges score assignments.
-        AI reviews generated.
-    end note
+    completed --> archived : Organizer archives
 ```
+
+**State notes:**
+
+| State | Key Behavior |
+|-------|-------------|
+| `draft` | Requires: title, description, deadlines, at least 1 rubric criterion |
+| `active` | Submissions accepted. Commits tracked. Force pushes flagged. |
+| `judging` | Submissions locked. Judges score assignments. AI reviews generated. |
 
 ---
 

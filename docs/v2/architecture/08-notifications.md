@@ -203,7 +203,7 @@ Idempotency key format: `{type}:{hackathonId}:{entityId}:{timestamp_bucket}`
 
 | File | Purpose |
 |------|---------|
-| `apps/api/src/queue/notification-handler.ts` | Notification consumer (136 LOC) |
+| `apps/api/src/queue/notification-handler.ts` | Notification consumer |
 | `apps/api/src/queue/notification-logic.ts` | `resolveRecipients()`, `renderEmailTemplate()` |
 | `apps/api/src/services/smtp.ts` | `sendEmail()` — HTTP-based SMTP, fail-open |
 | `apps/api/src/queue/index.ts` | Queue dispatcher |

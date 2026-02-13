@@ -43,7 +43,7 @@ DevSage/
 | Change Worker bindings | `apps/api/wrangler.jsonc` | Also update `types/env.ts` |
 | Change tsconfig | `packages/config/` | Base, react, worker variants |
 | Change ESLint | `packages/config/eslint.config.mjs` | Flat config (ESLint 9+) |
-| Manage secrets | `docs/secrets.md` | Full conventions documented there |
+| Manage secrets | `docs/v2/secrets.md` | Full conventions documented there |
 
 ## DEPENDENCY GRAPH
 

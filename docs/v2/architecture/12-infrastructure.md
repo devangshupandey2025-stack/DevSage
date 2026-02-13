@@ -289,6 +289,6 @@ flowchart TD
 | `apps/api/src/types/env.ts` | Worker binding types |
 | `turbo.json` | Turborepo task configuration |
 | `pnpm-workspace.yaml` | Workspace definition |
-| `docs/deployment.md` | Production deployment guide |
-| `docs/secrets.md` | Secrets management conventions |
-| `docs/setup.md` | Developer setup guide |
+| `docs/v2/deployment.md` | Production deployment guide |
+| `docs/v2/secrets.md` | Secrets management conventions |
+| `docs/v2/setup.md` | Developer setup guide |

@@ -45,7 +45,7 @@ When adding new code, place it in the correct location:
 
 New schemas, types, and modules must be re-exported from their package's barrel file (`index.ts`). Failing to do so will break downstream imports.
 
-For a full architecture overview, see [docs/architecture.md](./architecture.md).
+For a full architecture overview, see the [architecture docs](./architecture/00-overview.md).
 
 ## Testing Expectations
 
