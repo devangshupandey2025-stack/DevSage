@@ -127,10 +127,14 @@
   }
 }
 
-/* Custom scrollbar styling */
+/* ───────────────────────────────────────────
+   Custom scrollbar styling — #CCFF00 accent
+   ─────────────────────────────────────────── */
+
+/* Webkit (Chrome, Edge, Safari) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -138,16 +142,52 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 3px;
+  background: rgba(204, 255, 0, 0.35);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: rgba(204, 255, 0, 0.55);
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: rgba(204, 255, 0, 0.7);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  scrollbar-color: rgba(204, 255, 0, 0.35) transparent;
+}
+
+/* ───────────────────────────────────────────
+   Smooth scroll & global transitions
+   ─────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(204, 255, 0, 0.25);
+  color: inherit;
+}
+
+.dark ::selection {
+  background: rgba(204, 255, 0, 0.3);
+}
+
+/* Focus-visible for accessibility */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
