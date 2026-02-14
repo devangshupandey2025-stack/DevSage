@@ -77,7 +77,7 @@ export async function resolveRole(
   }
 
   const membership = await db
-    .select({ role: teamMembers.role })
+    .select({ is_leader: teamMembers.is_leader })
     .from(teamMembers)
     .innerJoin(teams, eq(teamMembers.team_id, teams.id))
     .where(
@@ -89,12 +89,15 @@ export async function resolveRole(
     .get();
 
   if (membership) {
-    return membership.role === 'leader' ? 'team_leader' : 'participant';
+    return membership.is_leader ? 'team_leader' : 'participant';
   }
 
   return 'anonymous';
 }
-
+/**
+ * Middleware to require a minimum role for a hackathon route.
+ * Usage: app.use('/api/v1/hackathons/:slug/...', requireRole('judge'))
+ */
 export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
   return async (c, next) => {
     try {
