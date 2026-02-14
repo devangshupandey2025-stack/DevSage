@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoginPage } from '@/pages/login';
 import { AuthCallbackPage } from '@/pages/auth-callback';
 import { LinkRequiredPage } from '@/pages/link-required';
+import { AboutPage } from '@/pages/about';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
 import { NotFoundPage } from '@/pages/not-found';
@@ -14,9 +15,6 @@ const HomePage = lazy(() => import('@/pages/home').then(m => ({ default: m.HomeP
 const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ default: m.DashboardPage })));
 const HackathonDetailPage = lazy(() => import('@/pages/hackathon-detail').then(m => ({ default: m.HackathonDetailPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then(m => ({ default: m.ProfilePage })));
-const OrganiserDashboardPage = lazy(() => import('@/pages/organizer-dashboard').then(m => ({ default: m.OrganiserDashboardPage })));
-const InviteAcceptPage = lazy(() => import('@/pages/invite-accept').then(m => ({ default: m.InviteAcceptPage })));
-
 
 export default function App() {
   return (
@@ -26,8 +24,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/link-required" element={<LinkRequiredPage />} />
-        <Route path="/invites/:code" element={<InviteAcceptPage />} />
-        
+        <Route path="/about" element={<AboutPage />} />
+
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
@@ -35,11 +33,9 @@ export default function App() {
             <Route path="/hackathons/:slug/teams" element={<TeamManagementPage />} />
             <Route path="/hackathons/:slug/leaderboard" element={<LeaderboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/organiser" element={<OrganiserDashboardPage />} />
           </Route>
         </Route>
-        
-        
+
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Suspense>

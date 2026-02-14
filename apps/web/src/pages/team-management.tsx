@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Copy, Github, LogOut, ArrowLeft } from 'lucide-react';
+import { Copy, Github, LogOut, ArrowLeft, Tag, Info, RefreshCw } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/contexts/auth-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,108 +10,147 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
+interface TeamMember {
+  user_id: string;
+  joined_at: string;
+  display_name: string;
+}
+
 interface Team {
   id: string;
   hackathon_id: string;
   name: string;
-  join_code: string;
-  captain_id: string;
+  invite_code: string;
+  repo_full_name: string | null;
   created_at: string;
-  members: Array<{ 
-    user_id: string; 
-    joined_at: string; 
-    user: { 
-      id: string; 
-      name: string; 
-      email: string; 
-      avatar_url: string | null 
-    } 
-  }>;
-  repo_full_name?: string;
+  members?: TeamMember[];
 }
 
 interface Submission {
   id: string;
   hackathon_id: string;
   team_id: string;
-  repo_full_name: string;
+  tag_name: string;
   commit_sha: string;
   submitted_at: string;
   status: string;
 }
 
-interface ListResponse<T> {
+interface PaginatedEnvelope<T> {
+  ok: boolean;
   data: T[];
-  total: number;
+  meta: { total: number; limit: number; offset: number };
 }
+
+interface Envelope<T> {
+  ok: boolean;
+  data: T;
+}
+
+const SUBMISSION_STATUS_STYLES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  received: { variant: 'outline', className: 'border-amber-500/50 text-amber-400' },
+  validated: { variant: 'default', className: 'bg-green-600 text-white' },
+  locked: { variant: 'secondary', className: 'bg-blue-600/20 text-blue-400 border-blue-500/50' },
+  under_review: { variant: 'secondary', className: 'bg-purple-600/20 text-purple-400 border-purple-500/50' },
+  scored: { variant: 'default', className: 'bg-green-600 text-white' },
+  invalid: { variant: 'destructive' },
+  invalidated: { variant: 'destructive' },
+};
+
+const POLL_INTERVAL_MS = 10_000;
 
 export function TeamManagementPage() {
   const { slug } = useParams<{ slug: string }>();
-  const id = slug; // route uses :slug
   const navigate = useNavigate();
   const { user } = useAuth();
   
   const [team, setTeam] = useState<Team | null>(null);
-  const [submission, setSubmission] = useState<Submission | null>(null);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [repoUrl, setRepoUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const teamIdRef = useRef<string | null>(null);
+
+  const fetchSubmissions = useCallback(async () => {
+    if (!slug || !teamIdRef.current) return;
+    try {
+      const res = await apiRequest<Envelope<Submission[]>>(
+        `/api/v1/hackathons/${slug}/submissions/${teamIdRef.current}`,
+      );
+      const sorted = [...res.data].sort(
+        (a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime(),
+      );
+      setSubmissions(sorted);
+    } catch (_e) {
+      // Submissions endpoint may 403 for non-participants
+    }
+  }, [slug]);
 
   const findAndLoadTeam = useCallback(async () => {
-    if (!id || !user) return;
+    if (!slug || !user) return;
     setLoading(true);
     try {
-      const teamsResponse = await apiRequest<ListResponse<Partial<Team>>>(`/api/v1/hackathons/${id}/teams`);
-      const myTeam = teamsResponse.data.find((t: any) => 
-        t.captain_id === user?.id || 
-        t.members?.some((m: any) => m.user_id === user?.id)
-      );
+      const teamsEnvelope = await apiRequest<PaginatedEnvelope<Team>>(`/api/v1/hackathons/${slug}/teams`);
+      const teamsList = teamsEnvelope.data;
 
-      if (!myTeam || !myTeam.id) {
-        toast.error("You are not in a team for this hackathon");
-        navigate(`/hackathons/${id}`);
+      const teamDetailPromises = teamsList.map((t) =>
+        apiRequest<Envelope<Team & { members: TeamMember[] }>>(`/api/v1/hackathons/${slug}/teams/${t.id}`),
+      );
+      const teamDetails = await Promise.all(teamDetailPromises);
+
+      let myTeam: (Team & { members: TeamMember[] }) | undefined;
+      for (const detail of teamDetails) {
+        const t = detail.data;
+        if (t.members?.some((m) => m.user_id === user.id)) {
+          myTeam = t;
+          break;
+        }
+      }
+
+      if (!myTeam) {
+        toast.error('You are not in a team for this hackathon');
+        navigate(`/hackathons/${slug}`);
         return;
       }
 
-      const teamDetails = await apiRequest<Team>(`/api/v1/hackathons/${id}/teams/${myTeam.id}`);
-      setTeam(teamDetails);
+      setTeam(myTeam);
+      teamIdRef.current = myTeam.id;
       
-      if (teamDetails.repo_full_name) {
-        setRepoUrl(teamDetails.repo_full_name);
+      if (myTeam.repo_full_name) {
+        setRepoUrl(myTeam.repo_full_name);
       }
 
-      try {
-        const submissions = await apiRequest<Submission[]>(`/api/v1/hackathons/${id}/submissions`);
-        const mySubmission = submissions.find(s => s.team_id === myTeam.id);
-        if (mySubmission) {
-          setSubmission(mySubmission);
-        }
-      } catch (e) {
-        console.error("Failed to fetch submissions", e);
-      }
-
-    } catch (error) {
+      await fetchSubmissions();
+    } catch (_error) {
       toast.error('Failed to load team details');
-      console.error(error);
     } finally {
       setLoading(false);
     }
-  }, [id, user, navigate]);
+  }, [slug, user, navigate, fetchSubmissions]);
 
   useEffect(() => {
     findAndLoadTeam();
   }, [findAndLoadTeam]);
 
+  useEffect(() => {
+    pollRef.current = setInterval(fetchSubmissions, POLL_INTERVAL_MS);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [fetchSubmissions]);
+
   const handleCopyCode = () => {
-    if (team?.join_code) {
-      navigator.clipboard.writeText(team.join_code);
-      toast.success('Join code copied to clipboard');
+    if (team?.invite_code) {
+      navigator.clipboard.writeText(team.invite_code);
+      toast.success('Invite code copied to clipboard');
     }
   };
 
   const handleLinkRepo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !team) return;
+    if (!slug || !team) return;
     
     if (!repoUrl.includes('/') || repoUrl.trim().split('/').length !== 2) {
       toast.error('Please use "owner/repo" format (e.g. devsage/hackathon-project)');
@@ -120,13 +159,13 @@ export function TeamManagementPage() {
 
     setSubmitting(true);
     try {
-      await apiRequest(`/api/v1/hackathons/${id}/teams/${team.id}/repo`, {
+      await apiRequest(`/api/v1/hackathons/${slug}/teams/${team.id}/repo`, {
         method: 'POST',
         body: JSON.stringify({ repoFullName: repoUrl.trim() }),
       });
       toast.success('Repository linked successfully!');
       findAndLoadTeam();
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to link repository');
     } finally {
       setSubmitting(false);
@@ -134,15 +173,15 @@ export function TeamManagementPage() {
   };
 
   const handleLeaveTeam = async () => {
-    if (!id || !team || !confirm('Are you sure you want to leave this team?')) return;
+    if (!slug || !team || !user || !confirm('Are you sure you want to leave this team?')) return;
     setSubmitting(true);
     try {
-      await apiRequest(`/api/v1/hackathons/${id}/teams/${team.id}/leave`, {
-        method: 'POST',
+      await apiRequest(`/api/v1/hackathons/${slug}/teams/${team.id}/members/${user.id}`, {
+        method: 'DELETE',
       });
       toast.success('Left team');
-      navigate(`/hackathons/${id}`);
-    } catch (error) {
+      navigate(`/hackathons/${slug}`);
+    } catch (_error) {
       toast.error('Failed to leave team');
       setSubmitting(false);
     }
@@ -162,12 +201,16 @@ export function TeamManagementPage() {
 
   if (!team) return null;
 
-  const isCaptain = team.captain_id === user?.id;
+  const isFirstMember = team.members?.[0]?.user_id === user?.id;
+  const hasRepo = Boolean(team.repo_full_name);
+  const hasSubmissions = submissions.length > 0;
+  const statusStyle = (status: string) =>
+    SUBMISSION_STATUS_STYLES[status] ?? { variant: 'outline' as const };
 
   return (
     <div className="space-y-8 container mx-auto py-8 max-w-4xl">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/hackathons/${id}`)}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/hackathons/${slug}`)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -182,28 +225,24 @@ export function TeamManagementPage() {
             <CardHeader>
               <CardTitle>Team Members</CardTitle>
               <CardDescription>
-                {team.members?.length || 0} members in this team
+                {team.members?.length ?? 0} members in this team
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {team.members?.map((member) => (
+                {team.members?.map((member, idx) => (
                   <div key={member.user_id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-xs overflow-hidden">
-                        {member.user.avatar_url ? (
-                          <img src={member.user.avatar_url} alt={member.user.name} className="h-full w-full object-cover" />
-                        ) : (
-                          member.user.name.charAt(0).toUpperCase()
-                        )}
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium text-xs">
+                        {(member.display_name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-sm">{member.user.name}</p>
-                        <p className="text-xs text-muted-foreground">{member.user.email}</p>
+                        <p className="font-medium text-sm">{member.display_name || 'Unknown'}</p>
+                        <p className="text-xs text-muted-foreground">Joined {new Date(member.joined_at).toLocaleDateString()}</p>
                       </div>
                     </div>
-                    {member.user_id === team.captain_id && (
-                      <Badge variant="secondary">Captain</Badge>
+                    {idx === 0 && (
+                      <Badge variant="secondary">Leader</Badge>
                     )}
                   </div>
                 ))}
@@ -213,26 +252,83 @@ export function TeamManagementPage() {
 
           <Card>
              <CardHeader>
-                <CardTitle>Project Submission</CardTitle>
-                <CardDescription>Link your GitHub repository to submit your project</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Project Submission</CardTitle>
+                    <CardDescription>Link your GitHub repository and submit via git tags</CardDescription>
+                  </div>
+                  {hasSubmissions && (
+                    <Button variant="ghost" size="icon" onClick={fetchSubmissions} title="Refresh submissions">
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
              </CardHeader>
              <CardContent className="space-y-4">
-               {submission && (
-                 <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
-                    <div className="mt-1"><Github className="h-5 w-5" /></div>
-                    <div className="space-y-1 flex-1">
-                      <div className="flex justify-between">
-                         <p className="font-medium text-sm">Latest Submission</p>
-                         <Badge variant={submission.status === 'success' ? 'default' : 'outline'}>{submission.status}</Badge>
-                      </div>
-                      <p className="text-xs font-mono">{submission.repo_full_name}</p>
-                      <p className="text-xs text-muted-foreground">Commit: {submission.commit_sha.substring(0, 7)}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(submission.submitted_at).toLocaleString()}</p>
-                    </div>
+               {hasSubmissions ? (
+                 <div className="space-y-3">
+                   {submissions.map((sub) => {
+                     const style = statusStyle(sub.status);
+                     return (
+                       <div key={sub.id} className="bg-muted p-4 rounded-lg flex items-start gap-3">
+                         <div className="mt-1"><Tag className="h-4 w-4 text-muted-foreground" /></div>
+                         <div className="space-y-1 flex-1 min-w-0">
+                           <div className="flex items-center justify-between gap-2">
+                             <p className="font-mono text-sm truncate">{sub.tag_name}</p>
+                             <Badge variant={style.variant} className={style.className}>
+                               {sub.status}
+                             </Badge>
+                           </div>
+                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                             <span className="font-mono">{sub.commit_sha.substring(0, 7)}</span>
+                             <span>{new Date(sub.submitted_at).toLocaleString()}</span>
+                           </div>
+                         </div>
+                       </div>
+                     );
+                   })}
+                   <p className="text-xs text-muted-foreground flex items-center gap-1">
+                     <RefreshCw className="h-3 w-3" />
+                     Auto-refreshing every 10 seconds
+                   </p>
+                 </div>
+               ) : hasRepo ? (
+                 <div className="bg-muted/50 border border-dashed border-muted-foreground/20 rounded-lg p-6 text-center space-y-2">
+                   <Github className="h-8 w-8 mx-auto text-muted-foreground" />
+                   <p className="text-sm font-medium">No submissions yet</p>
+                   <p className="text-xs text-muted-foreground">
+                     Push a git tag to your linked repository to create a submission.
+                   </p>
+                   <Button variant="outline" size="sm" onClick={() => setShowGuide(true)} className="mt-2">
+                     <Info className="h-3 w-3 mr-1" /> How to submit
+                   </Button>
+                 </div>
+               ) : null}
+
+               {(showGuide || (!hasRepo && !hasSubmissions)) && (
+                 <div className="rounded-lg border border-blue-500/20 bg-blue-950/20 p-4 space-y-3">
+                   <div className="flex items-center justify-between">
+                     <p className="text-sm font-medium text-blue-400 flex items-center gap-2">
+                       <Info className="h-4 w-4" /> How to Submit
+                     </p>
+                     {showGuide && (
+                       <Button variant="ghost" size="sm" onClick={() => setShowGuide(false)} className="h-6 px-2 text-xs">
+                         Dismiss
+                       </Button>
+                     )}
+                   </div>
+                   <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside">
+                     <li>Link your GitHub repository using the form below (team leader only).</li>
+                     <li>When ready to submit, push a git tag matching the submission pattern:
+                       <code className="ml-1 bg-muted px-1.5 py-0.5 rounded font-mono text-foreground">git tag submission-v1 && git push origin submission-v1</code>
+                     </li>
+                     <li>DevSage detects the tag via webhook and records your submission automatically.</li>
+                     <li>Push additional tags (e.g. <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-foreground">submission-v2</code>) to update your submission.</li>
+                   </ol>
                  </div>
                )}
 
-               {isCaptain ? (
+               {isFirstMember ? (
                  <form onSubmit={handleLinkRepo} className="space-y-4">
                     <div className="space-y-2">
                       <label htmlFor="repo-url" className="text-sm font-medium">Repository (owner/repo)</label>
@@ -244,7 +340,7 @@ export function TeamManagementPage() {
                           onChange={(e) => setRepoUrl(e.target.value)}
                         />
                         <Button type="submit" disabled={submitting}>
-                          {submission ? 'Update' : 'Link'}
+                          {hasRepo ? 'Update' : 'Link'}
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -254,7 +350,7 @@ export function TeamManagementPage() {
                  </form>
                ) : (
                  <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md">
-                   Only the team captain can link a repository.
+                   Only the team leader can link a repository.
                  </div>
                )}
              </CardContent>
@@ -268,10 +364,10 @@ export function TeamManagementPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                 <p className="text-xs font-medium text-muted-foreground">JOIN CODE</p>
+                 <p className="text-xs font-medium text-muted-foreground">INVITE CODE</p>
                  <div className="flex gap-2">
                    <code className="flex-1 bg-muted rounded px-3 py-2 text-sm font-mono flex items-center">
-                     {team.join_code}
+                     {team.invite_code}
                    </code>
                    <Button variant="outline" size="icon" onClick={handleCopyCode}>
                      <Copy className="h-4 w-4" />

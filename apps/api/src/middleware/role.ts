@@ -77,7 +77,7 @@ export async function resolveRole(
   }
 
   const membership = await db
-    .select()
+    .select({ role: teamMembers.role })
     .from(teamMembers)
     .innerJoin(teams, eq(teamMembers.team_id, teams.id))
     .where(
@@ -89,7 +89,7 @@ export async function resolveRole(
     .get();
 
   if (membership) {
-    return 'participant';
+    return membership.role === 'leader' ? 'team_leader' : 'participant';
   }
 
   return 'anonymous';

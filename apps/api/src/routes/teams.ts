@@ -63,6 +63,7 @@ teamsRouter.post(
         id: memberId,
         team_id: teamId,
         user_id: user.sub,
+        role: 'leader',
         joined_at: now,
       }),
     ]);
@@ -213,6 +214,7 @@ teamsRouter.post(
       id: memberId,
       team_id: teamId,
       user_id: user.sub,
+      role: 'member',
       joined_at: now,
     });
 
@@ -230,8 +232,9 @@ teamsRouter.post(
 );
 
 /**
- * DELETE /:slug/teams/:teamId/members/:userId — remove a member
- * Requires: participant+ role, but only team leader or admin+ can actually remove
+ * DELETE /:slug/teams/:teamId/members/:userId — remove a member or leave team.
+ * Self-removal (leave): any team member can leave.
+ * Removing another member: requires team_leader+ or admin+.
  */
 teamsRouter.delete(
   '/:slug/teams/:teamId/members/:userId',
@@ -244,7 +247,6 @@ teamsRouter.delete(
     const role = c.get('role');
     const db = createDbClient(c.env.DB);
 
-    // Verify team exists and belongs to this hackathon
     const team = await db
       .select()
       .from(teams)
@@ -255,16 +257,14 @@ teamsRouter.delete(
       return errorResponse(c, 404, 'NOT_FOUND', 'Team not found');
     }
 
-    const actorMembership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
-      .get();
-
+    const isSelfRemoval = targetUserId === user.sub;
     const isAdmin = isRoleAtLeast(role, 'admin');
 
-    if (!actorMembership && !isAdmin) {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Only team member or admin can remove members');
+    if (!isSelfRemoval && !isAdmin) {
+      const isLeader = isRoleAtLeast(role, 'team_leader');
+      if (!isLeader) {
+        return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader or admin can remove other members');
+      }
     }
 
     const targetMembership = await db
@@ -285,7 +285,7 @@ teamsRouter.delete(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'team.member_remove',
+      action: isSelfRemoval ? 'team.leave' : 'team.member_remove',
       entityType: 'team',
       entityId: teamId,
       details: { removedUserId: targetUserId },
@@ -295,13 +295,9 @@ teamsRouter.delete(
    },
 );
 
-/**
- * POST /:slug/teams/:teamId/repo — connect GitHub repo to team
- * Requires: participant+ role, must be team leader
- */
 teamsRouter.post(
   '/:slug/teams/:teamId/repo',
-  requireRole('participant'),
+  requireRole('team_leader'),
   zValidator('json', ConnectTeamRepoRequestSchema),
   async (c) => {
     const teamId = c.req.param('teamId');
@@ -318,16 +314,6 @@ teamsRouter.post(
 
     if (!team) {
       return errorResponse(c, 404, 'NOT_FOUND', 'Team not found');
-    }
-
-    const actorMembership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.team_id, teamId), eq(teamMembers.user_id, user.sub)))
-      .get();
-
-    if (!actorMembership) {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Only team member can connect repository');
     }
 
     const existingRepo = await db
