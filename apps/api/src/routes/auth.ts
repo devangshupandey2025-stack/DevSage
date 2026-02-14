@@ -21,6 +21,27 @@ import {
 import type { Context } from 'hono';
 import type { UserIdentity } from '../lib/user-service.js';
 
+// Helper: check if a table exists in the D1 database. Some local/dev DBs
+// may be missing optional tables (tests or minimal setups), so guard
+// queries that target those tables.
+async function tableExists(tableName: string, env: Env): Promise<boolean> {
+  try {
+    const res = await env.DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+    ).bind(tableName).all();
+    // D1 `.all()` returns { results: [...] } shape in the worker-runtime
+    // but to be defensive check for results or length.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyRes: any = res;
+    if (anyRes && Array.isArray(anyRes.results)) return anyRes.results.length > 0;
+    if (Array.isArray(anyRes)) return anyRes.length > 0;
+    return false;
+  } catch (err) {
+    console.warn('Failed to check table existence for', tableName, err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
 type AppOrigin = 'participant' | 'platform' | 'admin';
 
 function resolveAppOrigin(frontendOrigin: string, env: Env): AppOrigin {
@@ -102,11 +123,12 @@ async function handleOAuthSuccess(
     c.env.JWT_SECRET,
   );
 
-  setSessionCookie(c, token, frontendOrigin);
-
   // Each app has its own landing page after login
   const landingPath = appOrigin === 'admin' ? '/' : '/dashboard';
   const dashboardUrl = new URL(landingPath, frontendOrigin).toString();
+
+  setSessionCookie(c, token, frontendOrigin);
+
   return c.redirect(dashboardUrl, 302);
 }
 
@@ -215,68 +237,90 @@ auth.get('/callback/github', async (c) => {
 });
 
 auth.get('/me', async (c) => {
-  const token = getSessionCookie(c);
-  if (!token) {
-    return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
-  }
+  try {
+    const token = getSessionCookie(c);
+    if (!token) {
+      return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
+    }
 
-  const payload = await verifyJWT(token, c.env.JWT_SECRET);
-  if (!payload) {
-    return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid or expired token');
-  }
+    const payload = await verifyJWT(token, c.env.JWT_SECRET);
+    if (!payload) {
+      return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid or expired token');
+    }
 
-  const db = createDbClient(c.env.DB);
+    const db = createDbClient(c.env.DB);
 
-  const user = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, payload.sub))
-    .get();
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .get();
 
-  if (!user) {
-    return errorResponse(c, 404, 'USER_NOT_FOUND', 'User not found');
-  }
+    if (!user) {
+      return errorResponse(c, 404, 'USER_NOT_FOUND', 'User not found');
+    }
 
-  const [roles, adminRecord, acceptedInvite] = await Promise.all([
-    db
+    // Guard optional tables: if a table is missing (e.g. platform_admins in
+    // a minimal local DB), skip the query instead of throwing.
+    const [platformAdminsExists, organizerInvitesExists] = await Promise.all([
+      tableExists('platform_admins', c.env),
+      tableExists('organizer_invites', c.env),
+    ]);
+
+    const rolesPromise = db
       .select({
         hackathon_id: organizerRoles.hackathon_id,
         role: organizerRoles.role,
       })
       .from(organizerRoles)
       .where(eq(organizerRoles.user_id, user.id))
-      .all(),
-    db
-      .select({ id: platformAdmins.id })
-      .from(platformAdmins)
-      .where(eq(platformAdmins.user_id, user.id))
-      .get(),
-    db
-      .select({ id: organizerInvites.id })
-      .from(organizerInvites)
-      .where(
-        and(
-          eq(organizerInvites.accepted_by, user.id),
-          eq(organizerInvites.status, 'accepted'),
-        ),
-      )
-      .get(),
-  ]);
+      .all();
 
-  return successResponse(c, {
-    user: {
-      id: user.id,
-      github_id: user.github_id,
-      github_username: user.github_username,
-      display_name: user.display_name,
-      email: user.email,
-      avatar_url: user.avatar_url,
-      created_at: user.created_at,
-    },
-    roles,
-    isPlatformAdmin: !!adminRecord,
-    isOrganizer: !!acceptedInvite || !!adminRecord,
-  });
+    const adminPromise = platformAdminsExists
+      ? db
+          .select({ id: platformAdmins.id })
+          .from(platformAdmins)
+          .where(eq(platformAdmins.user_id, user.id))
+          .get()
+      : Promise.resolve(null);
+
+    const invitePromise = organizerInvitesExists
+      ? db
+          .select({ id: organizerInvites.id })
+          .from(organizerInvites)
+          .where(
+            and(
+              eq(organizerInvites.accepted_by, user.id),
+              eq(organizerInvites.status, 'accepted'),
+            ),
+          )
+          .get()
+      : Promise.resolve(null);
+
+    const [roles, adminRecord, acceptedInvite] = await Promise.all([
+      rolesPromise,
+      adminPromise,
+      invitePromise,
+    ]);
+
+    return successResponse(c, {
+      user: {
+        id: user.id,
+        github_id: user.github_id,
+        github_username: user.github_username,
+        display_name: user.display_name,
+        email: user.email,
+        avatar_url: user.avatar_url,
+        created_at: user.created_at,
+      },
+      roles,
+      isPlatformAdmin: !!adminRecord,
+      isOrganizer: !!acceptedInvite || !!adminRecord,
+    });
+  } catch (err) {
+    console.error('/me endpoint error:', err instanceof Error ? err.message : String(err));
+    throw err;
+  }
 });
 
 auth.post('/logout', (c) => {

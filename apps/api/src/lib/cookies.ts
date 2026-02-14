@@ -32,26 +32,22 @@ export function getSessionCookie(c: Context): string | undefined {
 
 export function setSessionCookie(c: Context, token: string, frontendUrl: string): void {
   const production = isProduction(frontendUrl);
-  const domain = production ? extractRootDomain(frontendUrl) : undefined;
 
   setCookie(c, SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: 'Lax',
+    sameSite: production ? 'None' : 'Lax',
     secure: production,
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
-    ...(domain ? { domain } : {}),
   });
 }
 
 export function clearSessionCookie(c: Context, frontendUrl: string): void {
   const production = isProduction(frontendUrl);
-  const domain = production ? extractRootDomain(frontendUrl) : undefined;
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: '/',
     secure: production,
-    sameSite: 'Lax',
-    ...(domain ? { domain } : {}),
+    sameSite: production ? 'None' : 'Lax',
   });
 }

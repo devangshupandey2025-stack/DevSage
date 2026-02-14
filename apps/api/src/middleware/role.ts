@@ -97,43 +97,48 @@ export async function resolveRole(
 
 export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
   return async (c, next) => {
-    const slug = c.req.param('slug');
-    if (!slug) {
-      return errorResponse(c, 400, 'BAD_REQUEST', 'Missing hackathon slug');
-    }
-    const db = createDbClient(c.env.DB);
-
-    const hackathon = await db
-      .select()
-      .from(hackathons)
-      .where(eq(hackathons.slug, slug))
-      .get();
-
-    if (!hackathon) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
-    }
-
-    const user = c.get('user');
-
-    if (!user) {
-      if (minRole === 'anonymous') {
-        c.set('role', 'anonymous' as Role);
-        c.set('hackathon', hackathon);
-        await next();
-        return;
+    try {
+      const slug = c.req.param('slug');
+      if (!slug) {
+        return errorResponse(c, 400, 'BAD_REQUEST', 'Missing hackathon slug');
       }
-      return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+      const db = createDbClient(c.env.DB);
+
+      const hackathon = await db
+        .select()
+        .from(hackathons)
+        .where(eq(hackathons.slug, slug))
+        .get();
+
+      if (!hackathon) {
+        return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+      }
+
+      const user = c.get('user');
+
+      if (!user) {
+        if (minRole === 'anonymous') {
+          c.set('role', 'anonymous' as Role);
+          c.set('hackathon', hackathon);
+          await next();
+          return;
+        }
+        return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+      }
+
+      const resolvedRole = await resolveRole(user.sub, hackathon.id, db);
+
+      c.set('role', resolvedRole);
+      c.set('hackathon', hackathon);
+
+      if (!isRoleAtLeast(resolvedRole, minRole)) {
+        return errorResponse(c, 403, 'INSUFFICIENT_ROLE', `Requires ${minRole} role or higher`);
+      }
+
+      await next();
+    } catch (err) {
+      console.error('requireRole middleware error:', err instanceof Error ? err.message : String(err));
+      return errorResponse(c, 500, 'ROLE_RESOLUTION_ERROR', 'Failed to resolve role');
     }
-
-    const resolvedRole = await resolveRole(user.sub, hackathon.id, db);
-
-    c.set('role', resolvedRole);
-    c.set('hackathon', hackathon);
-
-    if (!isRoleAtLeast(resolvedRole, minRole)) {
-      return errorResponse(c, 403, 'INSUFFICIENT_ROLE', `Requires ${minRole} role or higher`);
-    }
-
-    await next();
   };
 };
