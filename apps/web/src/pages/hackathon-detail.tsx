@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/contexts/auth-context';
@@ -82,6 +82,7 @@ export function HackathonDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const id = slug; // route uses :slug
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const { CustomPage } = useCustomHackathonPage(slug);
 
@@ -207,6 +208,13 @@ export function HackathonDetailPage() {
   const myTeam = teams.find(t => t.members?.some(m => m.user_id === user?.id));
 
   const mySubmission = myTeam ? submissions.find(s => s.team_id === myTeam.id) : null;
+
+  // Auto-redirect participants (users with a team) to the participant dashboard
+  useEffect(() => {
+    if (!loading && myTeam && slug) {
+      navigate(`/hackathons/${slug}/participant`, { replace: true });
+    }
+  }, [loading, myTeam, slug, navigate]);
 
   // Remove invalid error rendering block
   if (loading) {
