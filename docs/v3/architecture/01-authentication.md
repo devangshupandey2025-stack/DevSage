@@ -1,353 +1,346 @@
 # 01 — Authentication & Sessions
 
-> Manual OAuth 2.0 with GitHub (primary) and Google (secondary), stateless JWT in HttpOnly cookies, no external auth libraries.
+> Cross-subdomain OAuth 2.0 authentication via GitHub and Google. JWT stored in an HttpOnly cookie scoped to `Domain=.devsage.org`, shared across all surfaces. Manual implementation using `crypto.subtle` -- no external JWT libraries, no `@hono/oauth-providers`.
 
-**Related docs:** [Roles & Permissions](./06-roles-permissions.md) | [API Design](./11-api-design.md) | [Infrastructure](./12-infrastructure.md)
-
----
-
-## Overview
-
-DevSage uses a custom authentication system built entirely on Web Crypto APIs (`crypto.subtle`). No external JWT libraries. No `@hono/oauth-providers` (broken on Cloudflare Workers).
-
-- **Providers**: GitHub (primary, required), Google (secondary, optional)
-- **Token**: Stateless JWT stored in HttpOnly cookie
-- **Session**: No server-side session state — JWT is self-contained
-- **Roles**: NOT stored in JWT — resolved per-request per-hackathon (see [06-roles-permissions.md](./06-roles-permissions.md))
+**Related docs:** [System Overview](./00-overview.md) | [Hackathon Lifecycle](./02-hackathon-lifecycle.md) | [Data Model](./03-data-model.md) | [Roles & Permissions](./10-roles-permissions.md)
 
 ---
 
-## OAuth 2.0 Flow
+## How It Works
 
-### GitHub OAuth (Primary)
+All five surfaces (`devsage.org`, `platform.devsage.org`, `admin.devsage.org`, `{slug}.devsage.org`, `api.devsage.org`) share a single authentication system. A user logs in once and the session cookie is valid everywhere.
 
 ```mermaid
 sequenceDiagram
     participant U as User Browser
-    participant W as API Worker
+    participant S as Any *.devsage.org Surface
+    participant API as api.devsage.org
     participant KV as Workers KV
-    participant GH as GitHub OAuth
-    participant D1 as D1 Database
+    participant GH as GitHub / Google
 
-    U->>W: GET /auth/github?origin=https://devsage.org
-    W->>W: Generate random state
-    W->>KV: Store state → origin (10-min TTL)
-    W->>U: 302 Redirect → github.com/login/oauth/authorize<br/>(scope: read:user, user:email)
-
-    U->>GH: User authorizes app
-    GH->>U: 302 Redirect → /auth/callback/github?code=...&state=...
-
-    U->>W: GET /auth/callback/github?code=...&state=...
-    W->>KV: Validate & consume state
-    KV-->>W: origin URL
-    W->>GH: POST github.com/login/oauth/access_token<br/>(code exchange)
-    GH-->>W: access_token
-    W->>GH: GET api.github.com/user<br/>(fetch profile)
-    GH-->>W: { id, login, name, email, avatar_url }
-
-    W->>D1: Upsert user (github_id as key)
-    D1-->>W: User record
-
-    W->>W: signJWT({ sub, ghid, ghu })
-    W->>U: Set-Cookie: session=<JWT><br/>(HttpOnly, Secure, SameSite=Lax)<br/>302 Redirect → origin/auth/callback
-```
-
-### Google OAuth (Secondary)
-
-Same flow but:
-- Endpoint: `accounts.google.com/o/oauth2/v2/auth`
-- Scope: `openid profile email`
-- Token exchange: `oauth2.googleapis.com/token`
-- Profile: decoded from ID token or `googleapis.com/oauth2/v2/userinfo`
-- On callback: if user has no `github_id` → redirect to `/link-required` (GitHub is required for bot features)
-
-### Account Linking
-
-Users who sign in with Google first must link a GitHub account:
-
-```mermaid
-flowchart TD
-    A[Google OAuth callback] --> B{User has github_id?}
-    B -->|Yes| C[Set JWT cookie → /dashboard]
-    B -->|No| D[Set JWT cookie → /link-required]
-    D --> E[User clicks 'Link GitHub']
-    E --> F[GitHub OAuth flow]
-    F --> G[Merge accounts: set github_id on existing user]
-    G --> C
+    U->>S: Clicks "Login with GitHub"
+    S->>API: Redirect to /auth/github?origin=https://hack2026.devsage.org
+    API->>KV: Store OAuth state (10-min TTL)
+    API->>GH: Redirect to GitHub authorization URL
+    GH->>U: User authorizes
+    GH->>API: Callback with code + state
+    API->>KV: Consume + delete OAuth state
+    API->>GH: Exchange code for access token
+    API->>GH: Fetch user profile + emails
+    API->>API: Upsert user in D1
+    API->>API: Sign JWT (HMAC SHA-256)
+    API->>U: Set-Cookie: session=<JWT>; Domain=.devsage.org
+    API->>S: Redirect back to originating surface
 ```
 
 ---
 
-## JWT Token Design
+## OAuth Providers
 
-### Payload Structure
+Two providers are supported. GitHub is the primary identity provider; Google is a secondary link.
 
-```typescript
-interface JWTPayload {
-  sub: string;    // user.id (UUID)
-  ghid: number;   // github_id
-  ghu: string;    // github_username
-  iat: number;    // issued at (Unix seconds)
-  exp: number;    // expiry (Unix seconds)
-}
+| Provider | Scopes | Primary? | Account Creation |
+|----------|--------|----------|------------------|
+| **GitHub** | `read:user`, `user:email` | Yes | Creates new user if none exists |
+| **Google** | `openid`, `email`, `profile` | No | Links to existing user by email match |
+
+### Why Manual OAuth (Not `@hono/oauth-providers`)
+
+The `@hono/oauth-providers` package is broken on Cloudflare Workers. DevSage implements OAuth 2.0 manually:
+
+1. Build the authorization URL with client ID, redirect URI, scopes, and state
+2. Exchange the authorization code for an access token via `POST` to the provider's token endpoint
+3. Fetch the user profile using the access token
+4. Upsert or link the user in D1
+
+All external HTTP calls use a 10-second timeout via `AbortController` (fail-open pattern).
+
+---
+
+## OAuth Flow: GitHub
+
+```mermaid
+flowchart TD
+    A["GET /auth/github?origin=https://hack2026.devsage.org"] --> B["Generate state (crypto.randomUUID)"]
+    B --> C["Store in KV: oauth:state:{uuid}<br/>TTL: 600s (10 min)"]
+    C --> D["Redirect to github.com/login/oauth/authorize"]
+    D --> E["User authorizes on GitHub"]
+    E --> F["GET /auth/callback/github?code=...&state=..."]
+    F --> G{"Consume state from KV<br/>(read + delete)"}
+    G -->|"Invalid/expired"| H["Redirect to /login?error=invalid_state"]
+    G -->|"Valid"| I["POST github.com/login/oauth/access_token"]
+    I --> J["GET api.github.com/user"]
+    J --> K["GET api.github.com/user/emails"]
+    K --> L["upsertGitHubUser()"]
+    L --> M["checkLoginAccess()"]
+    M -->|"Denied"| N["Redirect to /login?error=access_denied"]
+    M -->|"Allowed"| O["signJWT() → Set-Cookie"]
+    O --> P["Redirect to originating surface"]
 ```
 
-### Implementation Details
+### GitHub Email Resolution
 
-| Property | Value |
-|----------|-------|
-| Algorithm | HMAC-SHA256 via `crypto.subtle` |
-| Secret | `JWT_SECRET` (Worker secret) |
-| Expiry | 7 days (604,800 seconds) |
-| Storage | HttpOnly cookie named `session` |
-| CSRF protection | `SameSite=Lax` (dev) / `SameSite=Strict` + `Secure` (prod) |
-| Verification cost | ~0.5ms CPU per request |
-| Server-side state | None (fully stateless) |
+The API fetches both `/user` and `/user/emails` to find the best email address. Priority order:
 
-### What is NOT in the JWT
+1. `user.email` (if set on GitHub profile)
+2. Primary verified email from `/user/emails`
+3. Any verified email from `/user/emails`
+4. First email in the list
 
-- **Roles** — resolved per-request per-hackathon via database query
-- **Email** — may change; always fetch from DB
-- **Display name** — may change; always fetch from DB
-- **Permissions** — derived from roles at request time
+### User Upsert Logic
+
+On GitHub login, `upsertGitHubUser()` in `user-service.ts`:
+
+- **Existing user** (matched by `github_id`): Updates `github_username`, `display_name`, `email`, `avatar_url`, `updated_at`
+- **New user**: Inserts with `crypto.randomUUID()` as `id`
+
+---
+
+## OAuth Flow: Google (Account Linking)
+
+Google is a secondary provider. It does not create new accounts -- it links to an existing user matched by email.
+
+```mermaid
+flowchart TD
+    A["GET /auth/google?origin=..."] --> B["Generate state + store in KV"]
+    B --> C["Redirect to accounts.google.com/o/oauth2/v2/auth"]
+    C --> D["User authorizes on Google"]
+    D --> E["GET /auth/callback/google?code=...&state=..."]
+    E --> F["Exchange code for token"]
+    F --> G["Fetch Google user profile"]
+    G --> H["linkGoogleToUser()"]
+    H --> I{"User with matching email exists?"}
+    I -->|"No"| J["Redirect to /link-required"]
+    I -->|"Yes"| K["Set google_id on user row"]
+    K --> L["signJWT() → Set-Cookie → Redirect"]
+```
+
+### Account Linking Rules
+
+- A user must sign in with GitHub first to create their account
+- Google login matches by `email` in the `users` table
+- If no user with that email exists, the user is redirected to `/link-required`
+- On successful link, the `google_id` column is set on the existing user row
+
+---
+
+## JWT
+
+### Token Structure
+
+The JWT uses HMAC SHA-256 (`HS256`) signed with `crypto.subtle`. No external JWT libraries.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sub` | `string` | User UUID (primary key in `users` table) |
+| `ghid` | `number` | GitHub user ID |
+| `ghu` | `string` | GitHub username |
+| `iat` | `number` | Issued at (Unix timestamp) |
+| `exp` | `number` | Expiration (Unix timestamp, `iat + 7 days`) |
+
+### What Is NOT in the JWT
+
+Roles are **not** stored in the JWT. They are resolved per-request per-hackathon by `resolveRole()` in the middleware layer. This means a user's role can differ across hackathons without re-issuing the token.
+
+### Signing
+
+```typescript
+// Simplified from apps/api/src/lib/jwt.ts
+const header = { alg: 'HS256', typ: 'JWT' };
+const payload = { sub, ghid, ghu, iat, exp };
+
+const signingInput = base64url(header) + '.' + base64url(payload);
+const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+const signature = await crypto.subtle.sign('HMAC', key, signingInput);
+
+return signingInput + '.' + base64url(signature);
+```
+
+### Verification
+
+`verifyJWT()` performs these checks in order:
+
+1. Token has exactly 3 dot-separated parts
+2. Header has `alg: 'HS256'` and `typ: 'JWT'`
+3. HMAC signature is valid via `crypto.subtle.verify()`
+4. Payload has all required fields with correct types
+5. Token has not expired (`exp > now`)
+
+Returns `null` on any failure -- no error messages leaked to the caller.
+
+### Expiry
+
+| Setting | Value |
+|---------|-------|
+| JWT lifetime | 7 days (`JWT_EXPIRY_SECONDS = 604800`) |
+| Cookie `maxAge` | 7 days (matches JWT) |
+
+There are no refresh tokens. When the JWT expires, the user must log in again.
 
 ---
 
 ## Cookie Configuration
 
-```typescript
-// Production
-{
-  httpOnly: true,
-  secure: true,
-  sameSite: 'Strict',
-  path: '/',
-  maxAge: 604800,         // 7 days
-  domain: '.devsage.org'  // Shared across subdomains
-}
+The session cookie is named `session` and managed by Hono's cookie helpers (`setCookie`, `getCookie`, `deleteCookie`).
 
-// Development
-{
-  httpOnly: true,
-  secure: false,
-  sameSite: 'Lax',
-  path: '/',
-  maxAge: 604800
-}
-```
+### Production (`*.devsage.org`)
 
----
+| Attribute | Value | Why |
+|-----------|-------|-----|
+| `HttpOnly` | `true` | Not accessible via JavaScript -- prevents XSS token theft |
+| `SameSite` | `None` | Required for cross-origin requests between subdomains and `api.devsage.org` |
+| `Secure` | `true` | HTTPS only (required when `SameSite=None`) |
+| `Path` | `/` | Available on all paths |
+| `maxAge` | `604800` (7 days) | Matches JWT expiry |
 
-## Middleware Chain
+> **Note on `Domain`:** The current `cookies.ts` implementation does not explicitly set `Domain=.devsage.org`. The cookie is set by `api.devsage.org` with `SameSite=None`, which allows it to be sent on cross-origin requests from any `*.devsage.org` surface. The browser scopes the cookie to `api.devsage.org` by default.
 
-### `authMiddleware` (strict)
+### Local Development (`localhost`)
 
-Used on all protected routes. Rejects unauthenticated requests.
+| Attribute | Value | Why |
+|-----------|-------|-----|
+| `HttpOnly` | `true` | Same as production |
+| `SameSite` | `Lax` | Cross-origin not needed on localhost |
+| `Secure` | `false` | No HTTPS locally |
+| `Path` | `/` | Same as production |
+| `maxAge` | `604800` | Same as production |
 
-```mermaid
-flowchart LR
-    A[Request] --> B{Cookie present?}
-    B -->|No| C[401 NO_TOKEN]
-    B -->|Yes| D{JWT valid?}
-    D -->|No| E[401 INVALID_TOKEN]
-    D -->|Yes| F["Set c.user = #123; sub, ghid, ghu #125;"]
-    F --> G["next()"]
-```
-
-### `optionalAuth` (lenient)
-
-Used on public routes that benefit from knowing the user (e.g., leaderboard visibility).
-
-```mermaid
-flowchart LR
-    A[Request] --> B{Cookie present?}
-    B -->|No| C["next() — user = null"]
-    B -->|Yes| D{JWT valid?}
-    D -->|No| C
-    D -->|Yes| E["Set c.user = #123; sub, ghid, ghu #125;"]
-    E --> F["next()"]
-```
+The `isProduction()` check in `cookies.ts` determines the environment by checking if `FRONTEND_URL` uses `https:`.
 
 ---
 
-## Frontend Auth Flow
+## OAuth State Management
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant SPA as React SPA
-    participant AP as AuthProvider
-    participant API as API Worker
+OAuth state parameters prevent CSRF attacks during the OAuth flow. State is stored in Workers KV with a 10-minute TTL.
 
-    U->>SPA: Navigate to app
-    SPA->>AP: Mount AuthProvider
-    AP->>API: GET /auth/me (credentials: include)
-
-    alt Cookie present & valid
-        API-->>AP: { ok: true, data: { user } }
-        AP->>AP: Set state: authenticated
-        AP->>SPA: Render dashboard
-    else No cookie or invalid
-        API-->>AP: 401
-        AP->>AP: Set state: unauthenticated
-        AP->>SPA: Render login page
-    end
-
-    Note over SPA: On 401 from any API call → redirect to /login
-```
-
-### AuthContext API
+### State Record
 
 ```typescript
-const { user, isAuthenticated, isLoading, logout } = useAuth();
+interface OAuthStateRecord {
+  provider: 'google' | 'github';
+  redirectUri: string;       // OAuth callback URL
+  frontendOrigin: string;    // Where to redirect after login
+  createdAt: string;         // ISO-8601 timestamp
+}
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `user` | `User \| null` | Current user object with `id`, `github_username`, `display_name`, etc. |
-| `isAuthenticated` | `boolean` | Whether user is logged in |
-| `isLoading` | `boolean` | True during initial `/auth/me` check |
-| `logout()` | `() => Promise<void>` | Calls `POST /auth/logout`, clears state, redirects to `/` |
+### KV Key Format
+
+```
+oauth:state:{uuid}
+```
+
+### Lifecycle
+
+1. **Generate**: `crypto.randomUUID()` creates the state value
+2. **Store**: Written to KV with key `oauth:state:{uuid}` and `expirationTtl: 600` (10 minutes)
+3. **Consume**: On callback, the state is read from KV and immediately deleted (one-time use)
+4. **Expire**: If not consumed within 10 minutes, KV auto-deletes the entry
 
 ---
 
-## Security Considerations
+## Cross-Surface Login Flow
 
-| Threat | Mitigation |
-|--------|-----------|
-| XSS token theft | HttpOnly cookie — JS cannot access |
-| CSRF | `SameSite=Strict` (prod) + `Origin` header check on mutations |
-| Token replay | 7-day expiry; no refresh tokens (user re-authenticates) |
-| Timing attacks on JWT verify | `crypto.subtle` uses constant-time comparison internally |
-| OAuth state forgery | Random state stored in KV with 10-min TTL, consumed on use |
-| Account takeover | GitHub ID is the primary key; Google ID is optional secondary |
+### How a Hackathon Site Initiates Login
+
+When a user clicks "Login" on `hack2026.devsage.org`:
+
+1. The hackathon site redirects to `api.devsage.org/auth/github?origin=https://hack2026.devsage.org`
+2. The `origin` query parameter tells the API where to redirect after login
+3. The API stores `frontendOrigin` in the OAuth state record
+4. After OAuth completes, the API redirects back to `https://hack2026.devsage.org/dashboard`
+
+### Origin Resolution
+
+The `resolveFrontendOrigin()` function validates the `origin` parameter:
+
+- If `origin` matches `FRONTEND_URL`, `PLATFORM_URL`, or `ADMIN_URL` -- use it
+- Otherwise -- fall back to `FRONTEND_URL` (the main site)
+
+> **Note:** Hackathon site origins (`{slug}.devsage.org`) currently fall through to the `FRONTEND_URL` fallback. The `origin` parameter is accepted but the redirect goes to the main site unless the origin matches one of the three configured URLs.
+
+### Access Control by Surface
+
+Different surfaces have different access requirements, checked by `checkLoginAccess()`:
+
+| Surface | Who Can Log In |
+|---------|---------------|
+| Hackathon site / Main site (`participant`) | Anyone with a GitHub account |
+| Organizer platform (`platform`) | Platform admins OR users with an accepted organizer invite |
+| Admin dashboard (`admin`) | Platform admins only |
+
+If access is denied, the user is redirected to `/login?error=access_denied&message=...`.
+
+### Post-Login Redirect Paths
+
+| Surface | Redirect Path |
+|---------|---------------|
+| Admin dashboard | `/` |
+| Organizer platform | `/dashboard` |
+| Hackathon site / Main site | `/dashboard` |
 
 ---
 
-## v3 Planned Enhancements
+## Auth Middleware
 
-### Passkey / WebAuthn Support
+Two middleware functions extract and verify the JWT from the session cookie:
 
-Add passkeys as a third authentication provider alongside GitHub and Google. Users register a platform authenticator (fingerprint, Face ID, hardware key) during account setup or from a settings page. The server stores the credential public key in a new `user_credentials` table. On login, the browser performs a WebAuthn assertion ceremony, and the Worker verifies the signature via `crypto.subtle` (no external libraries).
+### `authMiddleware` (Required Auth)
 
-| Property | Value |
-|----------|-------|
-| Attestation | `none` (privacy-preserving, no attestation verification) |
-| User verification | `preferred` (biometric when available) |
-| Discoverable credentials | Yes (passkey auto-fill in browsers) |
-| Credential storage | `user_credentials` table in D1 (credential ID, public key, sign count, transports) |
-| Fallback | OAuth login remains available; passkeys are additive |
+Used on protected routes. Returns `401` if no token or invalid token.
 
-### Refresh Token Rotation
-
-Replace the current single long-lived JWT with a short-lived access token and a rotating refresh token pair. Access tokens expire in 15 minutes. Refresh tokens expire in 30 days but are single-use: each refresh request issues a new refresh token and invalidates the old one. Both tokens are stored in HttpOnly cookies on separate paths to limit exposure.
-
-```mermaid
-sequenceDiagram
-    participant U as User Browser
-    participant W as API Worker
-    participant D1 as D1 Database
-
-    U->>W: Request with expired access token
-    W->>W: Verify access token -> expired
-    W->>U: 401 TOKEN_EXPIRED
-
-    U->>W: POST /auth/refresh (refresh token in cookie)
-    W->>D1: Look up refresh token in token_families
-    D1-->>W: Token family record
-
-    alt Token valid and unused
-        W->>W: Generate new access token (15-min expiry)
-        W->>W: Generate new refresh token (30-day expiry)
-        W->>D1: Mark old refresh token as used
-        W->>D1: Store new refresh token in same family
-        W->>U: Set-Cookie: access_token + refresh_token
-    else Token already used (replay detected)
-        W->>D1: Revoke entire token family
-        W->>U: 401 REFRESH_TOKEN_REUSED (force re-login)
-    end
+```typescript
+// apps/api/src/middleware/auth.ts
+const token = getSessionCookie(c);        // Read 'session' cookie
+const payload = await verifyJWT(token, c.env.JWT_SECRET);
+c.set('user', { sub: payload.sub, ghid: payload.ghid, ghu: payload.ghu });
 ```
 
-| Property | Value |
-|----------|-------|
-| Access token expiry | 15 minutes |
-| Refresh token expiry | 30 days |
-| Rotation | Every refresh issues a new pair |
-| Replay detection | Reuse of a consumed refresh token revokes the entire family |
-| Cookie paths | Access: `/`; Refresh: `/auth/refresh` |
-| Storage | `token_families` table in D1 (family_id, token_hash, used_at, revoked_at) |
+Sets `c.get('user')` with `{ sub, ghid, ghu }` for downstream handlers.
 
-### Session Management Dashboard
+### `optionalAuth` (Optional Auth)
 
-Expose a `/settings/sessions` page where users can view all active sessions and revoke them remotely. Each refresh token family maps to a session. The API returns device metadata (User-Agent parsed into OS, browser, device type) and approximate location (Cloudflare `cf-ipcountry` header captured at token issuance). Revoking a session invalidates the entire token family, forcing re-authentication on that device.
+Used on routes that work for both authenticated and anonymous users. Sets `c.get('user')` if a valid token is present, otherwise continues without it.
 
-| Field | Source | Example |
-|-------|--------|---------|
-| Device | Parsed `User-Agent` | "Chrome on macOS" |
-| Location | `cf-ipcountry` header | "US" |
-| Created | Token family `created_at` | "2026-02-10T14:30:00Z" |
-| Last active | Most recent refresh `created_at` | "2026-02-13T09:15:00Z" |
-| Current | Matches requesting token family | Boolean |
+### Middleware Chain
 
-### OAuth Scope Expansion for GitHub
+```
+Public routes:     → handler
+Protected routes:  → authMiddleware → requireRole(minRole) → handler
+Optional routes:   → optionalAuth → handler
+```
 
-Request additional GitHub OAuth scopes to enable bot write features. The initial login continues with `read:user` and `user:email`. When a team leader links a repo and needs bot capabilities (auto-commenting on PRs, creating issues for submission status), the app triggers an incremental authorization flow that requests `repo` scope. The elevated access token is stored encrypted in D1, scoped to the team's repo, and used exclusively by the queue consumer for bot operations.
+---
 
-| Scope | When Requested | Purpose |
-|-------|---------------|---------|
-| `read:user, user:email` | Initial login | Profile, identity |
-| `repo` | Repo linking (incremental auth) | Bot: PR comments, commit statuses, issue creation |
-| `admin:repo_hook` | Repo linking (incremental auth) | Manage webhooks programmatically |
+## Logout
 
-### Rate Limiting on Auth Endpoints
+`POST /auth/logout` clears the session cookie by calling `clearSessionCookie()`, which uses `deleteCookie()` with matching `path`, `secure`, and `sameSite` attributes.
 
-Apply Cloudflare Rate Limiting rules to all `/auth/*` endpoints to prevent credential stuffing and OAuth abuse. Rate limits are enforced at the edge before the Worker executes, using the client IP as the key. Failed attempts (invalid state, expired codes) count toward stricter limits.
+---
 
-| Endpoint | Limit | Window | Action |
-|----------|-------|--------|--------|
-| `GET /auth/github` | 10 requests | 1 minute | Block for 5 minutes |
-| `GET /auth/google` | 10 requests | 1 minute | Block for 5 minutes |
-| `GET /auth/callback/*` | 20 requests | 1 minute | Block for 10 minutes |
-| `POST /auth/refresh` | 30 requests | 1 minute | Block for 5 minutes |
-| `POST /auth/logout` | 10 requests | 1 minute | Block for 1 minute |
+## Security Properties
 
-### Account Deletion and GDPR Data Export
+| Property | Implementation |
+|----------|---------------|
+| **No token in URL** | JWT is in HttpOnly cookie, never in query params or `Authorization` header |
+| **CSRF protection** | `SameSite=None` + CORS origin validation on API |
+| **OAuth CSRF** | State parameter in KV with 10-min TTL, consumed on use |
+| **No token leakage** | `verifyJWT()` returns `null` on failure -- no error details |
+| **XSS mitigation** | `HttpOnly` cookie -- JavaScript cannot read the token |
+| **Timing attacks** | `crypto.subtle.verify()` uses constant-time comparison |
+| **Secret rotation** | Change `JWT_SECRET` env var -- all existing tokens invalidate |
 
-Implement `DELETE /auth/account` for full account deletion and `GET /auth/account/export` for GDPR-compliant data export. Deletion is a two-phase process: the user requests deletion, receives a confirmation email with a time-limited token, and confirms via `POST /auth/account/delete-confirm`. On confirmation, the Worker enqueues a `DELETION_QUEUE` job that cascades through all user data: team memberships (reassign leader if needed), scores, audit events (anonymized, not deleted), and OAuth tokens. Data export generates a JSON archive of all user-associated records and delivers it via a signed R2 URL valid for 24 hours.
+---
 
-| Phase | Action | Timeline |
-|-------|--------|----------|
-| Request | `DELETE /auth/account` | Immediate |
-| Confirmation email | Token valid for 24 hours | Sent via NOTIFICATION_QUEUE |
-| Confirm | `POST /auth/account/delete-confirm` | Within 24 hours |
-| Execution | Queue job cascades deletions | Within 1 hour of confirmation |
-| Data export | `GET /auth/account/export` | JSON archive via signed R2 URL (24-hour expiry) |
+## Limitations
 
-### Multi-Factor Authentication (TOTP)
-
-Add TOTP-based MFA as an optional security layer. Users enroll from `/settings/security` by scanning a QR code (otpauth URI) with an authenticator app. The shared secret is encrypted at rest in D1. On login, after OAuth completes, users with MFA enabled are redirected to a TOTP challenge page. The server validates the 6-digit code with a 30-second window and one-step tolerance. Recovery codes (10 single-use codes) are generated at enrollment and shown once.
-
-| Property | Value |
-|----------|-------|
-| Algorithm | TOTP (RFC 6238) via `crypto.subtle` HMAC-SHA1 |
-| Period | 30 seconds |
-| Digits | 6 |
-| Window tolerance | 1 step (previous + current + next) |
-| Secret storage | AES-256-GCM encrypted in `user_mfa` table |
-| Recovery codes | 10 single-use codes, bcrypt-hashed |
-| Enforcement | Optional per-user; organizers can require MFA for admin+ roles |
-
-### Planned Feature Summary
-
-| Feature | Priority | Complexity | New Tables | Key Dependencies |
-|---------|----------|------------|------------|------------------|
-| Refresh token rotation | High | Medium | `token_families` | Cookie path splitting, frontend retry logic |
-| Rate limiting | High | Low | None | Cloudflare dashboard configuration |
-| Passkey/WebAuthn | Medium | High | `user_credentials` | WebAuthn browser API, `crypto.subtle` verification |
-| MFA (TOTP) | Medium | Medium | `user_mfa`, `recovery_codes` | QR code generation, HMAC-SHA1 |
-| Session management | Medium | Medium | None (uses `token_families`) | Refresh token rotation (prerequisite) |
-| OAuth scope expansion | Medium | Low | Column on `users` | Incremental OAuth flow |
-| Account deletion / GDPR | Medium | High | `deletion_requests` | Cascade logic, R2 signed URLs |
+| Limitation | Impact |
+|------------|--------|
+| No refresh tokens | User must re-authenticate after 7 days |
+| No token revocation | Cannot invalidate a specific user's session without rotating `JWT_SECRET` (which invalidates all sessions) |
+| GitHub-first accounts | Users must sign in with GitHub before linking Google |
+| No MFA | Single-factor authentication only |
+| No passkeys | Password-less auth not implemented |
 
 ---
 
@@ -355,13 +348,11 @@ Add TOTP-based MFA as an optional security layer. Users enroll from `/settings/s
 
 | File | Purpose |
 |------|---------|
-| `apps/api/src/routes/auth.ts` | OAuth routes (initiate, callback, /me, logout) |
-| `apps/api/src/lib/jwt.ts` | `signJWT()`, `verifyJWT()` — HMAC SHA-256 |
+| `apps/api/src/lib/jwt.ts` | `signJWT()`, `verifyJWT()`, `JWTPayload` interface |
 | `apps/api/src/lib/cookies.ts` | `setSessionCookie()`, `getSessionCookie()`, `clearSessionCookie()` |
-| `apps/api/src/lib/oauth.ts` | Manual OAuth HTTP flows for GitHub + Google |
+| `apps/api/src/lib/oauth.ts` | OAuth state management, authorization URLs, token exchange, profile fetching |
+| `apps/api/src/lib/user-service.ts` | `upsertGitHubUser()`, `linkGoogleToUser()`, `callbackUrl()` |
+| `apps/api/src/lib/constants.ts` | `JWT_EXPIRY_SECONDS` (604800 = 7 days) |
 | `apps/api/src/middleware/auth.ts` | `authMiddleware`, `optionalAuth` |
-| `apps/web/src/contexts/auth-context.tsx` | `AuthProvider`, `useAuth()` hook |
-| `apps/web/src/lib/api.ts` | `apiRequest()` — auto-includes credentials |
-| `apps/web/src/pages/login.tsx` | OAuth button UI |
-| `apps/web/src/pages/auth-callback.tsx` | Post-OAuth redirect handler |
-| `apps/web/src/pages/link-required.tsx` | GitHub account linking flow |
+| `apps/api/src/routes/auth.ts` | OAuth initiation, callbacks, `/auth/me`, `/auth/logout` |
+| `packages/db/src/schema/users.ts` | `users` table: `github_id`, `google_id`, `email` columns |

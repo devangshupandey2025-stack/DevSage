@@ -1,157 +1,114 @@
 # 02 — Hackathon Lifecycle
 
-> Every hackathon progresses through a 7-state forward-only state machine, enforced by a Durable Object with single-writer consistency. No backward transitions, no skipping states.
+> A hackathon moves through seven states from creation to archival. The CLI creates it, the admin configures it, the organizer manages it, participants hack in it, judges score it. A Durable Object enforces forward-only state transitions, submission locking, and deadline alarms -- no race conditions, no backward moves.
 
-**Related docs:** [Submissions](./04-submissions.md) | [Judging](./05-judging.md) | [Infrastructure](./12-infrastructure.md)
+**Related docs:** [System Overview](./00-overview.md) | [Authentication](./01-authentication.md) | [Data Model](./03-data-model.md) | [CLI](./06-cli.md) | [Organizer Platform](./07-organizer-platform.md)
+
+---
+
+## Full Lifecycle
+
+A hackathon's life spans five phases of ownership, from DevSage team creation through participant archival:
+
+```
+CLI Creation → Admin Configuration → Organizer Setup → Participant Experience → Archival
+```
+
+| Phase | Who | What Happens |
+|-------|-----|-------------|
+| **1. CLI Creation** | DevSage team | Runs `devsage create {slug}` -- copies template, deploys Worker, sets up DNS, creates DB record in `draft` state |
+| **2. Admin Configuration** | DevSage team | Visits `admin.devsage.org` -- invites organizers, configures platform-level settings |
+| **3. Organizer Setup** | Organizers | Visits `platform.devsage.org` -- sets dates, rubric, prizes, rules, invites judges, transitions to `registration_open` |
+| **4. Participant Experience** | Participants + Judges | Register on `{slug}.devsage.org`, form teams, link repos, submit via git tags, judges score submissions |
+| **5. Archival** | Organizers / DevSage team | Hackathon marked `completed` then `archived` -- read-only, no further mutations |
 
 ---
 
 ## State Machine
 
+Seven states, forward-only. Defined in `packages/shared/src/schemas/constants.ts` as the single source of truth.
+
 ```mermaid
 stateDiagram-v2
     [*] --> draft
-    draft --> registration_open : Organizer publishes
-    registration_open --> registration_closed : Registration deadline
-    registration_closed --> active : Organizer starts hackathon
-    active --> judging : Submission deadline passes
-    judging --> completed : All judges scored OR organizer finalizes
-    completed --> archived : Organizer archives
+    draft --> registration_open : Open registration
+    registration_open --> registration_closed : Close registration<br/>(manual or alarm)
+    registration_closed --> active : Start hacking
+    active --> judging : End submissions<br/>(manual or deadline alarm)
+    judging --> completed : Finalize results
+    completed --> archived : Archive
+    archived --> [*]
 ```
 
-**State notes:**
+### Transition Rules
 
-| State | Key Behavior |
-|-------|-------------|
-| `draft` | Requires: title, description, deadlines, at least 1 rubric criterion |
-| `active` | Submissions accepted. Commits tracked. Force pushes flagged. |
-| `judging` | Submissions locked. Judges score assignments. AI reviews generated. |
+| From | To | Trigger | Notes |
+|------|----|---------|-------|
+| `draft` | `registration_open` | Manual (organizer) | Hackathon becomes visible for registration |
+| `registration_open` | `registration_closed` | Manual or alarm | Alarm fires when `registrationCloses` date passes |
+| `registration_closed` | `active` | Manual (organizer) | Submissions now accepted |
+| `active` | `judging` | Manual or alarm | Alarm fires when `submissionDeadline` passes. Submissions locked |
+| `judging` | `completed` | Manual or alarm | Alarm fires when `judgingEnds` passes (if set). Scores finalized |
+| `completed` | `archived` | Manual (organizer) | Read-only. No further mutations |
+| `archived` | _(none)_ | Terminal state | Cannot transition out |
 
----
+### Constraints
 
-## States & Allowed Actions
-
-| State | Description | Allowed Actions |
-|-------|-------------|-----------------|
-| `draft` | Initial creation. Not visible to public. | Edit config, set rubric, invite organizers, delete |
-| `registration_open` | Participants can register teams and join. | Create/join teams. Organizer can edit non-critical fields |
-| `registration_closed` | Registration ended. Teams are finalized. | No new teams. Organizer prepares for start |
-| `active` | Hackathon is running. Submissions accepted. | Push code, submit via tag, connect repos |
-| `judging` | Submission deadline passed. Judges score. | Score submissions, generate AI reviews |
-| `completed` | All judging finished. Results visible. | View leaderboard, download results |
-| `archived` | Read-only historical record. | View only. Data preserved indefinitely |
-
----
-
-## Transition Rules
-
-```mermaid
-flowchart TD
-    A["draft → registration_open"] --> A1["Preconditions:<br/>- title set<br/>- description set<br/>- deadlines set<br/>- >= 1 rubric criterion"]
-
-    B["registration_open → registration_closed"] --> B1["Trigger:<br/>- DO alarm at registration_closes<br/>- OR manual organizer action"]
-
-    C["registration_closed → active"] --> C1["Trigger:<br/>- Manual organizer action<br/>Preconditions:<br/>- >= 1 registered team"]
-
-    D["active → judging"] --> D1["Trigger:<br/>- DO alarm at submission_deadline<br/>- OR Cron hourly check<br/>Preconditions:<br/>- submission_deadline has passed"]
-
-    E["judging → completed"] --> E1["Trigger:<br/>- All assigned judges submitted scores<br/>- OR organizer forces finalization"]
-
-    F["completed → archived"] --> F1["Trigger:<br/>- Manual organizer action<br/>Effect:<br/>- Data becomes read-only"]
-```
-
-### Valid Transitions (Source of Truth)
+- **Forward-only**: No backward transitions. Cannot go from `judging` back to `active`
+- **No skipping**: Cannot jump from `draft` to `active`. Must pass through each intermediate state
+- **Single next state**: Each state has exactly one valid successor (or none for `archived`)
 
 ```typescript
-const HACKATHON_STATUS_TRANSITIONS = {
-  draft:               ['registration_open'],
-  registration_open:   ['registration_closed'],
+// packages/shared/src/schemas/constants.ts
+export const HACKATHON_STATUS_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
+  draft: ['registration_open'],
+  registration_open: ['registration_closed'],
   registration_closed: ['active'],
-  active:              ['judging'],
-  judging:             ['completed'],
-  completed:           ['archived'],
-  archived:            [],  // Terminal state
+  active: ['judging'],
+  judging: ['completed'],
+  completed: ['archived'],
+  archived: [],
 };
 ```
-
-**Enforcement**: Attempting any transition not in this map returns `INVALID_TRANSITION` error. No backward transitions, no state skipping.
 
 ---
 
 ## Durable Object: HackathonStateMachine
 
-One DO instance per hackathon, addressed by hackathon ID. This is the **single source of truth** for:
+One Durable Object instance per hackathon, addressed by hackathon ID. The DO is the single writer for state transitions and submission locking -- no race conditions possible.
 
-1. Current phase/status
-2. Submission locking (exactly-once acceptance)
-3. Deadline enforcement via alarms
-4. Phase transition validation
+### Why a Durable Object?
 
-### Internal State (SQLite-backed)
+| Problem | DO Solution |
+|---------|-------------|
+| Two organizers transition state simultaneously | Single-threaded execution -- one wins, one gets `VERSION_MISMATCH` |
+| Two teams submit at the exact same millisecond | Submission locks are serialized inside the DO |
+| Deadline passes while API is idle | DO alarms fire independently of incoming requests |
+| Webhook retry delivers duplicate submission | `webhook_delivery_id` UNIQUE constraint in DO's SQLite |
 
-```mermaid
-erDiagram
-    lifecycle_state {
-        TEXT hackathon_id PK
-        TEXT status
-        TEXT config "JSON: deadlines, limits, flags"
-        INT version "Optimistic concurrency"
-        TEXT transitioned_at
-    }
+### Internal SQLite Tables
 
-    submission_locks {
-        TEXT team_id
-        TEXT tag_name
-        TEXT submission_id
-        TEXT commit_sha
-        TEXT webhook_delivery_id UK
-        TEXT locked_at
-    }
+The DO uses SQLite-backed storage (`new_sqlite_classes`) with three internal tables:
 
-    team_submissions {
-        TEXT team_id PK
-        INT submission_count
-    }
-```
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `lifecycle_state` | Current hackathon state | `hackathon_id` PK, `status`, `config` (JSON), `version`, `transitioned_at` |
+| `submission_locks` | Exactly-once submission tracking | `team_id`, `tag_name`, `submission_id`, `commit_sha`, `webhook_delivery_id` UNIQUE |
+| `team_submissions` | Per-team submission count | `team_id` PK, `submission_count` |
 
-### DO HTTP Endpoints
+> These are internal to the DO's SQLite, separate from the D1 database. The DO never touches D1 directly -- the Worker mediates all D1 writes.
+
+### HTTP Endpoints
+
+The Worker communicates with the DO via `stub.fetch()`:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/initialize` | Set initial config (deadlines, limits, tag pattern) |
-| POST | `/transition` | Transition to target status (with optimistic concurrency `expectedVersion`) |
-| GET | `/state` | Fetch current state |
-| POST | `/accept-submission` | Lock a submission (exactly-once semantics) |
-| GET | `/can-accept-submissions` | Check if submissions are currently accepted |
-
-### Alarm Schedule
-
-The DO uses Cloudflare's alarm API for deadline enforcement:
-
-```mermaid
-gantt
-    title Hackathon Timeline & DO Alarms
-    dateFormat YYYY-MM-DD
-
-    section Alarms
-    Registration closes  :milestone, a1, 2026-03-01, 0d
-    Submission deadline   :milestone, a2, 2026-03-15, 0d
-    Judging ends          :milestone, a3, 2026-03-22, 0d
-
-    section Phases
-    Draft                 :done, p1, 2026-02-01, 2026-02-15
-    Registration Open     :active, p2, 2026-02-15, 2026-03-01
-    Registration Closed   :p3, 2026-03-01, 2026-03-02
-    Active                :p4, 2026-03-02, 2026-03-15
-    Judging               :p5, 2026-03-15, 2026-03-22
-    Completed             :p6, 2026-03-22, 2026-03-25
-```
-
-When an alarm fires:
-1. Check which deadline passed
-2. Auto-transition to the next state if preconditions met
-3. Schedule the next upcoming alarm
-4. Write transition audit event
+| `POST` | `/initialize` | Set up state machine with hackathon config |
+| `POST` | `/transition` | Transition to a new state |
+| `GET` | `/state` | Read current state, config, version |
+| `POST` | `/accept-submission` | Lock a submission (exactly-once) |
+| `GET` | `/can-accept-submissions` | Check if submissions are currently accepted |
 
 ### Optimistic Concurrency
 
@@ -161,213 +118,175 @@ State transitions use version-based optimistic concurrency:
 UPDATE lifecycle_state
 SET status = ?, version = version + 1, transitioned_at = ?
 WHERE hackathon_id = ? AND version = ?
--- If rowsWritten = 0 → concurrent modification detected → retry
 ```
+
+If `rowsWritten === 0`, the version has changed since the read -- the transition is rejected with `VERSION_MISMATCH`. Callers can optionally pass `expectedVersion` to detect conflicts.
 
 ---
 
-## CRUD Operations
+## Deadline Alarms
 
-### Create Hackathon
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant W as API Worker
-    participant D1 as D1 Database
-    participant DO as HackathonStateMachine
-
-    C->>W: POST /api/v1/hackathons<br/>{ slug, title, description, dates... }
-    W->>W: Validate via CreateHackathonRequestSchema
-    W->>W: Generate slug if not provided
-    W->>D1: INSERT INTO hackathons (status='draft')
-    W->>D1: INSERT INTO organizer_roles (role='owner')
-    W->>DO: POST /initialize (config)
-    DO-->>W: OK
-    W->>D1: INSERT audit_events (hackathon_created)
-    W-->>C: 201 { ok: true, data: hackathon }
-```
-
-### Transition Phase
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant W as API Worker
-    participant DO as HackathonStateMachine
-    participant D1 as D1 Database
-
-    C->>W: PATCH /api/v1/hackathons/:slug/status<br/>{ status: "registration_open" }
-    W->>W: Verify role >= admin
-    W->>DO: POST /transition { targetStatus, expectedVersion }
-    DO->>DO: Validate transition is allowed
-    DO->>DO: Check preconditions
-    DO->>DO: Update state (optimistic concurrency)
-    DO->>DO: Schedule next alarm
-    DO-->>W: { success: true, newStatus }
-    W->>D1: UPDATE hackathons SET status = ?
-    W->>D1: INSERT audit_events (phase_transitioned)
-    W-->>C: 200 { ok: true, data: { status } }
-```
-
----
-
-## Automated Transitions
-
-### Cron Trigger (Hourly)
+The DO schedules alarms for upcoming deadlines. When an alarm fires, the DO checks if a transition should happen automatically.
 
 ```mermaid
 flowchart TD
-    A["Cron fires (0 * * * *)"] --> B["Query: hackathons WHERE status = 'active'<br/>AND submission_deadline in [now, now+24h]"]
-    B --> C{Any approaching?}
-    C -->|No| D[Done]
-    C -->|Yes| E["For each hackathon:"]
-    E --> F{Deadline passed?}
-    F -->|Yes| G["Transition active → judging<br/>(via DO)"]
-    F -->|No| H{Within reminder window?}
-    H -->|Yes| I["Enqueue deadline_reminder<br/>(if not already sent)"]
-    H -->|No| D
-    G --> J["Audit: phase_transitioned (actor: cron)"]
-    I --> K["Audit: deadline_reminder_sent (actor: cron)"]
+    A["alarm() fires"] --> B{"Current status?"}
+    B -->|"registration_open"| C{"registrationCloses <= now?"}
+    C -->|"Yes"| D["Transition to registration_closed"]
+    C -->|"No"| E["Re-schedule alarm"]
+    B -->|"active"| F{"submissionDeadline <= now?"}
+    F -->|"Yes"| G["Transition to judging"]
+    F -->|"No"| E
+    B -->|"judging"| H{"judgingEnds <= now?"}
+    H -->|"Yes"| I["Transition to completed"]
+    H -->|"No"| E
+    D --> J["Schedule next alarm"]
+    G --> J
+    I --> J
 ```
 
-### DO Alarm (Precise)
+### Alarm Scheduling Logic
 
-The DO alarm fires at the exact deadline timestamp for immediate transitions. The hourly cron acts as a safety net in case the DO alarm fails.
+After any state change, `scheduleNextAlarm()` finds the next relevant deadline:
+
+| Current Status | Deadline Checked |
+|---------------|-----------------|
+| `registration_open` | `registrationCloses` |
+| `registration_closed` | `submissionDeadline` |
+| `active` | `submissionDeadline`, `judgingEnds` |
+| `judging` | `judgingEnds` |
+
+If no future deadline exists, the alarm is deleted. The DO also has a backup: the Worker's hourly cron trigger checks all hackathons for missed deadlines.
+
+---
+
+## Submission Locking
+
+When a team pushes a git tag matching the hackathon's `submissionTagPattern`, the webhook pipeline eventually calls the DO's `/accept-submission` endpoint.
+
+### Acceptance Flow
+
+```mermaid
+flowchart TD
+    A["POST /accept-submission"] --> B{"Duplicate webhook_delivery_id?"}
+    B -->|"Yes"| C["Return accepted (idempotent no-op)"]
+    B -->|"No"| D{"Status == 'active'?"}
+    D -->|"No"| E["Rejected: wrong status"]
+    D -->|"Yes"| F{"Past submission deadline?"}
+    F -->|"Yes, late not allowed"| G["Rejected: deadline passed"]
+    F -->|"Yes, late allowed"| H["Continue (mark as late)"]
+    F -->|"No"| H
+    H --> I{"Max submissions per team reached?"}
+    I -->|"Yes"| J["Rejected: limit reached"]
+    I -->|"No"| K["Insert submission_lock"]
+    K --> L["Increment team_submissions count"]
+    L --> M["Return accepted"]
+```
+
+### Exactly-Once Guarantee
+
+The `webhook_delivery_id` column has a UNIQUE constraint. If a webhook is retried (GitHub retries on timeout), the DO detects the duplicate and returns success without creating a second lock. This is the idempotency mechanism.
 
 ---
 
 ## Hackathon Configuration
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `slug` | TEXT | auto-generated | URL-safe identifier |
-| `title` | TEXT | required | Display name |
-| `description` | TEXT | — | Markdown description |
-| `rules_md` | TEXT | — | Competition rules (Markdown) |
-| `registration_opens` | ISO-8601 | required | When registration starts |
-| `registration_closes` | ISO-8601 | required | When registration ends |
-| `submission_deadline` | ISO-8601 | required | Final submission cutoff |
-| `judging_starts` | ISO-8601 | — | When judging opens |
-| `judging_ends` | ISO-8601 | — | When judging closes |
-| `min_team_size` | INT | 1 | Minimum members per team |
-| `max_team_size` | INT | 5 | Maximum members per team |
-| `max_teams` | INT | unlimited | Cap on total teams |
-| `submission_tag_pattern` | TEXT | `submission_v%` | Git tag pattern for submissions |
-| `max_submissions_per_team` | INT | unlimited | Submission version limit |
-| `allow_late_submissions` | BOOL | false | Accept tags after deadline |
-| `primary_color` | TEXT | `#6366f1` | Theme color |
-| `logo_r2_key` | TEXT | — | R2 key for logo asset |
-| `banner_r2_key` | TEXT | — | R2 key for banner asset |
+The DO stores hackathon configuration as a JSON blob in the `config` column of `lifecycle_state`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `registrationOpens` | `string` (ISO-8601) | When registration opens |
+| `registrationCloses` | `string` (ISO-8601) | When registration closes |
+| `submissionDeadline` | `string` (ISO-8601) | Submission cutoff |
+| `judgingStarts` | `string \| null` | When judging begins (optional) |
+| `judgingEnds` | `string \| null` | When judging ends (optional, triggers auto-transition) |
+| `maxTeams` | `number \| null` | Team cap (optional) |
+| `maxSubmissionsPerTeam` | `number \| null` | Submission limit per team (optional) |
+| `allowLateSubmissions` | `number` (0/1) | Whether to accept submissions after deadline |
+| `submissionTagPattern` | `string` | Git tag pattern for submissions (default: `submission_v%`) |
 
 ---
 
-## v3 Planned Enhancements
+## CLI Creation Flow
 
-### Hackathon Templates
-
-Allow organizers to clone configuration from a previous hackathon into a new one. A template captures the full hackathon configuration snapshot: rubric criteria, team size limits, submission tag pattern, phase durations, branding assets (R2 keys), and judge invite list. Templates are stored as JSON blobs in a `hackathon_templates` table. The `POST /api/v1/hackathons` endpoint accepts an optional `templateId` parameter that pre-fills all configuration fields, which the organizer can then override before publishing.
-
-| Property | Value |
-|----------|-------|
-| Storage | `hackathon_templates` table in D1 (id, source_hackathon_id, name, config JSON, created_by, created_at) |
-| Captured fields | Rubric, team limits, tag pattern, deadlines (as relative durations), branding R2 keys, judge user IDs |
-| NOT captured | Teams, submissions, scores, audit events (event-specific data) |
-| Creation | `POST /api/v1/hackathons/:slug/template` (admin+) |
-| Usage | `POST /api/v1/hackathons { templateId: "..." }` |
-
-### Recurring Hackathons
-
-Support scheduled recurring events that auto-create new hackathon instances from a template. Organizers configure a recurrence rule (weekly, biweekly, monthly, or custom cron expression) on a template. A new cron handler checks the `recurring_schedules` table hourly and creates hackathon instances when the next occurrence is due. Each instance is created in `draft` status with dates offset according to the recurrence interval. The organizer receives a notification and can review before publishing.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `template_id` | TEXT FK | Source template |
-| `cron_expression` | TEXT | e.g., `0 0 1 * *` (monthly) |
-| `next_run_at` | ISO-8601 | Next scheduled creation |
-| `auto_publish` | BOOL | If true, skip draft and go straight to `registration_open` |
-| `max_instances` | INT | Cap on total auto-created hackathons (null = unlimited) |
-| `instances_created` | INT | Counter |
-
-### Custom Phase Definitions
-
-Allow organizers to insert custom phases between the standard lifecycle states. Custom phases are defined as named intervals with optional entry/exit conditions. They slot into the state machine between existing states without breaking the forward-only invariant. The DO validates that custom phases maintain a valid topological order. Each custom phase can have its own alarm deadline and webhook notification.
+The `devsage create` command (implemented in `scripts/generate-hackathon-site.js`) automates the full creation pipeline:
 
 ```mermaid
-stateDiagram-v2
-    [*] --> draft
-    draft --> registration_open : Organizer publishes
-    registration_open --> registration_closed : Registration deadline
-    registration_closed --> team_review : Custom: organizer reviews teams
-    team_review --> active : Organizer approves teams
-    active --> code_freeze : Custom: 2-hour freeze before judging
-    code_freeze --> judging : Freeze period ends
-    judging --> completed : All judges scored
-    completed --> archived : Organizer archives
-
-    note right of team_review : Custom phase inserted<br/>between registration_closed<br/>and active
-    note right of code_freeze : Custom phase inserted<br/>between active and judging
+flowchart LR
+    A["devsage create hack2026<br/>--name 'Hack 2026'"] --> B["Copy templates/hackathon-site/<br/>to work directory"]
+    B --> C["Write site.config.json<br/>(slug, title, colors, dates)"]
+    C --> D["Write wrangler.jsonc<br/>(worker name, assets config)"]
+    D --> E["pnpm install && pnpm build"]
+    E --> F["git init + push to GitHub<br/>(SHIKDD-org/{slug}-site)"]
+    F --> G["wrangler deploy"]
+    G --> H["Set up custom domain<br/>{slug}.devsage.org"]
+    H --> I["Create hackathon record<br/>in D1 (status: draft)"]
+    I --> J["Initialize DO<br/>HackathonStateMachine"]
 ```
 
-Custom phases are stored in a `custom_phases` table:
+After CLI creation, the hackathon exists in `draft` state with:
+- A deployed Worker serving the hackathon site at `{slug}.devsage.org`
+- A GitHub repository at `SHIKDD-org/{slug}-site`
+- A database record in the `hackathons` table
+- An initialized Durable Object ready for state transitions
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | TEXT PK | Phase identifier |
-| `hackathon_id` | TEXT FK | Parent hackathon |
-| `name` | TEXT | Display name (e.g., "Team Review") |
-| `slug` | TEXT | URL-safe identifier |
-| `after_phase` | TEXT | Standard phase this follows (e.g., `registration_closed`) |
-| `before_phase` | TEXT | Standard phase this precedes (e.g., `active`) |
-| `deadline` | ISO-8601 | Optional auto-transition deadline |
-| `webhook_url` | TEXT | Optional external notification URL |
+---
 
-### Phase Webhooks
+## Phase Details
 
-Notify external systems when a hackathon transitions between phases. Organizers configure webhook URLs per hackathon (or per phase) via `POST /api/v1/hackathons/:slug/webhooks`. On each phase transition, the Worker enqueues a `PHASE_WEBHOOK_QUEUE` message containing the hackathon ID, old phase, new phase, timestamp, and transition actor. The queue consumer delivers the payload with HMAC-SHA256 signature verification (using a per-webhook secret) and retries up to 3 times with exponential backoff.
+### Draft
 
-| Property | Value |
-|----------|-------|
-| Payload | `{ hackathonId, slug, oldPhase, newPhase, transitionedAt, actor }` |
-| Signature | `X-DevSage-Signature: sha256=<HMAC of body>` |
-| Retries | 3 attempts, exponential backoff (1s, 5s, 25s) |
-| Timeout | 10 seconds per delivery attempt |
-| Storage | `phase_webhooks` table (id, hackathon_id, url, secret, phases_filter, active) |
+- Hackathon exists but is not visible to participants
+- Organizers configure dates, rules, rubric, prizes via `platform.devsage.org`
+- Admin can invite organizers via `admin.devsage.org`
+- No registration, no submissions
 
-### Hackathon Preview Mode
+### Registration Open
 
-Allow organizers to experience the hackathon as a participant would, without affecting real data. Preview mode creates a sandboxed view where the organizer sees the registration flow, team creation, submission UI, and judging interface with synthetic data. The preview is implemented as a query parameter (`?preview=true`) that the frontend uses to render mock data from a dedicated preview API endpoint. No records are written to D1 during preview.
+- Hackathon landing page is live at `{slug}.devsage.org`
+- Users can register and create/join teams
+- Team invite codes are active
+- Auto-transitions to `registration_closed` when `registrationCloses` date passes
 
-| Aspect | Behavior |
-|--------|----------|
-| Activation | Admin+ clicks "Preview as Participant" in dashboard |
-| Data | Synthetic teams, submissions, and scores generated server-side |
-| Persistence | None (stateless, generated per request) |
-| Phases | Organizer can preview any phase regardless of current status |
-| Restrictions | Preview flag is validated server-side; only admin+ can access |
+### Registration Closed
 
-### Multi-Track Hackathons
+- No new team creation or joining
+- Existing teams can still link repositories
+- Organizers prepare for hacking phase
 
-Support parallel tracks within a single hackathon (e.g., "AI Track", "Web3 Track", "Open Innovation Track"). Each track has its own rubric criteria, judge pool, and leaderboard, while sharing the same timeline, teams, and submission infrastructure. Teams select a track during registration. Judges are assigned per-track. The leaderboard page shows per-track rankings and an optional combined ranking.
+### Active
 
-| Property | Value |
-|----------|-------|
-| Storage | `hackathon_tracks` table (id, hackathon_id, name, slug, description, rubric_criteria IDs) |
-| Team assignment | `teams.track_id` FK (nullable for single-track hackathons) |
-| Judge assignment | `judge_assignments.track_id` FK |
-| Leaderboard | Per-track + optional combined (weighted by track) |
-| Backward compatibility | Single-track hackathons have zero rows in `hackathon_tracks` (no migration needed) |
+- Submissions are accepted via git tag pushes
+- Commit tracking is active (push events logged)
+- Force push detection is active
+- Auto-transitions to `judging` when `submissionDeadline` passes
 
-### Planned Feature Summary
+### Judging
 
-| Feature | Priority | Complexity | New Tables / Columns | Key Dependencies |
-|---------|----------|------------|---------------------|------------------|
-| Hackathon templates | High | Medium | `hackathon_templates` | Template JSON schema definition |
-| Phase webhooks | High | Medium | `phase_webhooks` | PHASE_WEBHOOK_QUEUE, HMAC signing |
-| Multi-track hackathons | High | High | `hackathon_tracks`, `teams.track_id` | Rubric per-track, leaderboard per-track |
-| Custom phase definitions | Medium | High | `custom_phases` | DO state machine extension, topological validation |
-| Recurring hackathons | Medium | Medium | `recurring_schedules` | Templates (prerequisite), cron handler |
-| Preview mode | Low | Medium | None | Synthetic data generator, preview API endpoint |
+- No new submissions accepted (unless `allowLateSubmissions` is enabled)
+- Judges are assigned to submissions (round-robin)
+- Judges score using rubric criteria
+- Leaderboard is calculated
+- Auto-transitions to `completed` when `judgingEnds` passes (if set)
+
+### Completed
+
+- All scores are finalized
+- Leaderboard is public
+- No further scoring changes
+- Can be archived by organizer
+
+### Archived
+
+- Terminal state -- no transitions out
+- Read-only access to all data
+- Hackathon site remains accessible for historical reference
+
+---
+
+## Cron Trigger
+
+A Worker cron trigger runs hourly (`0 * * * *`) as a backup for DO alarms. It checks all active hackathons for missed deadlines and triggers transitions if needed. This handles edge cases where a DO alarm might not fire (e.g., DO eviction).
 
 ---
 
@@ -375,10 +294,11 @@ Support parallel tracks within a single hackathon (e.g., "AI Track", "Web3 Track
 
 | File | Purpose |
 |------|---------|
-| `apps/api/src/routes/hackathons.ts` | CRUD routes + phase transition endpoint |
-| `apps/api/src/durable-objects/hackathon-state-machine.ts` | Core DO: state management, submission locking, alarms |
-| `packages/shared/src/schemas/hackathon.ts` | Zod schemas for hackathon entity + requests |
-| `packages/shared/src/schemas/constants.ts` | `HACKATHON_STATUS_TRANSITIONS` source of truth |
-| `packages/db/src/schema/hackathons.ts` | Drizzle table definition |
-| `apps/web/src/pages/hackathon-detail.tsx` | Frontend hackathon detail page |
-| `apps/web/src/pages/dashboard.tsx` | Dashboard with hackathon list by status |
+| `apps/api/src/durable-objects/hackathon-state-machine.ts` | `HackathonStateMachine` DO class -- state transitions, submission locking, alarms |
+| `packages/shared/src/schemas/constants.ts` | `HACKATHON_STATUS_TRANSITIONS` -- source of truth for valid transitions |
+| `packages/shared/src/schemas/hackathon.ts` | `HackathonStatusEnum` Zod schema, `HackathonStatus` type |
+| `packages/db/src/schema/hackathons.ts` | `hackathons` table -- `status` column with 7-state enum |
+| `apps/api/src/routes/hackathons.ts` | `PATCH /api/v1/hackathons/:slug/status` -- transition endpoint |
+| `apps/api/src/lib/constants.ts` | `DO_PATHS` -- well-known DO endpoint paths |
+| `scripts/generate-hackathon-site.js` | CLI tool for hackathon creation and deployment |
+| `templates/hackathon-site/` | Template project copied per hackathon |
