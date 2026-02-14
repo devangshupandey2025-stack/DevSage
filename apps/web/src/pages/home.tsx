@@ -8,13 +8,12 @@ import {
   useInView,
 } from 'framer-motion';
 import { CustomCursor } from '@/components/custom-cursor';
+import TextType from '@/components/TextType';
 import {
   Zap,
   GitBranch,
   Globe,
   Cpu,
-  ChevronRight,
-  ChevronLeft,
   Star,
   Menu,
   X,
@@ -23,7 +22,6 @@ import {
   Trophy,
   Users,
   Clock,
-  Sparkles,
   ArrowRight,
   ArrowUpRight,
   Play,
@@ -31,8 +29,17 @@ import {
   Twitter,
   Linkedin,
   Instagram,
+  ExternalLink,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+
+// Local team photos (imported from src/photos)
+import kevinImg from '@/photos/kevin.jpeg';
+import harshImg from '@/photos/harsh.png';
+import deeptanshuImg from '@/photos/deeptanshu.png';
+import ibhanImg from '@/photos/ibhan.jpeg';
+import devangshuImg from '@/photos/devangshu.png';
+import srijanImg from '@/photos/srijan.png';
 
 /* ─────────────────────────────────────────────
    NAVBAR
@@ -43,10 +50,34 @@ const Navbar = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 100);
+    const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Navbar link targets for in-page navigation
+  const navLinks = [
+    { label: 'Platform', id: 'platform' },
+    { label: 'Solutions', id: 'solutions' },
+    { label: 'Developers', id: 'developers' },
+    { label: 'Enterprise', id: 'enterprise' },
+    { label: 'Pricing', id: 'pricing' },
+  ];
+
+  const handleNavClick = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    // If section not on this page (edge case), navigate to home then scroll
+    navigate('/');
+    setTimeout(() => {
+      const e = document.getElementById(id);
+      e?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 220);
+  };
 
   return (
     <>
@@ -54,44 +85,46 @@ const Navbar = () => {
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-        className={`fixed top-0 w-full z-50 transition-all duration-700 ${
-          scrolled ? 'bg-black/90 backdrop-blur-xl' : 'bg-transparent'
+        className={`fixed top-0 w-full z-50 transition-all duration-500 ${
+          scrolled
+            ? 'bg-black/90 backdrop-blur-xl border-b border-white/[0.06]'
+            : 'bg-transparent'
         }`}
       >
-        <div className="max-w-362.5 mx-auto px-6 md:px-12 h-20 md:h-24 flex items-center justify-between">
-          <motion.div className="relative z-10 cursor-pointer" whileHover={{ scale: 1.05 }}>
+        <div className="max-w-[1440px] mx-auto px-6 md:px-12 h-18 md:h-20 flex items-center justify-between">
+          <motion.div className="relative z-10 cursor-pointer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
             <span className="text-2xl md:text-3xl font-black tracking-tighter text-white">
               DEV<span className="text-[#CCFF00]">SAGE</span>
             </span>
           </motion.div>
 
-          <div className="hidden lg:flex items-center gap-12">
-            {['Platform', 'Solutions', 'Developers', 'Enterprise', 'Pricing'].map(
-              (item, i) => (
-                <motion.span
-                  key={item}
-                  className="text-sm font-medium text-white/70 hover:text-white transition-colors relative group cursor-pointer"
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 * i }}
-                >
-                  {item}
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#CCFF00] group-hover:w-full transition-all duration-300" />
-                </motion.span>
-              ),
-            )}
+          <div className="hidden lg:flex items-center gap-10">
+            {navLinks.map((link, i) => (
+              <motion.button
+                key={link.id}
+                type="button"
+                onClick={() => handleNavClick(link.id)}
+                className="text-[13px] font-medium text-white/50 hover:text-white transition-all duration-300 relative group cursor-pointer tracking-wide uppercase bg-transparent border-none"
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 * i }}
+              >
+                {link.label}
+                <span className="absolute -bottom-1.5 left-0 w-0 h-[2px] bg-[#CCFF00] group-hover:w-full transition-all duration-300" />
+              </motion.button>
+            ))}
           </div>
 
-          <div className="hidden lg:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-3">
             <motion.button
-              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
-              whileHover={{ scale: 1.05 }}
+              className="text-sm font-medium text-white/50 hover:text-white transition-all px-4 py-2 rounded-lg hover:bg-white/5"
+              whileHover={{ scale: 1.03 }}
               onClick={() => navigate('/login')}
             >
               Sign In
             </motion.button>
             <motion.button
-              className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-3 rounded-full hover:bg-white transition-all"
+              className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => navigate('/login')}
@@ -120,21 +153,19 @@ const Navbar = () => {
             className="fixed inset-0 bg-[#CCFF00] z-40 flex items-center justify-center"
           >
             <nav className="flex flex-col items-center gap-8">
-              {['Platform', 'Solutions', 'Developers', 'Enterprise', 'Pricing'].map(
-                (item, i) => (
+              {navLinks.map((link, i) => (
                   <motion.button
                     type="button"
-                    key={item}
+                    key={link.id}
                     className="text-5xl md:text-7xl font-black text-black hover:text-white transition-colors bg-transparent border-none cursor-pointer"
                     initial={{ opacity: 0, y: 50 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 * i + 0.3 }}
-                    onClick={() => setIsOpen(false)}
+                    onClick={() => { handleNavClick(link.id); setIsOpen(false); }}
                   >
-                    {item}
+                    {link.label}
                   </motion.button>
-                ),
-              )}
+                ))}
             </nav>
           </motion.div>
         )}
@@ -154,133 +185,139 @@ const Hero = () => {
     offset: ['start start', 'end start'],
   });
 
-  const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%']);
+  const y = useTransform(scrollYProgress, [0, 1], ['0%', '40%']);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.8]);
 
   return (
     <section
       ref={heroRef}
-      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-black"
+      className="relative min-h-screen flex items-end pb-20 md:pb-32 overflow-hidden bg-black"
     >
-      {/* Background grid */}
+      {/* Background image with overlay */}
       <div className="absolute inset-0">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-size-[60px_60px]" />
-        <motion.div
-          className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#CCFF00]/10 rounded-full blur-[120px]"
-          animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 8, repeat: Infinity }}
+        <img
+          src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1920&q=80"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-150"
         />
-        <motion.div
-          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#CCFF00]/5 rounded-full blur-[120px]"
-          animate={{ scale: [1.2, 1, 1.2], opacity: [0.2, 0.4, 0.2] }}
-          transition={{ duration: 10, repeat: Infinity }}
-        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent" />
       </div>
 
+      {/* Grid overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.02)_1px,transparent_1px)] bg-[size:80px_80px]" />
+
       <motion.div
-        style={{ y, opacity, scale }}
-        className="relative z-10 max-w-362.5 mx-auto px-6 md:px-12 text-center"
+        style={{ y, opacity }}
+        className="relative z-10 max-w-[1440px] mx-auto px-6 md:px-12 w-full"
       >
-        {/* Eyebrow */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2 mb-8"
-        >
-          <Sparkles className="w-4 h-4 text-[#CCFF00]" />
-          <span className="text-sm text-white/70">
-            The Future of Hackathons is Here
-          </span>
-          <ArrowRight className="w-4 h-4 text-[#CCFF00]" />
-        </motion.div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
+          {/* Left – main headline */}
+          <div className="lg:col-span-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="mb-6"
+            >
+              <span className="text-[#CCFF00] text-xs font-bold tracking-[0.25em] uppercase">
+                The Future of Hackathons
+              </span>
+            </motion.div>
 
-        {/* Headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="text-5xl md:text-7xl lg:text-[120px] font-black tracking-tighter leading-[0.9] mb-8"
-        >
-          <span className="text-white">BUILD</span>
-          <br />
-          <span className="text-[#CCFF00]">BEYOND</span>
-          <br />
-          <span className="text-white/40">LIMITS</span>
-        </motion.h1>
+            <motion.h1
+              initial={{ opacity: 0, y: 60 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="text-6xl md:text-8xl lg:text-[140px] font-black tracking-tighter leading-[0.85]"
+            >
+              <span className="text-white block">BUILD</span>
+              <span className="text-[#CCFF00] block drop-shadow-[0_0_60px_rgba(204,255,0,0.3)]">
+                BEYOND
+              </span>
+              <span
+                className="block text-transparent bg-clip-text"
+                style={{
+                  WebkitTextStroke: '2px rgba(255,255,255,0.25)',
+                }}
+              >
+                LIMITS
+              </span>
+            </motion.h1>
 
-        {/* Subtext */}
-        <motion.p
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8 }}
-          className="text-lg md:text-xl text-white/50 max-w-xl mx-auto mb-12"
-        >
-          The platform where developers compete, collaborate, and create the
-          impossible. Join 50,000+ builders shaping the future.
-        </motion.p>
+            {/* Typing text */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.8 }}
+              className="mt-8"
+            >
+              <TextType
+                text={[
+                  'Where developers compete, collaborate, and create the impossible.',
+                  'Ship faster. Win bigger. Build together.',
+                ]}
+                typingSpeed={45}
+                deletingSpeed={25}
+                pauseDuration={2500}
+                showCursor
+                cursorCharacter="_"
+                cursorBlinkDuration={0.5}
+                className="text-lg md:text-xl text-white/40 max-w-xl h-8"
+                loop
+              />
+            </motion.div>
+          </div>
 
-        {/* CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 1 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4"
-        >
-          <motion.button
-            className="group bg-[#CCFF00] text-black font-bold px-8 py-4 rounded-full text-lg flex items-center gap-2 hover:bg-white transition-all"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/login')}
-          >
-            Start Building
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </motion.button>
-          <motion.button
-            className="group border border-white/20 text-white font-medium px-8 py-4 rounded-full text-lg flex items-center gap-2 hover:bg-white/10 transition-all"
-            whileHover={{ scale: 1.05 }}
-          >
-            <Play className="w-5 h-5" />
-            Watch Demo
-          </motion.button>
-        </motion.div>
+          {/* Right – CTA and stats */}
+          <div className="lg:col-span-4 flex flex-col items-start lg:items-end gap-8">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 1 }}
+              className="flex flex-col gap-4"
+            >
+              <motion.button
+                className="group bg-[#CCFF00] text-black font-bold px-8 py-4 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/login')}
+              >
+                Start Building
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </motion.button>
+            </motion.div>
 
-        {/* Stats */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.4 }}
-          className="flex items-center justify-center gap-12 mt-20"
-        >
-          {[
-            { value: '50K+', label: 'Builders' },
-            { value: '2,400+', label: 'Hackathons' },
-            { value: '$12M+', label: 'In Prizes' },
-          ].map((stat) => (
-            <div key={stat.label} className="text-center">
-              <div className="text-2xl md:text-3xl font-black text-white">
-                {stat.value}
-              </div>
-              <div className="text-sm text-white/40">{stat.label}</div>
-            </div>
-          ))}
-        </motion.div>
+            {/* Mini stats */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.4 }}
+              className="flex gap-8"
+            >
+            </motion.div>
+          </div>
+        </div>
       </motion.div>
 
-      {/* Scroll indicator */}
+      {/* Vertical scroll indicator */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 2 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
+        className="absolute bottom-8 right-8 hidden md:flex flex-col items-center gap-3"
       >
+        <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] [writing-mode:vertical-lr]">
+          Scroll
+        </span>
         <motion.div
-          animate={{ y: [0, 10, 0] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="w-6 h-10 border-2 border-white/20 rounded-full flex items-start justify-center p-2"
+          className="w-px h-16 bg-white/10 relative overflow-hidden"
         >
-          <motion.div className="w-1 h-2 bg-[#CCFF00] rounded-full" />
+          <motion.div
+            className="absolute top-0 left-0 w-full bg-[#CCFF00]"
+            animate={{ height: ['0%', '100%', '0%'] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          />
         </motion.div>
       </motion.div>
     </section>
@@ -297,15 +334,16 @@ interface MarqueeTextProps {
 
 const MarqueeText = ({ children, direction = 1 }: MarqueeTextProps) => {
   return (
-    <div className="overflow-hidden py-6 bg-[#CCFF00] -rotate-1 scale-105">
+    <div className="overflow-hidden py-5 bg-[#CCFF00] relative">
       <motion.div
-        className="flex whitespace-nowrap gap-8"
+        className="flex whitespace-nowrap items-center gap-12"
         animate={{ x: direction > 0 ? [0, -1920] : [-1920, 0] }}
-        transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
+        transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
       >
-        {Array.from({ length: 10 }).map((_, i) => (
-          <span key={`m${String(i)}`} className="text-black font-black text-2xl md:text-4xl">
-            {children} <span className="text-black/20">✦</span>{' '}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <span key={`m${String(i)}`} className="flex items-center gap-12 text-black font-black text-xl md:text-3xl uppercase tracking-wide">
+            {children}
+            <Star className="w-5 h-5 text-black/30 fill-black/30 shrink-0" />
           </span>
         ))}
       </motion.div>
@@ -321,7 +359,9 @@ interface BentoCard {
   description: string;
   icon: LucideIcon;
   gradient: string;
-  span: string;
+  colSpan: string;
+  rowSpan?: string;
+  image?: string;
 }
 
 const BentoGrid = () => {
@@ -335,7 +375,9 @@ const BentoGrid = () => {
         'Code together in real-time with your team. Built-in version control, live cursors, and instant sync.',
       icon: Zap,
       gradient: 'from-yellow-500/20 to-transparent',
-      span: 'md:col-span-2',
+      colSpan: 'md:col-span-2',
+      rowSpan: 'md:row-span-2',
+      image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&h=400&fit=crop',
     },
     {
       title: 'AI-Powered Matching',
@@ -343,7 +385,9 @@ const BentoGrid = () => {
         'Our AI matches you with the perfect teammates based on skills, timezone, and experience.',
       icon: Cpu,
       gradient: 'from-purple-500/20 to-transparent',
-      span: 'md:col-span-1',
+      colSpan: 'md:col-span-1',
+      rowSpan: 'md:row-span-2',
+      image: 'https://blog.emb.global/wp-content/uploads/2024/02/30-Top-Digital-Collaboration-Tools-for-Your-Business-Productivity.webp',
     },
     {
       title: 'Global Network',
@@ -351,7 +395,9 @@ const BentoGrid = () => {
         'Connect with developers from 120+ countries. Build diverse teams that bring unique perspectives.',
       icon: Globe,
       gradient: 'from-blue-500/20 to-transparent',
-      span: 'md:col-span-1',
+      colSpan: 'md:col-span-1',
+      rowSpan: 'md:row-span-2',
+      image: 'https://thumbs.dreamstime.com/b/global-network-across-planet-earth-blockchain-global-network-across-planet-earth-blockchain-elements-image-136686433.jpg',
     },
     {
       title: 'Smart Submissions',
@@ -359,7 +405,9 @@ const BentoGrid = () => {
         'Git integration, automated testing, deployment previews. Submit with confidence every time.',
       icon: GitBranch,
       gradient: 'from-green-500/20 to-transparent',
-      span: 'md:col-span-2',
+      colSpan: 'md:col-span-1',
+      rowSpan: 'md:row-span-2',
+      image: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&h=400&fit=crop',
     },
     {
       title: 'Enterprise Security',
@@ -367,7 +415,9 @@ const BentoGrid = () => {
         'SOC 2 compliant, end-to-end encryption, SSO support. Your code and data are always protected.',
       icon: Shield,
       gradient: 'from-red-500/20 to-transparent',
-      span: 'md:col-span-1',
+      colSpan: 'md:col-span-1',
+      rowSpan: 'md:row-span-2',
+      image: 'https://www.broadcom.com/media/blt4ac44e0e6c6d8341/blt2e71319c09c1c825/65389bbed2c0baf28e57f19e/enterprise-security-solutions..jpg',
     },
     {
       title: 'Instant Deployment',
@@ -375,32 +425,47 @@ const BentoGrid = () => {
         'One-click deploy to any cloud provider. Showcase your project to judges and the world instantly.',
       icon: Rocket,
       gradient: 'from-orange-500/20 to-transparent',
-      span: 'md:col-span-2',
+      colSpan: 'md:col-span-2',
+      rowSpan: 'md:row-span-2',
+      image: 'https://mobisoftinfotech.com/resources/wp-content/uploads/2022/01/mobile-app-development-process-step-6-deployment-and-launch.png',
     },
   ];
 
   return (
-    <section className="py-32 bg-black relative" ref={ref}>
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
-        {/* Section header */}
+    <section id="platform" className="py-32 bg-black relative" ref={ref}>
+      {/* Subtle grid background */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:60px_60px]" />
+
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
+        {/* Section header — split layout */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.8 }}
-          className="mb-20"
+          className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-20"
         >
-          <span className="text-[#CCFF00] text-sm font-bold tracking-widest uppercase">
-            Features
-          </span>
-          <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight">
-            Everything You Need
-            <br />
-            <span className="text-white/30">To Win.</span>
-          </h2>
+          <div>
+            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
+              Features
+            </span>
+            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.95]">
+              Everything You Need
+              <br />
+              <span
+                className="text-transparent"
+                style={{ WebkitTextStroke: '1.5px rgba(255,255,255,0.2)' }}
+              >
+                To Win.
+              </span>
+            </h2>
+          </div>
+          <p className="text-white/35 max-w-sm text-[15px] leading-relaxed md:text-right">
+            Built for teams that ship fast. Every tool, workflow, and integration you need — in one place.
+          </p>
         </motion.div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 4-column Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[220px]">
           {cards.map((card, i) => {
             const Icon = card.icon;
             return (
@@ -408,22 +473,39 @@ const BentoGrid = () => {
                 key={card.title}
                 initial={{ opacity: 0, y: 40 }}
                 animate={isInView ? { opacity: 1, y: 0 } : {}}
-                transition={{ delay: i * 0.1, duration: 0.6 }}
-                className={`${card.span} group relative bg-white/3 border border-white/6 rounded-2xl p-8 hover:bg-white/6 transition-all duration-500 overflow-hidden`}
+                transition={{ delay: i * 0.08, duration: 0.6 }}
+                className={`${card.colSpan} ${card.rowSpan ?? ''} group relative bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden hover:border-white/[0.12] transition-all duration-500`}
               >
-                <div
-                  className={`absolute inset-0 bg-linear-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
-                />
-                <div className="relative z-10">
-                  <div className="w-12 h-12 rounded-xl bg-[#CCFF00]/10 flex items-center justify-center mb-6 group-hover:bg-[#CCFF00]/20 transition-colors">
-                    <Icon className="w-6 h-6 text-[#CCFF00]" />
+                {/* Optional background image */}
+                {card.image && (
+                  <div className="absolute inset-0">
+                    <img
+                      src={card.image}
+                      alt=""
+                      className="w-full h-full object-cover opacity-15 group-hover:opacity-25 group-hover:scale-105 transition-all duration-700"
+                    />
                   </div>
-                  <h3 className="text-xl font-bold text-white mb-3">
-                    {card.title}
-                  </h3>
-                  <p className="text-white/50 leading-relaxed">
-                    {card.description}
-                  </p>
+                )}
+                {/* Hover gradient */}
+                <div
+                  className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
+                />
+
+                <div className="relative z-10 p-7 h-full flex flex-col justify-between">
+                  <div>
+                    <div className="w-11 h-11 rounded-xl bg-[#CCFF00]/10 flex items-center justify-center mb-5 group-hover:bg-[#CCFF00]/20 transition-all duration-300">
+                      <Icon className="w-5 h-5 text-[#CCFF00]" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">
+                      {card.title}
+                    </h3>
+                    <p className="text-white/40 leading-relaxed text-sm">
+                      {card.description}
+                    </p>
+                  </div>
+                  <span className="text-[#CCFF00] text-xs font-semibold uppercase tracking-wider mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-1.5">
+                    Learn more <ArrowRight className="w-3 h-3" />
+                  </span>
                 </div>
               </motion.div>
             );
@@ -446,132 +528,143 @@ interface HackathonEvent {
   prize: string;
   participants: string;
   gradient: string;
+  accent: string;
 }
 
 const hackathonEvents: HackathonEvent[] = [
   {
     id: 1,
     title: 'AI/ML Frontier',
-    image:
-      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=600&fit=crop',
     category: 'Artificial Intelligence',
     date: 'Mar 15-17, 2025',
     prize: '$50,000',
     participants: '2,400+',
     gradient: 'from-violet-600 to-purple-900',
+    accent: '#8B5CF6',
   },
   {
     id: 2,
     title: 'Web3 Summit',
-    image:
-      'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&h=600&fit=crop',
     category: 'Blockchain',
     date: 'Apr 5-7, 2025',
     prize: '$75,000',
     participants: '1,800+',
     gradient: 'from-cyan-600 to-blue-900',
+    accent: '#06B6D4',
   },
   {
     id: 3,
     title: 'Green Tech Hack',
-    image:
-      'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=800&h=600&fit=crop',
     category: 'Sustainability',
     date: 'May 20-22, 2025',
     prize: '$40,000',
     participants: '1,200+',
     gradient: 'from-emerald-600 to-green-900',
+    accent: '#10B981',
   },
   {
     id: 4,
     title: 'DevOps Challenge',
-    image:
-      'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=600&fit=crop',
     category: 'Infrastructure',
     date: 'Jun 10-12, 2025',
     prize: '$35,000',
     participants: '900+',
     gradient: 'from-orange-600 to-red-900',
+    accent: '#F97316',
   },
   {
     id: 5,
     title: 'Mobile First',
-    image:
-      'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&h=600&fit=crop',
     category: 'Mobile Development',
     date: 'Jul 8-10, 2025',
     prize: '$45,000',
     participants: '1,500+',
     gradient: 'from-pink-600 to-rose-900',
+    accent: '#EC4899',
   },
   {
     id: 6,
     title: 'Cybersecurity CTF',
-    image:
-      'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&h=600&fit=crop',
     category: 'Security',
     date: 'Aug 15-17, 2025',
     prize: '$60,000',
     participants: '2,000+',
     gradient: 'from-red-600 to-rose-900',
+    accent: '#EF4444',
   },
   {
     id: 7,
     title: 'Data Science Sprint',
-    image:
-      'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=600&fit=crop',
     category: 'Data & Analytics',
     date: 'Sep 5-7, 2025',
     prize: '$55,000',
     participants: '1,700+',
     gradient: 'from-indigo-600 to-violet-900',
+    accent: '#6366F1',
   },
   {
     id: 8,
     title: 'GameDev Jam',
-    image:
-      'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800&h=600&fit=crop',
+    image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800&h=600&fit=crop',
     category: 'Game Development',
     date: 'Oct 20-22, 2025',
     prize: '$30,000',
     participants: '1,100+',
     gradient: 'from-amber-600 to-yellow-900',
+    accent: '#F59E0B',
   },
 ];
 
 const HackathonGallery = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(true);
   const navigate = useNavigate();
+  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
 
-  const checkScroll = useCallback(() => {
+  /* Drag-to-scroll state */
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollStart = useRef(0);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!scrollRef.current) return;
-    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-    setCanScrollLeft(scrollLeft > 0);
-    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+    isDragging.current = true;
+    startX.current = e.pageX;
+    scrollStart.current = scrollRef.current.scrollLeft;
+    scrollRef.current.style.cursor = 'grabbing';
+    scrollRef.current.style.userSelect = 'none';
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current || !scrollRef.current) return;
+    const dx = e.pageX - startX.current;
+    scrollRef.current.scrollLeft = scrollStart.current - dx;
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+    if (scrollRef.current) {
+      scrollRef.current.style.cursor = 'grab';
+      scrollRef.current.style.userSelect = '';
+    }
   }, []);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener('scroll', checkScroll);
-    checkScroll();
-    return () => el.removeEventListener('scroll', checkScroll);
-  }, [checkScroll]);
-
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const amount = direction === 'left' ? -400 : 400;
-    scrollRef.current.scrollBy({ left: amount, behavior: 'smooth' });
-  };
-
-  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
+    const handler = () => { isDragging.current = false; };
+    window.addEventListener('mouseup', handler);
+    return () => window.removeEventListener('mouseup', handler);
+  }, []);
 
   return (
-    <section className="py-32 bg-black relative" ref={containerRef}>
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 mb-12">
+    <section id="developers" className="py-32 bg-black relative" ref={containerRef}>
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12 mb-12">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -579,137 +672,175 @@ const HackathonGallery = () => {
           className="flex items-end justify-between"
         >
           <div>
-            <span className="text-[#CCFF00] text-sm font-bold tracking-widest uppercase">
+            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
               Upcoming Events
             </span>
-            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight">
+            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.95]">
               Join the
               <br />
-              <span className="text-white/30">Next Wave.</span>
+              <span
+                className="text-transparent"
+                style={{ WebkitTextStroke: '1.5px rgba(255,255,255,0.2)' }}
+              >
+                Next Wave.
+              </span>
             </h2>
           </div>
-          <div className="hidden md:flex gap-3">
-            <button
-              type="button"
-              onClick={() => scroll('left')}
-              disabled={!canScrollLeft}
-              className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => scroll('right')}
-              disabled={!canScrollRight}
-              className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
+          <motion.span
+            className="hidden md:flex items-center gap-2 text-[#CCFF00] text-sm font-semibold uppercase tracking-wider cursor-pointer hover:gap-3 transition-all"
+            whileHover={{ x: 4 }}
+          >
+            View all <ArrowRight className="w-4 h-4" />
+          </motion.span>
         </motion.div>
       </div>
 
-      {/* Scrollable gallery */}
+      {/* Drag-scrollable gallery */}
       <div
         ref={scrollRef}
-        className="flex gap-6 overflow-x-auto scrollbar-hide px-6 md:px-12 pb-4 cursor-grab active:cursor-grabbing"
-        style={{ scrollbarWidth: 'none' }}
+        className={`
+          flex gap-5 overflow-x-auto px-6 md:px-12 pb-6 cursor-grab active:cursor-grabbing select-none
+          scroll-smooth snap-x snap-mandatory touch-pan-x
+          [&::-webkit-scrollbar]:h-2
+          [&::-webkit-scrollbar-track]:bg-transparent
+          [&::-webkit-scrollbar-track]:rounded-full
+          [&::-webkit-scrollbar-thumb]:bg-[#CCFF00]
+          [&::-webkit-scrollbar-thumb]:rounded-full
+          [&::-webkit-scrollbar-thumb]:hover:bg-[#CCFF00]/80
+        `}
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#CCFF00 transparent',
+          WebkitOverflowScrolling: 'touch',
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       >
         {hackathonEvents.map((event, i) => (
           <motion.div
             key={event.id}
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: i * 0.1, duration: 0.6 }}
-            className="shrink-0 w-87.5 md:w-105 group"
+            transition={{ delay: i * 0.08, duration: 0.6 }}
+            className="shrink-0 w-[320px] md:w-[380px] group snap-center"
           >
-            <div className="relative h-125 rounded-2xl overflow-hidden">
-              {/* Image */}
+            <div className="relative h-[460px] rounded-2xl overflow-hidden bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-500">
+              {/* Colored top accent bar */}
               <div
-                className={`absolute inset-0 bg-linear-to-br ${event.gradient}`}
-              />
-              <img
-                src={event.image}
-                alt={event.title}
-                className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-60 group-hover:scale-110 transition-transform duration-700"
+                className="absolute top-0 left-0 right-0 h-1 z-20"
+                style={{ backgroundColor: event.accent }}
               />
 
-              {/* Content overlay */}
-              <div className="absolute inset-0 flex flex-col justify-between p-6">
-                <div className="flex items-center justify-between">
-                  <span className="bg-white/20 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full">
+              {/* Image */}
+              <div className="relative h-[200px] overflow-hidden">
+                <div className={`absolute inset-0 bg-gradient-to-br ${event.gradient}`} />
+                <img
+                  src={event.image}
+                  alt={event.title}
+                  className="w-full h-full object-cover mix-blend-overlay opacity-45 group-hover:scale-110 transition-transform duration-700"
+                  draggable={false}
+                />
+                {/* Year badge */}
+                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider">
+                  {event.date.split(',')[1]?.trim() ?? '2025'}
+                </div>
+                {/* Number badge */}
+                <div
+                  className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white"
+                  style={{ backgroundColor: event.accent + '80' }}
+                >
+                  {String(i + 1).padStart(2, '0')}
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 flex flex-col justify-between h-[260px]">
+                <div>
+                  <span
+                    className="text-[10px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-full"
+                    style={{
+                      color: event.accent,
+                      backgroundColor: event.accent + '15',
+                    }}
+                  >
                     {event.category}
                   </span>
-                  <motion.div
-                    whileHover={{ scale: 1.2 }}
-                    className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center cursor-pointer"
-                  >
-                    <ArrowUpRight className="w-5 h-5 text-white" />
-                  </motion.div>
-                </div>
-
-                <div>
-                  <h3 className="text-2xl font-black text-white mb-2">
+                  <h3 className="text-xl font-black text-white mt-3 mb-2">
                     {event.title}
                   </h3>
-                  <div className="flex items-center gap-4 text-white/70 text-sm">
+                  <div className="flex items-center gap-4 text-white/40 text-xs">
                     <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" /> {event.date}
+                      <Clock className="w-3.5 h-3.5" /> {event.date}
                     </span>
                     <span className="flex items-center gap-1">
-                      <Users className="w-4 h-4" /> {event.participants}
+                      <Users className="w-3.5 h-3.5" /> {event.participants}
                     </span>
                   </div>
-                  <div className="mt-3 flex items-center gap-2">
+                </div>
+                <div className="flex items-center justify-between mt-4">
+                  <div className="flex items-center gap-2">
                     <Trophy className="w-4 h-4 text-[#CCFF00]" />
-                    <span className="text-[#CCFF00] font-bold">
-                      {event.prize}
-                    </span>
+                    <span className="text-[#CCFF00] font-bold text-sm">{event.prize}</span>
                   </div>
+                  <motion.div
+                    whileHover={{ scale: 1.15 }}
+                    className="w-9 h-9 rounded-full bg-white/[0.05] flex items-center justify-center cursor-pointer hover:bg-white/[0.1] transition-colors"
+                  >
+                    <ArrowUpRight className="w-4 h-4 text-white/50" />
+                  </motion.div>
                 </div>
               </div>
             </div>
           </motion.div>
         ))}
 
-        {/* CTA end card */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.8, duration: 0.6 }}
-          className="shrink-0 w-87.5 md:w-105"
-        >
-          <div className="h-125 rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-6 hover:border-[#CCFF00]/50 transition-colors">
-            <div className="w-20 h-20 rounded-full bg-[#CCFF00]/10 flex items-center justify-center">
-              <Rocket className="w-10 h-10 text-[#CCFF00]" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-2xl font-bold text-white mb-2">
-                Host Your Own
-              </h3>
-              <p className="text-white/50 max-w-62.5">
-                Create and manage your hackathon in minutes
-              </p>
-            </div>
-            <motion.button
-              className="bg-[#CCFF00] text-black font-bold px-6 py-3 rounded-full"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/login')}
-            >
-              Get Started
-            </motion.button>
-          </div>
-        </motion.div>
       </div>
 
-      {/* Scroll progress bar */}
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 mt-8">
-        <div className="h-0.5 bg-white/10 rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-[#CCFF00]"
-            style={{ width: '30%' }}
-          />
+      {/* Custom gallery scrollbar */}
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12 mt-4">
+        <div className="h-px bg-white/[0.06]" />
+      </div>
+    </section>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   PARTNERS SECTION
+   ───────────────────────────────────────────── */
+const partners = [
+  'Vercel', 'GitHub', 'Docker', 'AWS', 'Stripe', 'Figma',
+  'Cloudflare', 'MongoDB', 'Supabase', 'Linear',
+];
+
+const PartnersSection = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-80px' });
+
+  return (
+    <section id="enterprise" ref={ref} className="py-20 bg-black border-y border-white/[0.04]">
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12">
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={isInView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.6 }}
+          className="text-center text-xs font-medium uppercase tracking-[0.3em] text-white/25 mb-12"
+        >
+          Trusted by teams at
+        </motion.p>
+        <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
+          {partners.map((name, i) => (
+            <motion.span
+              key={name}
+              initial={{ opacity: 0, y: 10 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ delay: i * 0.05, duration: 0.4 }}
+              className="text-white/20 hover:text-white/50 text-lg md:text-xl font-bold tracking-tight transition-colors duration-300 cursor-default"
+            >
+              {name}
+            </motion.span>
+          ))}
         </div>
       </div>
     </section>
@@ -724,27 +855,32 @@ const SplitSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-100px' });
 
   return (
-    <section
-      ref={ref}
-      className="py-0 bg-black relative overflow-hidden"
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2 min-h-150">
-        {/* Left – dark */}
+    <section id="solutions" ref={ref} className="bg-black relative overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 min-h-[700px]">
+        {/* Left — dark with background image */}
         <motion.div
           initial={{ opacity: 0, x: -60 }}
           animate={isInView ? { opacity: 1, x: 0 } : {}}
           transition={{ duration: 0.8 }}
           className="relative bg-black p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.03)_1px,transparent_1px)] bg-size-[40px_40px] group-hover:bg-size-[38px_38px] transition-all duration-700" />
+          {/* Background image */}
+          <div className="absolute inset-0 overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=70"
+              alt=""
+              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/90 to-black/70" />
+          </div>
           <div className="relative z-10">
-            <span className="text-[#CCFF00] text-sm font-bold tracking-widest uppercase">
+            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
               For Teams
             </span>
-            <h2 className="text-4xl md:text-5xl font-black text-white mt-4 tracking-tight leading-tight">
+            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.9]">
               On Track
             </h2>
-            <p className="text-white/50 mt-6 max-w-md leading-relaxed">
+            <p className="text-white/40 mt-6 max-w-md leading-relaxed text-[15px]">
               Manage your team, track progress, and ship on time. Real-time
               dashboards, automated check-ins, and smart notifications keep
               everyone aligned.
@@ -754,45 +890,62 @@ const SplitSection = () => {
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={`avatar-${String(i)}`}
-                    className="w-10 h-10 rounded-full bg-linear-to-br from-[#CCFF00] to-green-600 border-2 border-black"
+                    className="w-10 h-10 rounded-full bg-gradient-to-br from-[#CCFF00] to-green-600 border-2 border-black"
                   />
                 ))}
               </div>
-              <span className="text-white/50 text-sm">
-                12,000+ teams active
-              </span>
+              <span className="text-white/35 text-sm">12,000+ teams active</span>
             </div>
+            <motion.span
+              className="inline-flex items-center gap-2 mt-8 text-[#CCFF00] text-sm font-semibold cursor-pointer"
+              whileHover={{ x: 4 }}
+            >
+              Explore Teams <ExternalLink className="w-4 h-4" />
+            </motion.span>
           </div>
         </motion.div>
 
-        {/* Right – yellow */}
+        {/* Right — yellow with background image */}
         <motion.div
           initial={{ opacity: 0, x: 60 }}
           animate={isInView ? { opacity: 1, x: 0 } : {}}
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative bg-[#CCFF00] p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] bg-size-[40px_40px] group-hover:bg-size-[38px_38px] transition-all duration-700" />
+          {/* Background image */}
+          <div className="absolute inset-0 overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1531498860502-7c67cf02f657?w=800&q=70"
+              alt=""
+              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000 mix-blend-multiply"
+            />
+          </div>
           <div className="relative z-10">
-            <span className="text-black/60 text-sm font-bold tracking-widest uppercase">
+            <span className="text-black/40 text-xs font-bold tracking-[0.2em] uppercase">
               For Individuals
             </span>
-            <h2 className="text-4xl md:text-5xl font-black text-black mt-4 tracking-tight leading-tight">
+            <h2 className="text-4xl md:text-6xl font-black text-black mt-4 tracking-tight leading-[0.9]">
               Off Track
             </h2>
-            <p className="text-black/60 mt-6 max-w-md leading-relaxed">
+            <p className="text-black/45 mt-6 max-w-md leading-relaxed text-[15px]">
               Solo builders welcome. Find teammates, get mentored, or go
               it alone. Our platform adapts to your style and helps you
               stand out.
             </p>
             <div className="mt-8">
               <div className="flex items-center gap-3">
-                <Star className="w-5 h-5 text-black" />
-                <span className="text-black/70 text-sm font-medium">
+                <Star className="w-5 h-5 text-black fill-black" />
+                <span className="text-black/60 text-sm font-medium">
                   4.9/5 builder satisfaction
                 </span>
               </div>
             </div>
+            <motion.span
+              className="inline-flex items-center gap-2 mt-8 text-black text-sm font-semibold cursor-pointer"
+              whileHover={{ x: 4 }}
+            >
+              Start Solo <ExternalLink className="w-4 h-4" />
+            </motion.span>
           </div>
         </motion.div>
       </div>
@@ -804,12 +957,12 @@ const SplitSection = () => {
    TEAM / CREDITS SECTION
    ───────────────────────────────────────────── */
 const teamMembers = [
-  { name: 'L Kevin Daniel', role: 'Full Stack and infrastructure' },
-  { name: 'Srijan Guchhait', role: 'System Architecture & Backend' },
-  { name: 'Devangshu Pandey', role: 'Frontend' },
-  { name: 'Ibhan Mukherjee', role: 'AI/ML' },
-  { name: 'Deeptanshu Samanta', role: 'UI/UX' },
-  { name: 'Harsh', role: 'Security & Testing' },
+  { name: 'L Kevin Daniel', role: 'Full Stack & Infrastructure', linkedin: 'https://www.linkedin.com/in/l-kevin-daniel-3a2979392/', image: kevinImg, accent: '#E5A030' },
+  { name: 'Srijan Guchhait', role: 'System Architecture & Backend', linkedin: 'https://www.linkedin.com/in/srijan-guchhait/', image: srijanImg, accent: '#9CA3AF' },
+  { name: 'Devangshu Pandey', role: 'Frontend', linkedin: 'https://www.linkedin.com/in/devangshu-pandey-606611372/', image: devangshuImg, accent: '#A0887A' },
+  { name: 'Ibhan Mukherjee', role: 'AI/ML', linkedin: 'https://www.linkedin.com/in/ibhan/', image: ibhanImg, accent: '#2D3A6E' },
+  { name: 'Deeptanshu Samanta', role: 'UI/UX', linkedin: 'https://www.linkedin.com/in/deeptanshu-samanta-3750b6312/', image: deeptanshuImg, accent: '#8B9BAA' },
+  { name: 'Harsh', role: 'Security & DevOps', linkedin: 'https://www.linkedin.com/in/harsh-zz/', image: harshImg, accent: '#4B5563' },
 ];
 
 const TeamSection = () => {
@@ -817,52 +970,86 @@ const TeamSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-100px' });
 
   return (
-    <section ref={ref} className="py-32 bg-black relative">
-      {/* Soft glow */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="h-125 w-125 rounded-full bg-[#CCFF00]/5 blur-[180px]" />
-      </div>
-
-      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
+    <section
+      ref={ref}
+      className="py-24 md:py-32 relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(180deg, #000000 0%, #080c24 30%, #0c1445 60%, #0a0f2e 85%, #000000 100%)',
+      }}
+    >
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
+        {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.7 }}
-          className="text-center mb-16"
+          className="text-center mb-14 md:mb-20"
         >
-          <p className="text-xs font-medium uppercase tracking-[0.3em] text-[#CCFF00]/60 mb-4">
+          <p className="text-xs font-medium uppercase tracking-[0.3em] text-blue-400/50 mb-4">
             The People Behind DevSage
           </p>
-          <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white">
-            Meet the <span className="text-[#CCFF00]">Builders</span>
+          <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white leading-[0.9]">
+            Meet the{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
+              Builders
+            </span>
           </h2>
         </motion.div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-          {teamMembers.map((member, i) => (
-            <motion.div
-              key={member.name}
-              initial={{ opacity: 0, y: 30 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ delay: 0.1 * i, duration: 0.5 }}
-              className="group relative flex flex-col items-center rounded-2xl border border-white/6 bg-white/2 px-4 py-8 backdrop-blur-sm transition-all hover:border-[#CCFF00]/30 hover:bg-white/5"
-            >
-              {/* Avatar circle with initials */}
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-white/10 bg-[#CCFF00]/10 text-lg font-bold text-[#CCFF00] transition-all group-hover:border-[#CCFF00]/40 group-hover:shadow-[0_0_20px_rgba(204,255,0,0.15)]">
-                {member.name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .slice(0, 2)}
-              </div>
-              <span className="text-sm font-semibold text-white text-center leading-tight">
-                {member.name}
-              </span>
-              <span className="mt-1.5 text-[11px] text-white/40 text-center leading-tight">
-                {member.role}
-              </span>
-            </motion.div>
-          ))}
+        {/* Circular portrait row */}
+        <div className="flex items-center justify-center gap-6 md:gap-10 flex-wrap">
+          {teamMembers.map((member, i) => {
+            const initials = member.name
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2);
+
+            return (
+              <motion.a
+                key={member.name}
+                href={member.linkedin}
+                target="_blank"
+                rel="noopener noreferrer"
+                initial={{ opacity: 0, y: 30, scale: 0.9 }}
+                animate={isInView ? { opacity: 1, y: 0, scale: 1 } : {}}
+                transition={{ delay: 0.08 * i, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                className="group flex flex-col items-center gap-3 cursor-pointer"
+              >
+                {/* Circular avatar */}
+                <div
+                  className="relative w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-white/30 transition-all duration-500 group-hover:scale-105"
+                  style={{
+                    boxShadow: `0 8px 30px ${member.accent}25`,
+                  }}
+                >
+                  {member.image ? (
+                    <img
+                      src={member.image}
+                      alt={member.name}
+                      className="w-full h-full object-cover object-center"
+                    />
+                  ) : (
+                    /* Placeholder — replace with actual photos */
+                    <div
+                      className="w-full h-full flex items-center justify-center text-3xl md:text-4xl font-black"
+                      style={{
+                        background: `linear-gradient(135deg, ${member.accent}40 0%, ${member.accent}15 100%)`,
+                        color: `${member.accent}CC`,
+                      }}
+                    >
+                      {initials}
+                    </div>
+                  )}
+                </div>
+
+                {/* Name label */}
+                <span className="text-sm md:text-base font-semibold text-white/60 group-hover:text-white transition-colors duration-300 text-center leading-tight">
+                  {member.name}
+                </span>
+              </motion.a>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -878,43 +1065,42 @@ const CTASection = () => {
   const navigate = useNavigate();
 
   return (
-    <section ref={ref} className="py-32 bg-black relative overflow-hidden">
-      {/* Glow background */}
+    <section id="pricing" ref={ref} className="py-40 bg-black relative overflow-hidden">
+      {/* Large blurred glow */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-150 h-150 bg-[#CCFF00]/10 rounded-full blur-[200px]" />
+        <div className="w-[800px] h-[800px] bg-[#CCFF00]/[0.06] rounded-full blur-[250px]" />
       </div>
 
-      <div className="max-w-362.5 mx-auto px-6 md:px-12 relative z-10">
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
         <motion.div
-          initial={{ opacity: 0, y: 40 }}
+          initial={{ opacity: 0, y: 50 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8 }}
+          transition={{ duration: 0.9 }}
           className="text-center"
         >
-          <h2 className="text-5xl md:text-7xl lg:text-[100px] font-black text-white tracking-tighter leading-[0.9] mb-8">
+          <h2 className="text-6xl md:text-8xl lg:text-[130px] font-black text-white tracking-tighter leading-[0.85] mb-6">
             ALWAYS
             <br />
-            <span className="text-[#CCFF00]">BUILDING</span>
+            <span
+              className="text-transparent"
+              style={{ WebkitTextStroke: '3px #CCFF00' }}
+            >
+              BUILDING
+            </span>
           </h2>
-          <p className="text-white/50 text-lg md:text-xl max-w-xl mx-auto mb-12">
+          <p className="text-white/35 text-lg md:text-xl max-w-xl mx-auto mb-14 leading-relaxed">
             Join the community that never stops creating. Your next breakthrough
             starts here.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <motion.button
-              className="bg-[#CCFF00] text-black font-bold px-10 py-5 rounded-full text-lg flex items-center gap-2 hover:bg-white transition-all"
+              className="bg-[#CCFF00] text-black font-bold px-12 py-5 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => navigate('/login')}
             >
-              Get Started Free
+              Get Started For Free
               <ArrowRight className="w-5 h-5" />
-            </motion.button>
-            <motion.button
-              className="border border-white/20 text-white font-medium px-10 py-5 rounded-full text-lg hover:bg-white/10 transition-all"
-              whileHover={{ scale: 1.05 }}
-            >
-              Talk to Sales
             </motion.button>
           </div>
         </motion.div>
@@ -927,85 +1113,49 @@ const CTASection = () => {
    FOOTER
    ───────────────────────────────────────────── */
 const Footer = () => {
-  const linkGroups = [
-    {
-      title: 'Product',
-      links: ['Features', 'Pricing', 'Enterprise', 'Changelog'],
-    },
-    {
-      title: 'Resources',
-      links: ['Documentation', 'API Reference', 'Guides', 'Blog'],
-    },
-    {
-      title: 'Company',
-      links: ['About', 'Careers', 'Contact', 'Press'],
-    },
-    {
-      title: 'Legal',
-      links: ['Privacy', 'Terms', 'Security', 'Cookies'],
-    },
-  ];
-
   const socialLinks: { icon: LucideIcon; href: string }[] = [
     { icon: Github, href: '#' },
     { icon: Twitter, href: '#' },
     { icon: Linkedin, href: '#' },
     { icon: Instagram, href: '#' },
   ];
-
   return (
-    <footer className="bg-black border-t border-white/6 pt-20 pb-8">
-      <div className="max-w-362.5 mx-auto px-6 md:px-12">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-12 mb-16">
+    <footer className="bg-black border-t border-white/[0.06]">
+      <div className="max-w-[1440px] mx-auto px-6 md:px-12">
+        {/* Main footer content */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-10 py-20">
           {/* Brand */}
           <div className="col-span-2">
             <span className="text-2xl font-black tracking-tighter text-white">
               DEV<span className="text-[#CCFF00]">SAGE</span>
             </span>
-            <p className="text-white/40 mt-4 max-w-xs leading-relaxed">
+            <p className="text-white/30 mt-4 max-w-xs leading-relaxed text-sm">
               The platform where developers compete, collaborate, and create the
               impossible.
             </p>
-            <div className="flex items-center gap-4 mt-6">
+            <div className="flex items-center gap-3 mt-6">
               {socialLinks.map((social) => {
                 const Icon = social.icon;
                 return (
                   <span
                     key={Icon.displayName ?? Icon.name}
-                    className="w-10 h-10 rounded-full bg-white/6 flex items-center justify-center hover:bg-[#CCFF00]/20 transition-colors group cursor-pointer"
+                    className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/[0.06] hover:border-[#CCFF00]/30"
                   >
-                    <Icon className="w-4 h-4 text-white/50 group-hover:text-[#CCFF00] transition-colors" />
+                    <Icon className="w-4 h-4 text-white/35 group-hover:text-[#CCFF00] transition-colors" />
                   </span>
                 );
               })}
             </div>
           </div>
-
-          {/* Link groups */}
-          {linkGroups.map((group) => (
-            <div key={group.title}>
-              <h4 className="text-white font-bold text-sm mb-4">
-                {group.title}
-              </h4>
-              <ul className="space-y-3">
-                {group.links.map((link) => (
-                  <li key={link}>
-                    <span className="text-white/40 hover:text-white text-sm transition-colors cursor-pointer">
-                      {link}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          
         </div>
 
-        {/* Built by */}
-        <div className="border-t border-white/6 pt-10 pb-2">
-          <p className="text-center text-xs font-medium uppercase tracking-widest text-white/30 mb-6">
-            Built by
+        {/* Bottom bar */}
+        <div className="border-t border-white/[0.06] py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-white/20 text-xs">
+            &copy; {new Date().getFullYear()}
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             {[
               'L Kevin Daniel',
               'Srijan Guchhait',
@@ -1016,15 +1166,12 @@ const Footer = () => {
             ].map((name) => (
               <span
                 key={name}
-                className="text-sm font-medium text-white/50 hover:text-[#CCFF00] transition-colors"
+                className="text-xs text-white/25 hover:text-[#CCFF00] transition-colors duration-200 cursor-pointer"
               >
                 {name}
               </span>
             ))}
           </div>
-          <p className="text-center text-white/20 text-sm mt-8">
-            © {new Date().getFullYear()} DevSage. All rights reserved.
-          </p>
         </div>
       </div>
     </footer>
@@ -1040,16 +1187,10 @@ export function HomePage() {
       <CustomCursor />
       <Navbar />
       <Hero />
-      <MarqueeText>
-        <span className="block text-3xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-purple-500 to-pink-500 tracking-tight mb-2">
-    HACKATHONS — COLLABORATION • INNOVATION • COMMUNITY • BUILD THE FUTURE
-  </span>
-  <span className="block text-lg md:text-2xl font-medium text-gray-300 mt-2">
-    Empowering creators, coders, and dreamers to solve real-world challenges together.
-  </span>
-      </MarqueeText>
+      <MarqueeText>HACKATHONS — COLLABORATION — INNOVATION — COMMUNITY — BUILD THE FUTURE</MarqueeText>
       <BentoGrid />
       <HackathonGallery />
+      <PartnersSection />
       <SplitSection />
       <TeamSection />
       <CTASection />
