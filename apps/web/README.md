@@ -114,9 +114,12 @@ Output is a static bundle deployed to Cloudflare Workers Static Assets via `wran
 
 ## Profile Card
 
+INSTALL
+CLI
 ```bash
 npx shadcn@latest add @react-bits/ProfileCard-TS-CSS
 ```
+
 USAGE
 ```bash
 import ProfileCard from './ProfileCard'
