@@ -1,147 +1,109 @@
-# Secrets Management
+# Secrets Safety
 
-> How DevSage handles secrets across local development, CI, and production.
+This repo is configured to reduce the chance of committing or pushing secrets.
 
-**Related docs:** [Developer Setup](./setup.md) | [Deployment](./deployment.md)
+## What is protected
 
----
+- Git ignores common secret files: `.env*` (with an exception for `apps/web/.env.production`), `.dev.vars`, and Wrangler state (`.wrangler/`).
+- A local Git hook scans staged files for likely secrets on commit.
+- CI runs a secret scan on every PR and on pushes to `master`.
 
-## Overview
+## Local workflow
 
-API secrets live in two places depending on the environment:
-
-| Environment | Location | Format |
-|-------------|----------|--------|
-| Local dev | `apps/api/.dev.vars` | Key-value pairs, read by Wrangler |
-| Production | Cloudflare Worker secrets | Uploaded via `wrangler secret put` or `wrangler secret bulk` |
-
-Web apps (`apps/web`, `apps/platform`, `apps/admin`) use only `VITE_*` environment variables. These are client-visible and embedded in the build output. Never put secrets in `VITE_*` variables.
-
----
-
-## Required API Secrets
-
-| Secret | Description | Example (local) |
-|--------|-------------|-----------------|
-| `JWT_SECRET` | HMAC SHA-256 signing key for auth tokens | `dev-jwt-secret-change-in-prod` |
-| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 client ID | From Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 client secret | From Google Cloud Console |
-| `GITHUB_CLIENT_ID` | GitHub OAuth app client ID | From GitHub Developer Settings |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret | From GitHub Developer Settings |
-| `GITHUB_WEBHOOK_SECRET` | Shared secret for verifying GitHub webhook HMAC signatures | Any random string |
-| `FRONTEND_URL` | Web app origin | `http://localhost:5173` |
-| `PLATFORM_URL` | Organizer platform origin | `http://localhost:5174` |
-| `ADMIN_URL` | Admin dashboard origin | `http://localhost:5175` |
-| `SMTP_URL` | SMTP server connection string | `smtp://localhost:1025` |
-| `SMTP_USERNAME` | SMTP authentication username | (empty for local) |
-| `SMTP_PASSWORD` | SMTP authentication password | (empty for local) |
-| `SMTP_EMAIL_ADDR` | Sender email address for outbound mail | `noreply@devsage.org` |
-
-These match the `Env` interface in `apps/api/src/types/env.ts` and the bindings in `apps/api/wrangler.jsonc`.
-
----
-
-## Local Development
-
-Create `apps/api/.dev.vars`:
-
-```
-JWT_SECRET=dev-jwt-secret-change-in-prod
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
-GITHUB_WEBHOOK_SECRET=your-webhook-secret
-FRONTEND_URL=http://localhost:5173
-PLATFORM_URL=http://localhost:5174
-ADMIN_URL=http://localhost:5175
-SMTP_URL=smtp://localhost:1025
-SMTP_USERNAME=
-SMTP_PASSWORD=
-SMTP_EMAIL_ADDR=noreply@devsage.org
-```
-
-Wrangler reads this file automatically during `wrangler dev`. The file is gitignored.
-
----
-
-## Production Secrets
-
-Upload secrets to Cloudflare using either method:
-
-**Bulk upload** (from a file):
+- Install hooks (happens automatically after `pnpm install` via the root `prepare` script).
+- Scan staged changes:
 
 ```bash
-pnpm deploy:api:secrets
+pnpm secrets:staged
 ```
 
-This runs `wrangler secret bulk .env.production` from `apps/api/`. Create `apps/api/.env.production` with production values first. This file is gitignored.
-
-**Individual upload:**
+- Scan the whole repo:
 
 ```bash
-cd apps/api
-wrangler secret put JWT_SECRET
+pnpm secrets:scan
 ```
 
-Each command prompts for the value interactively.
+## Where to put secrets
 
----
+- API local dev secrets: `apps/api/.dev.vars` (gitignored)
+- API production secrets: `apps/api/.env.production` (gitignored; pushed to Cloudflare via `pnpm deploy:api:secrets`)
+- Web env vars: only `VITE_*` values (client-visible; do not put secrets in the web app)
 
-## What is Gitignored
+## If you accidentally committed a secret
 
-The `.gitignore` blocks common secret files:
+1. Rotate/revoke it immediately (assume it is compromised).
+2. Remove it from the repo and force a new secret value in your secret store.
+3. If it was pushed, also remove it from Git history (coordinate with maintainers; history rewrite affects everyone).
 
-- `.env*` (all `.env` variants)
-- `.dev.vars`
-- `.wrangler/` (Wrangler local state)
+## v3 Secrets Management
 
-**Exception:** `apps/web/.env.production` is committed because it contains only `VITE_API_ORIGIN` (a public URL, not a secret).
+v3 extends the existing secret safety practices with rotation automation, versioning, stricter environment isolation, and audit capabilities.
 
----
+### Secret Rotation Automation
 
-## Secret Scanning
+Long-lived secrets are a liability. v3 introduces scheduled rotation for critical secrets, starting with `JWT_SECRET`:
 
-DevSage enforces secret scanning at three levels to prevent accidental credential leaks:
+1. A new secret value is generated and uploaded to Cloudflare as the **next** version.
+2. A grace period begins (default: 24 hours) during which both the current and next values are accepted for JWT verification.
+3. After the grace period, the old value is removed and the next value becomes current.
 
-### Pre-Commit Hook
-
-`secretlint` scans all staged files before every commit. If a secret pattern is detected, the commit is blocked with an error message identifying the file and line.
-
-### Pre-Push Hook
-
-A full repository scan runs before any push. Pushes are blocked if secrets are detected anywhere in the working tree.
-
-### CI Pipeline
-
-`gitleaks` runs on every PR and push to master via `.github/workflows/secret-scan.yml`. PRs with detected secrets cannot be merged.
-
-### Manual Scanning
+Rotation is triggered manually via a CLI command or automatically on a configurable schedule:
 
 ```bash
-pnpm secrets:scan      # Full repo scan
-pnpm secrets:staged    # Scan staged files only
+# Rotate JWT_SECRET with a 24-hour grace period
+pnpm --filter @devsage/api rotate-secret JWT_SECRET --grace 24h
 ```
 
----
+### Secret Versioning
 
-## If You Accidentally Commit a Secret
+During a rotation window, multiple versions of a secret coexist. The API worker resolves secrets by version:
 
-1. **Rotate immediately.** Assume the secret is compromised, even if the commit was not pushed.
-2. **Revoke the old value** in the relevant service (GitHub, Google, SMTP provider).
-3. **Generate a new secret** and update it in `.dev.vars` (local) and Cloudflare (production).
-4. **Remove from history** if the commit was pushed. Coordinate with maintainers -- history rewrites affect all contributors.
+- `JWT_SECRET` -- the current active signing key.
+- `JWT_SECRET_NEXT` -- the upcoming key (used for verification only during the grace period).
+- `JWT_SECRET_PREV` -- the outgoing key (accepted for verification until the grace period ends).
 
----
+This ensures that tokens signed with the old key remain valid during the transition, and no user sessions are interrupted.
 
-## Per-Environment Isolation
+### Vault Integration Consideration
 
-Secrets are never shared between environments:
+For teams that need centralized secret management, v3 documents integration paths for two providers:
 
-| Environment | Secret Source | Shared |
-|-------------|--------------|--------|
+- **HashiCorp Vault** -- pull secrets at deploy time via the Vault CLI. Secrets are injected into Cloudflare via `wrangler secret put` as part of the CI/CD pipeline.
+- **1Password Connect** -- use the 1Password CLI (`op`) to resolve secret references in `.env.production` templates before uploading to Cloudflare.
+
+Neither integration is required. The default workflow (manual `wrangler secret put` or bulk upload) continues to work for smaller teams.
+
+### Audit Trail for Secret Access
+
+Every Worker invocation that reads a secret from the `env` object is logged with:
+
+- The secret name accessed (never the value).
+- The request ID and timestamp.
+- The route handler that triggered the access.
+
+Audit logs are written to a dedicated D1 table (`secret_access_log`) and retained for 90 days. This provides traceability for security reviews and incident response.
+
+### Per-Environment Secret Isolation
+
+v3 enforces strict isolation between environments:
+
+| Environment | Secret source | Shared with other envs |
+|-------------|---------------|------------------------|
 | Local dev | `apps/api/.dev.vars` | Never |
-| Dev deploy | Cloudflare secrets (`--env dev`) | Never |
+| Staging | Cloudflare secrets (`--env staging`) | Never |
 | Production | Cloudflare secrets (top-level) | Never |
 
-Each environment should have independently generated values. Use different OAuth apps for local dev vs. production.
+Secrets are never copied between environments. Each environment has independently generated values. The `rotate-secret` command operates on a single environment at a time and requires an explicit `--env` flag for non-production targets.
+
+### New Secrets for v3 Features
+
+v3 introduces additional secrets for new platform capabilities:
+
+| Secret | Purpose | Required |
+|--------|---------|----------|
+| `PUSH_VAPID_KEY` | VAPID key pair for Web Push notifications | Yes (if push enabled) |
+| `ANALYTICS_API_KEY` | API key for the analytics provider | No (analytics is optional) |
+| `SLACK_WEBHOOK_URL` | Incoming webhook URL for Slack deploy notifications | No |
+| `DISCORD_WEBHOOK_URL` | Incoming webhook URL for Discord deploy notifications | No |
+
+Optional secrets that are not set are silently skipped at runtime. The environment variable validation schema (see [setup.md](./setup.md)) marks these as optional with sensible defaults or disabled behavior.
