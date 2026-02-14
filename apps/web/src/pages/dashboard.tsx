@@ -113,7 +113,7 @@ function HackathonCard({ hackathon }: { hackathon: Hackathon }) {
     : { background: `linear-gradient(135deg, ${accent}20, #00000000)` };
 
   return (
-    <Link to={`/hackathons/${hackathon.slug}`} className="group block">
+    <Link to={`/hackathons/${hackathon.slug}/participant`} className="group block">
       <motion.div
         whileHover={{ y: -6 }}
         className="relative overflow-hidden rounded-2xl border border-white/8 transition-shadow"
