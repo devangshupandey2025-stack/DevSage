@@ -112,16 +112,25 @@ export function HackathonDetailPage() {
     if (!id) return;
     setLoading(true);
     try {
-      // Parallel fetch
-      const [hackathonRes, teamsRes, submissionsRes] = await Promise.all([
+      const [hackathonRes, teamsRes] = await Promise.all([
         apiRequest<ApiEnvelope<Hackathon>>(`/api/v1/hackathons/${id}`),
         apiRequest<ApiEnvelope<Team[]>>(`/api/v1/hackathons/${id}/teams`),
-        apiRequest<ApiEnvelope<Submission[]>>(`/api/v1/hackathons/${id}/submissions`),
       ]);
 
        setHackathon(hackathonRes.data);
        setTeams(teamsRes.data);
-       setSubmissions(submissionsRes.data || []);
+
+       // Submissions require participant role — fetch separately so a 403
+       // doesn't break the entire page for users who haven't joined yet.
+       try {
+         const submissionsRes = await apiRequest<ApiEnvelope<Submission[]>>(
+           `/api/v1/hackathons/${id}/submissions`,
+         );
+         setSubmissions(submissionsRes.data || []);
+       } catch (_submErr) {
+         // Non-participants get 403 — that's expected, just show no submissions
+         setSubmissions([]);
+       }
     } catch (error) {
       toast.error('Failed to load hackathon details');
       console.error(error);
@@ -256,7 +265,7 @@ export function HackathonDetailPage() {
                 <DialogTitle>Rules — {hackathon.title}</DialogTitle>
                 <DialogDescription>Official rules and judging criteria.</DialogDescription>
               </DialogHeader>
-              <div className="mt-4 text-sm text-muted-foreground">(Rules content can be edited by organisers)</div>
+              <div className="mt-4 text-sm text-muted-foreground">(Rules content can be edited by organizers)</div>
               <DialogFooter>
                 <Button onClick={() => setOpenRules(false)}>Close</Button>
               </DialogFooter>
