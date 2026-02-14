@@ -960,7 +960,7 @@ const teamMembers = [
   { name: 'L Kevin Daniel', role: 'Full Stack & Infrastructure', linkedin: 'https://www.linkedin.com/in/l-kevin-daniel-3a2979392/', image: kevinImg, accent: '#E5A030' },
   { name: 'Srijan Guchhait', role: 'System Architecture & Backend', linkedin: 'https://www.linkedin.com/in/srijan-guchhait/', image: srijanImg, accent: '#9CA3AF' },
   { name: 'Devangshu Pandey', role: 'Frontend', linkedin: 'https://www.linkedin.com/in/devangshu-pandey-606611372/', image: devangshuImg, accent: '#A0887A' },
-  { name: 'Ibhan Mukherjee', role: 'AI/ML', linkedin: 'https://www.linkedin.com/in/ibhan/', image: ibhanImg, accent: '#2D3A6E' },
+  { name: 'Ibhan Mukherjee', role: 'AI/ML', linkedin: 'https://www.linkedin.com/in/ibhan-mukherjee/', image: ibhanImg, accent: '#2D3A6E' },
   { name: 'Deeptanshu Samanta', role: 'UI/UX', linkedin: 'https://www.linkedin.com/in/deeptanshu-samanta-3750b6312/', image: deeptanshuImg, accent: '#8B9BAA' },
   { name: 'Harsh', role: 'Security & DevOps', linkedin: 'https://www.linkedin.com/in/harsh-zz/', image: harshImg, accent: '#4B5563' },
 ];
