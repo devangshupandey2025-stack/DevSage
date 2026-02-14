@@ -18,11 +18,11 @@ interface Hackathon {
   title: string;
   description: string;
   status: HackathonStatus;
-  registration_start_date: string;
-  hacking_start_date: string;
+  registration_opens: string;
+  registration_closes: string;
   submission_deadline: string;
   max_team_size: number;
-  organizer_id: string;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -30,11 +30,6 @@ interface Hackathon {
 interface HackathonListResponse {
   data: Hackathon[];
   total: number;
-}
-
-interface LifecycleResponse {
-  version: number;
-  status: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -47,13 +42,13 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 
-const NEXT_PHASE_ACTION: Record<string, string> = {
-  draft: "openRegistration",
-  registration_open: "closeRegistration",
-  registration_closed: "startHacking",
-  active: "startJudging",
-  judging: "complete",
-  completed: "archive",
+const NEXT_STATUS: Record<string, string> = {
+  draft: "registration_open",
+  registration_open: "registration_closed",
+  registration_closed: "active",
+  active: "judging",
+  judging: "completed",
+  completed: "archived",
 };
 
 const NEXT_PHASE_LABEL: Record<string, string> = {
@@ -75,8 +70,8 @@ export function DashboardPage() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    registrationStartDate: '',
-    hackingStartDate: '',
+    registrationOpens: '',
+    registrationCloses: '',
     submissionDeadline: '',
     maxTeamSize: '4',
   });
@@ -89,7 +84,7 @@ export function DashboardPage() {
     try {
       const response = await apiRequest<HackathonListResponse>('/api/v1/hackathons');
       if (user) {
-        const myHackathons = response.data.filter(h => h.organizer_id === user.id);
+        const myHackathons = response.data.filter(h => h.created_by === user.id);
         setHackathons(myHackathons);
       } else {
         setHackathons([]);
@@ -114,9 +109,10 @@ export function DashboardPage() {
     try {
       const payload = {
         title: formData.title,
+        slug: formData.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
         description: formData.description,
-        registrationStartDate: new Date(formData.registrationStartDate).toISOString(),
-        hackingStartDate: new Date(formData.hackingStartDate).toISOString(),
+        registrationOpens: new Date(formData.registrationOpens).toISOString(),
+        registrationCloses: new Date(formData.registrationCloses).toISOString(),
         submissionDeadline: new Date(formData.submissionDeadline).toISOString(),
         maxTeamSize: parseInt(formData.maxTeamSize, 10),
       };
@@ -131,8 +127,8 @@ export function DashboardPage() {
       setFormData({
         title: '',
         description: '',
-        registrationStartDate: '',
-        hackingStartDate: '',
+        registrationOpens: '',
+        registrationCloses: '',
         submissionDeadline: '',
         maxTeamSize: '4',
       });
@@ -146,20 +142,15 @@ export function DashboardPage() {
   };
 
   const handleAdvancePhase = async (hackathonSlug: string, currentStatus: string) => {
-    const action = NEXT_PHASE_ACTION[currentStatus];
-    if (!action) return;
+    const targetStatus = NEXT_STATUS[currentStatus];
+    if (!targetStatus) return;
 
     if (!confirm(`Are you sure you want to ${NEXT_PHASE_LABEL[currentStatus]}?`)) return;
 
     try {
-      const lifecycle = await apiRequest<LifecycleResponse>(`/api/v1/hackathons/${hackathonSlug}/lifecycle`);
-      
-      await apiRequest(`/api/v1/hackathons/${hackathonSlug}/transition`, {
-        method: 'POST',
-        body: JSON.stringify({
-          action,
-          expectedVersion: lifecycle.version,
-        }),
+      await apiRequest(`/api/v1/hackathons/${hackathonSlug}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ targetStatus }),
       });
 
       toast.success('Phase advanced successfully');
@@ -218,13 +209,13 @@ export function DashboardPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label htmlFor="registrationStartDate" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Registration Start</label>
+                  <label htmlFor="registrationOpens" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Registration Opens</label>
                   <Input 
-                    id="registrationStartDate" 
-                    name="registrationStartDate" 
+                    id="registrationOpens" 
+                    name="registrationOpens" 
                     type="datetime-local" 
                     required 
-                    value={formData.registrationStartDate} 
+                    value={formData.registrationOpens} 
                     onChange={handleInputChange} 
                     className="bg-white/5 border-white/10 text-white"
                   />
@@ -245,13 +236,13 @@ export function DashboardPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label htmlFor="hackingStartDate" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Hacking Start</label>
+                  <label htmlFor="registrationCloses" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Registration Closes</label>
                   <Input 
-                    id="hackingStartDate" 
-                    name="hackingStartDate" 
+                    id="registrationCloses" 
+                    name="registrationCloses" 
                     type="datetime-local" 
                     required 
-                    value={formData.hackingStartDate} 
+                    value={formData.registrationCloses} 
                     onChange={handleInputChange} 
                     className="bg-white/5 border-white/10 text-white"
                   />
@@ -306,7 +297,7 @@ export function DashboardPage() {
                 <Button variant="outline" asChild className="flex-1 border-white/10 bg-transparent text-white hover:bg-white/10 hover:text-white">
                   <Link to={`/hackathons/${hackathon.slug}`}>Manage</Link>
                 </Button>
-                {NEXT_PHASE_ACTION[hackathon.status] && (
+                {NEXT_STATUS[hackathon.status] && (
                   <Button 
                     variant="default" 
                     className="flex-1 bg-[#CCFF00] text-black hover:bg-[#b3e600]"

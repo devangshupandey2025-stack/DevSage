@@ -25,7 +25,7 @@ import {
 interface Invite {
   id: string;
   email: string;
-  code: string;
+  invite_code: string;
   status: 'pending' | 'accepted' | 'expired' | 'revoked';
   created_at: string;
   expires_at: string;
@@ -216,11 +216,11 @@ export function InvitesPage() {
                         <td className="p-4 align-middle">
                           <div className="flex items-center gap-2">
                             <code className="rounded bg-white/10 px-2 py-1 font-mono text-xs text-[#CCFF00]">
-                              {invite.code}
+                              {invite.invite_code}
                             </code>
                             <button
                               type="button"
-                              onClick={() => copyToClipboard(invite.code)}
+                              onClick={() => copyToClipboard(invite.invite_code)}
                               className="text-white/40 hover:text-white"
                             >
                               <Copy className="h-3 w-3" />

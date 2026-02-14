@@ -12,18 +12,11 @@ import { CheckCircle2, XCircle, Clock } from 'lucide-react';
 interface Invite {
   id: string;
   email: string;
-  role: string;
-  status: 'pending' | 'accepted' | 'expired';
-  hackathon_id: string;
-  hackathon_name: string;
-  inviter_name: string;
-  created_at: string;
+  invite_code: string;
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  invited_by: string;
   expires_at: string;
-}
-
-interface InviteResponse {
-  ok: boolean;
-  data: Invite;
+  created_at: string;
 }
 
 export function InviteAcceptPage() {
@@ -40,7 +33,7 @@ export function InviteAcceptPage() {
 
     const fetchInvite = async () => {
       try {
-        const response = await apiRequest<InviteResponse>(`/api/v1/invites/${code}`);
+        const response = await apiRequest<{ data: Invite }>(`/api/v1/invites/${code}`);
         setInvite(response.data);
       } catch (err) {
         console.error(err);
@@ -123,22 +116,22 @@ export function InviteAcceptPage() {
               <CheckCircle2 className="h-6 w-6 text-[#CCFF00]" />
             )}
           </div>
-          <CardTitle className="text-2xl">Hackathon Invitation</CardTitle>
+          <CardTitle className="text-2xl">Organizer Invitation</CardTitle>
           <CardDescription className="text-white/60">
-            You've been invited to join the team.
+            You've been invited as an organizer.
           </CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-4">
           <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-            <div className="mb-1 text-xs uppercase tracking-wider text-white/40">Hackathon</div>
-            <div className="font-semibold text-[#CCFF00]">{invite.hackathon_name}</div>
+            <div className="mb-1 text-xs uppercase tracking-wider text-white/40">Role</div>
+            <div className="font-semibold text-[#CCFF00]">Organizer</div>
             
-            <div className="mt-4 mb-1 text-xs uppercase tracking-wider text-white/40">Role</div>
-            <div className="font-medium capitalize">{invite.role.replace('_', ' ')}</div>
+            <div className="mt-4 mb-1 text-xs uppercase tracking-wider text-white/40">Email</div>
+            <div className="font-medium">{invite.email}</div>
             
-            <div className="mt-4 mb-1 text-xs uppercase tracking-wider text-white/40">Invited By</div>
-            <div className="font-medium">{invite.inviter_name}</div>
+            <div className="mt-4 mb-1 text-xs uppercase tracking-wider text-white/40">Expires</div>
+            <div className="font-medium">{new Date(invite.expires_at).toLocaleDateString()}</div>
           </div>
 
           <div className="flex justify-center">

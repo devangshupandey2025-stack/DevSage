@@ -7,7 +7,6 @@ import { AuthCallbackPage } from '@/pages/auth-callback';
 import { LinkRequiredPage } from '@/pages/link-required';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
-import { JudgeDashboardPage } from '@/pages/judge-dashboard';
 import { NotFoundPage } from '@/pages/not-found';
 
 // Lazy-load route pages to reduce initial bundle size (code-splitting)
@@ -16,6 +15,7 @@ const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ defaul
 const HackathonDetailPage = lazy(() => import('@/pages/hackathon-detail').then(m => ({ default: m.HackathonDetailPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then(m => ({ default: m.ProfilePage })));
 const OrganiserDashboardPage = lazy(() => import('@/pages/organizer-dashboard').then(m => ({ default: m.OrganiserDashboardPage })));
+const InviteAcceptPage = lazy(() => import('@/pages/invite-accept').then(m => ({ default: m.InviteAcceptPage })));
 
 
 export default function App() {
@@ -26,6 +26,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/link-required" element={<LinkRequiredPage />} />
+        <Route path="/invites/:code" element={<InviteAcceptPage />} />
         
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
@@ -33,7 +34,6 @@ export default function App() {
             <Route path="/hackathons/:slug" element={<HackathonDetailPage />} />
             <Route path="/hackathons/:slug/teams" element={<TeamManagementPage />} />
             <Route path="/hackathons/:slug/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/hackathons/:slug/judge" element={<JudgeDashboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/organiser" element={<OrganiserDashboardPage />} />
           </Route>
