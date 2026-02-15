@@ -25,14 +25,14 @@
 
 | Goal | Description |
 |------|-------------|
-| **Zero-infrastructure hackathons** | Organizers create a hackathon, set dates, and everything else — registration, team formation, submission capture, judging — happens automatically |
-| **GitHub-native workflow** | Participants never leave their git workflow. Submissions are git tags. Activity is tracked via webhooks. No file uploads, no forms, no copy-paste |
+| **Zero-infrastructure hackathons** | Platform admins invite organizers, who then create hackathons, set dates, invite participants and judges, and everything else — team formation, submission capture, judging — happens automatically. All access is invite-only; there is no public self-registration |
+| **GitHub-native workflow** | Primary submissions are git tags captured via webhooks — participants stay in their git workflow for code. The web UI provides team info, deadlines, and scores, and allows supplementary uploads (pitch decks, demo videos, design files) alongside the code submission |
 | **Edge-first performance** | Every request served from the nearest Cloudflare PoP. Sub-50ms p95 latency for reads. No cold-start penalty for API requests |
 | **Deterministic state management** | All lifecycle mutations go through Durable Objects — single-writer concurrency, no race conditions, exactly-once semantics |
 | **Multi-tenant by default** | A single deployment serves unlimited organizations and hackathons. Tenant isolation is enforced at the data layer and role resolution, not infrastructure |
 | **Progressive complexity** | Simple hackathons require zero configuration beyond dates. Advanced features (multi-track, custom rubrics, sponsor portals, mentorship) are opt-in |
-| **Federated growth** | Organizations can discover each other, share participant profiles, and co-host events without centralized coordination |
-| **Extensible platform** | Third-party plugins can hook into lifecycle events, add custom UI panels, and integrate external tools via a managed plugin system |
+| **Collaborative workspaces** | Organizers can create shared workspaces to collaborate on events together. Each event has a single owning organizer, but workspace members can co-plan, co-manage, and co-host events within the workspace |
+
 
 ---
 
@@ -59,12 +59,12 @@ graph TD
     subgraph Clients
         WEB["devsage.org<br/>React SPA<br/>(Vite + Tailwind v4 + shadcn/ui)"]
         SDK["Client SDK<br/>(TypeScript)"]
-        PLUGINS["Plugin Iframes<br/>(sandboxed)"]
+
     end
 
     WEB -->|"HTTPS REST + SSE"| API
     SDK -->|"HTTPS REST"| API
-    PLUGINS -->|"postMessage → host"| WEB
+
 
     subgraph CF["Cloudflare Edge"]
         API["API Worker<br/>(Hono)"]
@@ -72,14 +72,14 @@ graph TD
         subgraph DOs["Durable Objects"]
             HSM["HackathonStateMachine<br/>(lifecycle + submissions)"]
             WSG["WebSocketGateway<br/>(real-time channels)"]
-            MSS["MentorSession<br/>(1:1 sessions)"]
+
         end
 
         subgraph Queues
             Q_WH["WEBHOOK_QUEUE<br/>(inbound webhooks)"]
             Q_NF["NOTIFICATION_QUEUE<br/>(email + push + in-app)"]
             Q_AN["ANALYTICS_QUEUE<br/>(event ingestion)"]
-            Q_PL["PLUGIN_QUEUE<br/>(plugin dispatch)"]
+
         end
 
         CRON["Cron Triggers<br/>(hourly + daily)"]
@@ -87,11 +87,11 @@ graph TD
 
     API -->|"stub.fetch()"| HSM
     API -->|"stub.fetch()"| WSG
-    API -->|"stub.fetch()"| MSS
+
     API -->|"enqueue"| Q_WH
     API -->|"enqueue"| Q_NF
     API -->|"enqueue"| Q_AN
-    API -->|"enqueue"| Q_PL
+
     CRON -->|"scheduled()"| API
 
     subgraph Storage
@@ -121,7 +121,7 @@ graph TD
     Q_WH -->|"consume"| API
     Q_NF -->|"consume"| API
     Q_AN -->|"consume"| API
-    Q_PL -->|"consume"| API
+
     API --> GH
     API --> GOOGLE
     API --> SMTP
@@ -156,7 +156,7 @@ sequenceDiagram
     RL-->>MW: Allowed / 429
     MW->>MW: requireRole(minRole) → resolveRole()
     MW->>DB: Query organizer_roles / judges / team_members
-    DB-->>MW: Role resolved (anonymous → owner)
+    DB-->>MW: Role resolved (anonymous | team_member | team_lead | judge | co_organizer | organizer | admin)
     MW->>R: Authorized request with context
 
     alt Read Operation
@@ -199,7 +199,7 @@ flowchart LR
 
 ## Business Domains
 
-DevSage is organized around 13 business domains, each with a dedicated planning document:
+DevSage is organized around 11 business domains, each with a dedicated planning document:
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e8e8ff', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#6366f1', 'lineColor': '#6366f1'}}}%%
@@ -213,8 +213,15 @@ mindmap
         MFA
       Roles & Permissions
         7-Tier Hierarchy
-        Custom Roles
-        Org-Level Roles
+          Anonymous
+          Team Member
+          Team Lead
+          Judge
+          Co-Organizer
+          Organizer
+          Admin/Owner
+        Invite Chain: Admin → Organizer → Co-orgs/Judges/Team Leads → Team Members
+        Bulk Invite via Excel Upload
         API Key Scopes
     **Core Platform**
       Hackathon Lifecycle
@@ -223,13 +230,15 @@ mindmap
         Templates
         Custom Phases
       Team Management
-        Registration
-        Skill-Based Discovery
+        Invite-Only Onboarding
+        Team Lead invites Team Members
+        Bulk Invite via Excel
         Team Chat
         Repo Linking
       Submissions
         Tag-Based Capture
-        Multi-Artifact
+        Multi-Artifact (code + uploads)
+        Supplementary File Uploads
         Automated Validation
         Diff Viewer
       Judging
@@ -254,32 +263,22 @@ mindmap
         Presence
         SSE Fallback
     **Growth & Engagement**
-      Sponsor Portal
-        Tier Management
+      Sponsor Management
+        Tier Management (by Organizer)
         Branded Pages
-        Lead Capture
-        ROI Dashboard
-      Mentorship
-        Availability Scheduling
-        Session DO
-        Video Integration
-        Feedback Loops
+        Sponsor Logo & Asset Uploads
+
       Analytics
         Event Ingestion Pipeline
         Organizer Dashboards
         Participant Stats
         CSV / JSON Export
     **Platform Extensibility**
-      Federation
-        DNS Verification
-        Trust Tiers
-        Shared Profiles
-        Cross-Org Events
-      Plugin System
-        Lifecycle Hooks
-        Sandboxed Iframes
-        Plugin Marketplace
-        Webhook Dispatch
+      Workspaces
+        Multi-Organizer Collaboration
+        Shared Event Planning
+        Workspace Roles & Permissions
+        Co-Hosted Events
     **Observability**
       Audit Trail
         Append-Only Log
@@ -292,7 +291,7 @@ mindmap
 
 ## Domain Interaction Map
 
-How the 13 domains interact with each other at runtime:
+How the 11 domains interact with each other at runtime:
 
 ```mermaid
 flowchart TD
@@ -305,8 +304,8 @@ flowchart TD
     HOOK["Webhooks<br/>VCS Integration"]
     NOTIF["Notifications<br/>Communication"]
     RT["Real-Time<br/>Live Updates"]
-    SPONSOR["Sponsor Portal<br/>Partnerships"]
-    MENTOR["Mentorship<br/>Guidance"]
+    SPONSOR["Sponsor Management<br/>(Organizer-managed)"]
+
     ANALYTICS["Analytics<br/>Insights"]
     AUDIT["Audit Trail<br/>Compliance"]
 
@@ -315,8 +314,8 @@ flowchart TD
     ROLES -->|"gates access"| TEAM
     ROLES -->|"gates access"| SUB
     ROLES -->|"gates access"| JUDGE
-    ROLES -->|"gates access"| SPONSOR
-    ROLES -->|"gates access"| MENTOR
+    ROLES -->|"gates access (organizer only)"| SPONSOR
+
 
     HACK -->|"controls phases"| SUB
     HACK -->|"controls phases"| JUDGE
@@ -331,13 +330,13 @@ flowchart TD
     SUB -->|"emits events"| ANALYTICS
     HACK -->|"emits transitions"| ANALYTICS
     TEAM -->|"emits events"| ANALYTICS
-    MENTOR -->|"emits sessions"| ANALYTICS
+
 
     HACK -->|"emits events"| NOTIF
     TEAM -->|"emits events"| NOTIF
     SUB -->|"emits events"| NOTIF
     JUDGE -->|"emits events"| NOTIF
-    MENTOR -->|"emits events"| NOTIF
+
 
     NOTIF -->|"pushes to"| RT
     HACK -->|"broadcasts"| RT
@@ -352,7 +351,7 @@ flowchart TD
     SUB -.->|"logs"| AUDIT
     JUDGE -.->|"logs"| AUDIT
     ROLES -.->|"logs"| AUDIT
-    MENTOR -.->|"logs"| AUDIT
+
 ```
 
 ---
@@ -366,7 +365,7 @@ DevSage/
 │   │   ├── src/
 │   │   │   ├── routes/         # REST route handlers (one file per domain)
 │   │   │   ├── middleware/     # Auth, roles, rate limiting, CORS
-│   │   │   ├── durable-objects/# HackathonStateMachine, WebSocketGateway, MentorSession
+│   │   │   ├── durable-objects/# HackathonStateMachine, WebSocketGateway
 │   │   │   ├── queue/          # Queue consumers (webhook, notification, analytics, plugin)
 │   │   │   ├── services/       # External service clients (GitHub, SMTP, AI, push)
 │   │   │   ├── lib/            # Shared utilities (JWT, audit, response envelope)
@@ -378,7 +377,7 @@ DevSage/
 │       │   ├── pages/          # Route-level page components
 │       │   ├── components/     # Shared + shadcn/ui components
 │       │   │   ├── ui/         # shadcn/ui primitives
-│       │   │   └── plugins/    # Plugin host (sandboxed iframe container)
+
 │       │   ├── contexts/       # React contexts (auth, theme, real-time)
 │       │   ├── hooks/          # Custom hooks (useWebSocket, useAuth, useApi)
 │       │   ├── lib/            # API client, utilities
@@ -449,7 +448,7 @@ graph LR
 
 ## Scale Targets
 
-| Metric | Phase 1 (MVP) | Phase 2 (Growth) | Phase 3 (Federation) |
+| Metric | Phase 1 (MVP) | Phase 2 (Growth) | Phase 3 (Workspaces) |
 |--------|---------------|-------------------|----------------------|
 | **Concurrent hackathons** | 3 | 50 | 500+ |
 | **Total users** | 500 | 10,000 | 100,000+ |
@@ -488,7 +487,7 @@ flowchart TD
         P3B["Cross-org DO coordination"]
         P3C["Multi-queue routing"]
         P3D["CDN-cached public pages"]
-        P3E["Plugin sandboxing at scale"]
+
     end
 
     Phase1 --> Phase2 --> Phase3
@@ -501,8 +500,8 @@ flowchart TD
 | Phase | Features | Target | Dependencies |
 |-------|----------|--------|-------------|
 | **Phase 1: Core Platform** | Authentication, Hackathon Lifecycle, Team Management, Submissions, Judging, Roles & Permissions, Webhooks (GitHub only), Notifications (email only), Audit Trail, Data Model, API Design, Infrastructure | MVP launch | None |
-| **Phase 2: Engagement** | Real-Time System, Frontend Architecture (polish), Analytics & Insights, Sponsor Portal, Mentorship System | Post-MVP | Phase 1 complete |
-| **Phase 3: Platform** | Multi-Org Federation, Plugin Extensibility, Notifications (push + Slack/Discord), Webhooks (GitLab + Bitbucket) | Scale-up | Phase 2 stable |
+| **Phase 2: Engagement** | Real-Time System, Frontend Architecture (polish), Analytics & Insights, Sponsor Portal | Post-MVP | Phase 1 complete |
+| **Phase 3: Platform** | Collaborative Workspaces, Notifications (push + Slack/Discord), Webhooks (GitLab + Bitbucket) | Scale-up | Phase 2 stable |
 
 ### Phase Dependency Graph
 
@@ -527,13 +526,13 @@ flowchart LR
         FE["13-Frontend"]
         RTME["14-Real-Time"]
         ANLY["15-Analytics"]
-        SPON["16-Sponsor Portal"]
-        MENT["17-Mentorship"]
+        SPON["16-Sponsor Mgmt"]
+
     end
 
     subgraph P3["Phase 3"]
-        FED["18-Federation"]
-        PLUG["19-Plugin System"]
+        FED["18-Workspaces"]
+
     end
 
     AUTH --> ROLES
@@ -552,11 +551,10 @@ flowchart LR
     JUDGE --> ANLY
     RTME --> FE
     HACK --> SPON
-    TEAM --> MENT
+
 
     HACK --> FED
-    HACK --> PLUG
-    RTME --> PLUG
+
 ```
 
 ---
@@ -583,10 +581,10 @@ flowchart LR
 | [13](./frontend.md) | Frontend Architecture | Core Platform | 2 |
 | [14](./real-time.md) | Real-Time System | Integration Layer | 2 |
 | [15](./analytics.md) | Analytics & Insights | Observability | 2 |
-| [16](./sponsor-portal.md) | Sponsor Portal | Growth & Engagement | 2 |
-| [17](./mentorship.md) | Mentorship System | Growth & Engagement | 2 |
-| [18](./federation.md) | Multi-Org Federation | Platform Extensibility | 3 |
-| [19](./plugin-system.md) | Plugin Extensibility | Platform Extensibility | 3 |
+| [16](./sponsor-portal.md) | Sponsor Management (Organizer-managed) | Growth & Engagement | 2 |
+
+| [18](./federation.md) | Collaborative Workspaces | Platform Extensibility | 3 |
+
 
 ### Guide Docs
 
@@ -614,5 +612,5 @@ flowchart LR
 | D9 | Validation | Zod (shared package) | Single source of truth for types + runtime validation, shared between API and frontend | io-ts (more complex API), Yup (less TypeScript-native), AJV (JSON Schema — separate type definitions) |
 | D10 | Queue architecture | Single Worker as producer + consumer | Simpler deployment, shared code, Cloudflare Queues require same-Worker binding | Separate consumer Worker (deployment complexity), external queue (Kafka/RabbitMQ — not edge-native) |
 | D11 | Multi-tenancy model | Shared database with hackathon_id scoping | Simpler operations, lower cost, per-request role resolution provides isolation | Database-per-tenant (operational overhead at scale), schema-per-tenant (D1 doesn't support), row-level security (D1 doesn't support natively) |
-| D12 | Plugin sandboxing | Iframe with postMessage API | Browser-native isolation, no server-side execution risk, CSP-controlled | Web Workers (limited DOM access), WASM (complex authoring), server-side V8 isolates (cost, complexity) |
-| D13 | Federation protocol | REST + DNS TXT verification | Simple to implement, DNS proves domain ownership, REST is universal | ActivityPub (too complex for this use case), custom P2P (complexity), centralized registry (single point of failure) |
+
+| D13 | Workspace collaboration | Shared workspace model with role-based access | Simple multi-organizer collaboration, single event ownership with co-management | Full federation protocol (over-engineered for this use case), org-level merging (complex permissions), public discovery (contradicts invite-only model) |
