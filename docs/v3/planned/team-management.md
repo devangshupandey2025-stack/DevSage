@@ -1,6 +1,6 @@
 # Team Management
 
-> Complete specification for the DevSage v3 team management system. Covers team creation, invite codes, membership, GitHub repo linking, bot activation, team discovery, skill-based matching, team chat, leader transfer, and dissolution. Any developer should be able to implement the entire team system from this document alone.
+> Complete specification for the DevSage v3 team management system. Covers team creation by invited team leads, member invites via links or email, GitHub repo linking, bot activation (team lead only), team chat, leader transfer, and dissolution. All access is invite-only — no team discovery, no skill-based matching, no self-service registration. Any developer should be able to implement the entire team system from this document alone.
 
 ---
 
@@ -10,9 +10,7 @@
 - [Team Lifecycle](#team-lifecycle)
 - [Creating a Team](#creating-a-team)
 - [Joining a Team](#joining-a-team)
-- [Invite Code System](#invite-code-system)
-- [Team Discovery](#team-discovery)
-- [Skill-Based Matching](#skill-based-matching)
+- [Invite System](#invite-system)
 - [Connecting a GitHub Repo](#connecting-a-github-repo)
 - [Bot Activation](#bot-activation)
 - [Team Member Roles](#team-member-roles)
@@ -35,12 +33,10 @@
 | Goal | Description |
 |------|-------------|
 | **One team per user per hackathon** | A participant cannot be on multiple teams in the same hackathon. Prevents gaming and simplifies submission attribution. |
-| **Invite-code-based joining** | Teams are joined via short alphanumeric codes shared out-of-band (Discord, Slack, in-person). No "request to join" flow — the code is the authorization. |
-| **Team discovery** | Solo participants can browse open teams looking for members. Teams can opt into a directory with a pitch, required skills, and open slots. |
-| **Skill-based matching** | Participants list their skills in their profile. The platform suggests teams that need those skills, and suggests participants to teams that have gaps. |
+| **Invite-only membership** | Team leads are invited by organizers. Team leads invite members via shareable invite links or by email address. No public team discovery or self-service joining. |
 | **Repo = identity** | Each team links exactly one GitHub repo. The repo is the team's submission artifact. One repo per team per hackathon — no sharing. |
 | **Graceful leadership** | If a leader leaves or is removed, leadership transfers automatically. Teams are never leaderless. |
-| **Phase-aware operations** | Team mutations are gated by hackathon phase. No joining after registration closes. No leaving after submissions lock. |
+| **Phase-aware operations** | Team mutations are gated by hackathon phase. Invites can be accepted during `draft` and `active`. No leaving after submissions lock. |
 
 ---
 
@@ -48,47 +44,45 @@
 
 ```mermaid
 flowchart TD
-    A["Hackathon enters registration_open"] --> B["Participant creates team"]
-    B --> C["Team created:<br/>- random invite_code<br/>- creator = team_leader<br/>- status = forming"]
-    C --> D{Discovery enabled?}
-    D -->|Yes| E["Team listed in discovery directory<br/>with pitch, skills needed, open slots"]
-    D -->|No| F["Leader shares invite code<br/>privately (Discord, Slack, etc.)"]
-    E --> G["Participants browse & request to join<br/>OR use invite code directly"]
-    F --> G
-    G --> H["Members join via invite code"]
-    H --> I{Team at min_team_size?}
-    I -->|No| J["Status: forming<br/>(cannot submit)"]
-    I -->|Yes| K["Status: ready"]
-    K --> L["Leader links GitHub repo"]
-    L --> M["GitHub App installed on repo"]
-    M --> N["Bot activated:<br/>commits tracked, tags captured"]
-    N --> O["Hackathon goes active"]
-    O --> P["Team builds & submits"]
+    A["Organizer invites Team Lead<br/>(via email/link)"] --> B["Team Lead accepts invite<br/>logs in to {slug}.devsage.org"]
+    B --> C["Team Lead creates team:<br/>- names it<br/>- selects track (if applicable)<br/>- random invite_code generated"]
+    C --> D["Team Lead invites members<br/>(via invite link or email)"]
+    D --> E["Members accept invite, log in"]
+    E --> F{Team at min_team_size?}
+    F -->|No| G["Status: forming<br/>(cannot submit)"]
+    F -->|Yes| H["Status: ready"]
+    H --> I["Team Lead links GitHub repo"]
+    I --> J["Team Lead installs DevSage GitHub App<br/>(only the leader does this)"]
+    J --> K["Bot activated:<br/>commits tracked, tags captured"]
+    K --> L["Hackathon goes active"]
+    L --> M["Team builds & submits"]
 ```
 
 ---
 
 ## Creating a Team
 
+Only invited team leads can create teams. The team lead must have accepted their organizer invite and logged in to `{slug}.devsage.org`.
+
 ```mermaid
 sequenceDiagram
-    participant U as Participant
+    participant U as Team Lead
     participant W as API Worker
     participant D1 as D1 Database
 
-    U->>W: POST /api/v1/hackathons/:slug/teams<br/>{ name, track_id?, pitch?, skills_needed?[] }
-    W->>W: Verify: user is authenticated
-    W->>W: Verify: hackathon status = registration_open
-    W->>W: Verify: user not already on a team in this hackathon
+    U->>W: POST /api/v1/hackathons/:slug/teams<br/>{ name, track_id? }
+    W->>W: Verify: user is authenticated and has team_lead invite for this hackathon
+    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: user not already leading a team in this hackathon
     W->>W: Verify: max_teams not reached (hackathon-level)
     W->>W: Verify: track max_teams not reached (if track specified)
     W->>W: Validate: name is 2-50 chars, unique per hackathon
 
     W->>W: Generate invite code (8-char alphanumeric, globally unique)
-    W->>D1: INSERT INTO teams (id, hackathon_id, track_id, name, invite_code, status='forming', ...)
+    W->>D1: INSERT INTO teams (id, hackathon_id, track_id, name, invite_code, ...)
     W->>D1: INSERT INTO team_members (team_id, user_id, role='leader', joined_at)
     W->>D1: INSERT INTO audit_events (team_created)
-    W-->>U: 201 { ok: true, data: { team, invite_code } }
+    W-->>U: 201 { ok: true, data: { team, invite_code, invite_link } }
 ```
 
 **Request body:**
@@ -96,101 +90,80 @@ sequenceDiagram
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Team display name. 2-50 chars. Unique per hackathon. |
-| `track_id` | string | No | Which track this team competes in. If hackathon has only one track, auto-assigned. If multiple tracks and not specified, returns `TRACK_REQUIRED`. |
-| `pitch` | string | No | Short team pitch for the discovery directory. Max 280 chars. |
-| `skills_needed` | string[] | No | Skills the team is looking for. Free-text tags, max 10. E.g., `["React", "ML", "UI/UX"]` |
-| `discovery_enabled` | boolean | No | Default `true`. Whether the team appears in the discovery directory. |
+| `track_id` | string | Conditional | Which track this team competes in. Required if `track_assignment_mode = team_choice` and hackathon has multiple tracks. Auto-assigned if organizer assigns tracks or single-track hackathon. |
 
 ---
 
 ## Joining a Team
 
-### Via Invite Code (Primary)
+Team members join via two methods — both initiated by the team lead. There is no self-service joining or public discovery.
+
+### Via Invite Link
+
+The team lead shares an invite link (containing the team's invite code). The recipient clicks it, logs in via GitHub OAuth, and is added to the team.
 
 ```mermaid
 sequenceDiagram
-    participant U as Participant
+    participant U as Invited Member
     participant W as API Worker
     participant D1 as D1 Database
 
-    U->>W: POST /api/v1/hackathons/:slug/teams/join<br/>{ invite_code: "AB12CD34" }
-    W->>W: Verify: hackathon status = registration_open
+    U->>W: GET {slug}.devsage.org/join/{invite_code}
+    W->>W: Verify: hackathon status in [draft, active]
     W->>D1: SELECT team WHERE invite_code = ? AND hackathon_id = ?
     
-    alt Team not found
+    alt Team not found or hackathon ended
         W-->>U: 404 INVALID_INVITE_CODE
+    end
+
+    alt User not authenticated
+        W-->>U: Redirect to GitHub OAuth with return_to=/join/{invite_code}
     end
 
     W->>W: Verify: user not already on a team in this hackathon
     W->>D1: COUNT team_members WHERE team_id = ?
     W->>W: Verify: count < max_team_size
 
-    alt Hackathon has require_approval = true
-        W->>D1: INSERT INTO team_join_requests (team_id, user_id, status='pending')
-        W-->>U: 202 { ok: true, data: { status: 'pending', message: 'Join request sent to team leader' } }
-        Note over W: Leader must approve (see below)
-    else No approval required
-        W->>D1: INSERT INTO team_members (team_id, user_id, role='member')
-        W->>D1: UPDATE teams SET member_count = member_count + 1
-        W->>D1: INSERT INTO audit_events (team_joined)
-        W-->>U: 200 { ok: true, data: { team } }
-    end
+    W->>D1: INSERT INTO team_members (team_id, user_id, role='member')
+    W->>D1: UPDATE teams SET member_count = member_count + 1
+    W->>D1: INSERT INTO audit_events (team_joined)
+    W-->>U: Redirect to team dashboard
 ```
 
-### Via Discovery (Request to Join)
+### Via Email Invite
 
-When a team has `discovery_enabled = true`, participants can request to join without an invite code.
+The team lead enters an email address. The system sends an invite email with a unique link. The recipient clicks, creates an account (if needed), and joins.
 
 ```mermaid
 sequenceDiagram
-    participant U as Participant
+    participant L as Team Lead
     participant W as API Worker
     participant D1 as D1 Database
     participant Q as NOTIFICATION_QUEUE
+    participant U as Invited Member
 
-    U->>W: POST /api/v1/hackathons/:slug/teams/:id/request-join<br/>{ message?: "I'm a React dev, would love to help with frontend" }
-    W->>W: Verify: hackathon status = registration_open
-    W->>W: Verify: team has discovery_enabled = true
-    W->>W: Verify: user not already on a team
+    L->>W: POST /api/v1/hackathons/:slug/teams/:id/invite<br/>{ email: "member@example.com" }
+    W->>W: Verify: requester is team_leader
+    W->>W: Verify: hackathon status in [draft, active]
     W->>W: Verify: team not full
-    W->>W: Verify: user hasn't already sent a pending request to this team
+    W->>D1: INSERT INTO team_invites (team_id, email, token_hash, status='pending')
+    W->>Q: Enqueue invite email with unique link
+    W-->>L: 200 { ok: true, data: { status: 'invited' } }
 
-    W->>D1: INSERT INTO team_join_requests (team_id, user_id, message, status='pending')
-    W->>Q: Notify team leader: "{user} wants to join your team"
-    W-->>U: 202 { ok: true, data: { status: 'pending' } }
-```
-
-### Approving / Rejecting Join Requests
-
-```mermaid
-sequenceDiagram
-    participant L as Team Leader
-    participant W as API Worker
-    participant D1 as D1 Database
-    participant Q as NOTIFICATION_QUEUE
-
-    L->>W: PATCH /api/v1/hackathons/:slug/teams/:id/requests/:requestId<br/>{ action: "approve" | "reject" }
-    W->>W: Verify: requester is team_leader or organizer admin+
-    W->>D1: SELECT join request, verify status = 'pending'
-
-    alt Action = approve
-        W->>W: Verify: team not full
-        W->>W: Verify: user not already on another team (may have joined one since requesting)
-        W->>D1: UPDATE request SET status = 'approved'
-        W->>D1: INSERT INTO team_members (user_id, role='member')
-        W->>Q: Notify requester: "You've been accepted to {team_name}!"
-    else Action = reject
-        W->>D1: UPDATE request SET status = 'rejected'
-        W->>Q: Notify requester: "Your request to join {team_name} was declined"
-    end
-
-    W->>D1: INSERT INTO audit_events
-    W-->>L: 200 { ok: true }
+    Note over U: Member receives email with invite link
+    U->>W: GET {slug}.devsage.org/invite/{token}
+    W->>W: Validate token, redirect to OAuth if not logged in
+    W->>D1: INSERT INTO team_members, UPDATE invite status='accepted'
+    W-->>U: Redirect to team dashboard
 ```
 
 ---
 
-## Invite Code System
+## Invite System
+
+Team leads can invite members via two methods: shareable invite links (containing an invite code) or direct email invites.
+
+### Invite Code
 
 | Property | Value |
 |----------|-------|
@@ -198,9 +171,9 @@ sequenceDiagram
 | Character set | Alphanumeric (A-Z, 0-9) — uppercase only for readability |
 | Generation | `crypto.getRandomValues()` mapped to charset |
 | Uniqueness | Globally unique across all teams (DB UNIQUE constraint) |
-| Expiration | None — valid for the duration of `registration_open` phase |
+| Expiration | Valid until the hackathon ends (enters `judging` or later) |
 | Regeneration | Leader can regenerate code (invalidates the old one) |
-| Visibility | Only shown to team leader and organizers. Members see "Share your invite code" but not the code itself (leader distributes it). |
+| Invite link format | `{slug}.devsage.org/join/{invite_code}` |
 
 ### Regenerating an Invite Code
 
@@ -208,100 +181,21 @@ If a code is leaked or compromised, the leader can regenerate:
 
 ```
 POST /api/v1/hackathons/:slug/teams/:id/regenerate-invite
-→ { ok: true, data: { invite_code: "XY98ZW76" } }
+→ { ok: true, data: { invite_code: "XY98ZW76", invite_link: "..." } }
 ```
 
-The old code immediately stops working. Pending requests (if any) are unaffected since they are tied to the team ID, not the code.
+The old code and link immediately stop working.
 
----
+### Bulk Email Invite
 
-## Team Discovery
-
-When discovery is enabled for a hackathon, participants without a team can browse a directory of teams looking for members.
-
-### Discovery Directory
+Team leads can invite multiple members at once by entering email addresses:
 
 ```
-GET /api/v1/hackathons/:slug/teams/discover
-  ?track_id=...          (filter by track)
-  &skills=React,Python   (filter by skills needed — comma-separated)
-  &has_openings=true     (only teams with open slots)
-  &limit=20&offset=0
+POST /api/v1/hackathons/:slug/teams/:id/invite-bulk
+{ emails: ["a@example.com", "b@example.com", "c@example.com"] }
 ```
 
-**Response:**
-
-```typescript
-interface DiscoverableTeam {
-  id: string;
-  name: string;
-  track: { id: string; name: string };
-  pitch: string | null;
-  skills_needed: string[];
-  member_count: number;
-  max_team_size: number;
-  open_slots: number;          // max_team_size - member_count
-  members: {                   // public member info only
-    display_name: string;
-    avatar_url: string;
-    skills: string[];          // from member's profile
-  }[];
-  created_at: string;
-}
-```
-
-**Visibility rules:**
-- Only teams with `discovery_enabled = true` appear
-- Only during `registration_open` phase
-- Teams that are full (`open_slots = 0`) are hidden unless `has_openings=false` is passed
-- Team invite codes are NEVER included in discovery responses
-
-### Opting Out
-
-Teams can disable discovery at any time:
-
-```
-PATCH /api/v1/hackathons/:slug/teams/:id
-{ discovery_enabled: false }
-```
-
----
-
-## Skill-Based Matching
-
-### Participant Skills
-
-Users set their skills on their profile (not per-hackathon):
-
-```
-PATCH /api/v1/users/me/profile
-{ skills: ["React", "TypeScript", "Machine Learning", "UI/UX Design"] }
-```
-
-Skills are free-text tags — no predefined taxonomy. Max 20 per user. Stored lowercase and trimmed for matching.
-
-### Matching Algorithm
-
-The matching is simple and deterministic — no ML, no complex scoring. Just set intersection.
-
-**For a participant looking for a team:**
-1. Fetch all discoverable teams in this hackathon with open slots
-2. For each team, compute `match_score = |team.skills_needed ∩ user.skills| / |team.skills_needed|`
-3. Sort by `match_score` descending, then by `open_slots` descending
-4. Return top N results
-
-**For a team leader looking for members:**
-1. Fetch all participants in this hackathon who are not on a team
-2. For each participant, compute `match_score = |team.skills_needed ∩ user.skills| / |team.skills_needed|`
-3. Sort by `match_score` descending
-4. Return top N results
-
-```
-GET /api/v1/hackathons/:slug/teams/:id/suggested-members?limit=20
-GET /api/v1/hackathons/:slug/teams/suggested-for-me?limit=20
-```
-
-**Why no complex matching?** Hackathon team formation is social. Algorithmic matching is a suggestion, not a decision. Simple set intersection is transparent, explainable ("matched because you know React and they need React"), and has zero infrastructure cost.
+Each email receives a unique invite token. Max 10 emails per request. Duplicate emails (already invited or already on team) are skipped with a warning.
 
 ---
 
@@ -317,7 +211,7 @@ sequenceDiagram
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/repo<br/>{ repo_full_name: "owner/repo" }
     W->>W: Verify: user is team_leader
-    W->>W: Verify: hackathon status in [registration_open, registration_closed, active]
+    W->>W: Verify: hackathon status in [draft, active]
     W->>D1: Check repo not linked to another team in this hackathon
 
     alt Repo already linked to another team
@@ -343,7 +237,7 @@ The leader can unlink and re-link a different repo, but only before the hackatho
 
 ```
 DELETE /api/v1/hackathons/:slug/teams/:id/repo
-- Requires: team_leader, hackathon status in [registration_open, registration_closed]
+- Requires: team_leader, hackathon status = draft
 - Effect: Clears repo_full_name, repo_url, sets bot_active = 0
 ```
 
@@ -455,10 +349,10 @@ sequenceDiagram
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id/members/:userId
     W->>W: Verify: requester is team_leader OR hackathon admin+
     W->>W: Verify: target is not the team_leader (leader must transfer first or leave)
-    W->>W: Verify: hackathon status in [registration_open, registration_closed]
+    W->>W: Verify: hackathon status in [draft, active]
 
-    alt Hackathon is active or later
-        W-->>L: 400 TEAM_LOCKED — cannot remove members during active hackathon
+    alt Hackathon is in judging or later
+        W-->>L: 400 TEAM_LOCKED — cannot remove members after submissions lock
     end
 
     W->>D1: DELETE FROM team_members WHERE team_id = ? AND user_id = ?
@@ -482,7 +376,7 @@ sequenceDiagram
 
     U->>W: POST /api/v1/hackathons/:slug/teams/:id/leave
     W->>W: Verify: user is a member of this team
-    W->>W: Verify: hackathon status in [registration_open, registration_closed]
+    W->>W: Verify: hackathon status in [draft, active]
 
     alt User is the leader
         W->>W: Auto-transfer leadership to next member
@@ -500,9 +394,9 @@ sequenceDiagram
 ```
 
 **Phase restrictions:**
-- `registration_open`: Can leave freely. Can join another team.
-- `registration_closed`: Can leave, but cannot join another team (registration is closed).
-- `active` or later: Cannot leave. Team is locked for the duration.
+- `draft`: Can leave freely. Can join another team via new invite.
+- `active`: Can leave, but finding a new team requires a new invite from another team lead.
+- `judging` or later: Cannot leave. Team is locked for the duration.
 
 ---
 
@@ -519,9 +413,9 @@ sequenceDiagram
 
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id
     W->>W: Verify: requester is team_leader OR hackathon admin+
-    W->>W: Verify: hackathon status in [registration_open, registration_closed]
+    W->>W: Verify: hackathon status in [draft, active]
 
-    W->>D1: DELETE FROM team_join_requests WHERE team_id = ?
+    W->>D1: DELETE FROM team_invites WHERE team_id = ?
     W->>D1: DELETE FROM team_members WHERE team_id = ?
     W->>D1: DELETE FROM teams WHERE id = ?
     W->>D1: INSERT INTO audit_events (team_dissolved)
@@ -546,7 +440,7 @@ Each team has a built-in chat channel for coordination. This is a lightweight me
 - Only team members and hackathon organizers can read/write
 - No threading, no reactions, no file uploads — just text messages
 - Messages are Markdown-supported, max 2000 characters
-- Chat is available from `registration_open` through `completed` (read-only in `archived`)
+- Chat is available from `draft` through `completed` (read-only in `archived`)
 
 ### API
 
@@ -592,7 +486,6 @@ Teams have a `status` field that indicates their readiness for the hackathon.
 |--------|---------|------------|
 | `forming` | Team exists but is not ready | Member count < `min_team_size` OR no repo linked |
 | `ready` | Team meets all requirements to participate | Member count >= `min_team_size` AND repo linked AND bot active |
-| `incomplete` | Registration closed but team doesn't meet requirements | Team was `forming` when `registration_closed` hit |
 | `active` | Team is participating in the active hackathon | Hackathon status = `active` AND team status was `ready` |
 | `submitted` | Team has at least one accepted submission | At least one tag captured by the DO |
 | `archived` | Hackathon is archived | Hackathon status = `archived` |
@@ -628,8 +521,8 @@ GET /api/v1/hackathons/:slug/teams/:id/readiness
 | Team name: 2-50 characters | Creation, rename | Zod schema validation |
 | Team name: unique per hackathon | Creation, rename | DB UNIQUE constraint on `(hackathon_id, name)` |
 | One team per user per hackathon | Create, join | DB query check before insert |
-| Team creation only during `registration_open` | Create | Hackathon status check |
-| Team join only during `registration_open` | Join | Hackathon status check |
+| Team creation only during `draft` or `active` | Create | Hackathon status check |
+| Team join only during `draft` or `active` | Join (via invite) | Hackathon status check |
 | Team size <= `max_team_size` | Join | Count check before insert |
 | `max_teams` not exceeded | Create | Count check before insert |
 | Track `max_teams` not exceeded | Create (if track specified) | Count check before insert |
@@ -639,9 +532,7 @@ GET /api/v1/hackathons/:slug/teams/:id/readiness
 | Members cannot leave after `active` | Leave | Hackathon status check |
 | Team cannot be dissolved after `active` | Dissolve | Hackathon status check |
 | Invite code: 8 chars, alphanumeric, globally unique | Generation | `crypto.getRandomValues()` + DB UNIQUE constraint |
-| Pitch: max 280 characters | Create, update | Zod schema validation |
-| Skills needed: max 10 tags | Create, update | Zod schema validation |
-| Skills per user: max 20 | Profile update | Zod schema validation |
+
 | Chat message: max 2000 chars, Markdown | Send message | Zod schema validation |
 
 ---
@@ -668,14 +559,14 @@ When a leader leaves and leadership auto-transfers:
 
 ### Team Created in Wrong Track
 
-The team's track cannot be changed after `registration_closed`. During `registration_open`, the leader can change tracks:
+If `track_assignment_mode = team_choice`, the team lead can change tracks during `draft` or `active` (before `judging`). The organizer can override/reassign a team's track at any time before `judging`.
 
 ```
 PATCH /api/v1/hackathons/:slug/teams/:id
 { track_id: "new-track-id" }
 ```
 
-This is allowed because no submissions exist yet and track-specific judging hasn't started.
+This is allowed because no judging has started and track-specific scoring hasn't begun.
 
 ### GitHub App Installed Before Repo Linked
 
@@ -705,16 +596,15 @@ When a user's account is deleted (see authentication doc), the account deletion 
 | `ALREADY_ON_TEAM` | 400 | User is already a member of a team in this hackathon |
 | `NOT_ON_TEAM` | 400 | User is not a member of this team (for leave/transfer) |
 | `INVALID_INVITE_CODE` | 404 | Invite code does not match any team in this hackathon |
-| `REGISTRATION_CLOSED` | 400 | Attempting team mutation when hackathon is not in `registration_open` |
+| `HACKATHON_NOT_ACCEPTING` | 400 | Attempting team mutation when hackathon is not in `draft` or `active` |
 | `TEAM_LOCKED` | 400 | Attempting to remove member, leave, or dissolve during `active` or later |
 | `REPO_ALREADY_LINKED` | 409 | Repo is already linked to another team in this hackathon |
 | `REPO_LOCKED` | 400 | Attempting to change repo after hackathon entered `active` |
 | `TRACK_REQUIRED` | 400 | Multi-track hackathon requires a track selection |
 | `TRACK_NOT_FOUND` | 404 | Specified track does not exist in this hackathon |
 | `LEADER_CANNOT_BE_REMOVED` | 400 | Attempting to remove the leader (must transfer leadership first) |
-| `JOIN_REQUEST_NOT_FOUND` | 404 | Join request ID does not exist |
-| `DUPLICATE_JOIN_REQUEST` | 409 | User already has a pending request to this team |
-| `DISCOVERY_DISABLED` | 400 | Attempting to request-join a team that has discovery disabled |
+| `INVITE_EXPIRED` | 400 | Email invite token has expired or hackathon is past active phase |
+| `INVITE_ALREADY_ACCEPTED` | 400 | This invite has already been used |
 | `NOT_LEADER` | 403 | Action requires team_leader role |
 | `TEAM_DISSOLUTION_BLOCKED` | 400 | Cannot dissolve team after `active` phase |
 
@@ -730,9 +620,7 @@ When a user's account is deleted (see authentication doc), the account deletion 
 | `hackathon_id` | TEXT FK | → hackathons.id |
 | `track_id` | TEXT FK | → hackathon_tracks.id. Nullable only if single-track hackathon. |
 | `name` | TEXT | Display name |
-| `pitch` | TEXT | Nullable. Max 280 chars. For discovery directory. |
-| `skills_needed` | TEXT | JSON array of skill tags. Nullable. |
-| `discovery_enabled` | INTEGER | 0 or 1. Default 1. |
+
 | `repo_full_name` | TEXT | `owner/repo`. Nullable until linked. |
 | `repo_url` | TEXT | `https://github.com/owner/repo`. Nullable. |
 | `github_installation_id` | INTEGER | Nullable. Set when GitHub App is installed. |
@@ -757,20 +645,21 @@ When a user's account is deleted (see authentication doc), the account deletion 
 
 **Indexes:** unique(`team_id`, `user_id`), `user_id`.
 
-### `team_join_requests` (new)
+### `team_invites` (new)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | TEXT PK | UUID |
 | `team_id` | TEXT FK | → teams.id |
-| `user_id` | TEXT FK | → users.id |
-| `message` | TEXT | Nullable. Max 280 chars. Requester's pitch. |
-| `status` | TEXT | `pending`, `approved`, `rejected` |
-| `reviewed_by` | TEXT FK | → users.id. Nullable. Who approved/rejected. |
+| `email` | TEXT | Email address the invite was sent to |
+| `token_hash` | TEXT | SHA-256 hash of the unique invite token |
+| `status` | TEXT | `pending`, `accepted`, `expired` |
+| `invited_by` | TEXT FK | → users.id. Team lead who sent the invite. |
+| `accepted_by` | TEXT FK | → users.id. Nullable. User who accepted. |
 | `created_at` | TEXT | ISO-8601 |
 | `updated_at` | TEXT | ISO-8601 |
 
-**Indexes:** `team_id`, `user_id`, unique(`team_id`, `user_id`, `status='pending'`) — one pending request per user per team.
+**Indexes:** `team_id`, `email`, `token_hash`.
 
 ### `team_messages` (new)
 
@@ -784,16 +673,7 @@ When a user's account is deleted (see authentication doc), the account deletion 
 
 **Indexes:** `team_id` + `created_at` (for paginated fetch, newest first).
 
-### `user_skills` (new — on user profile, not per-hackathon)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | TEXT PK | UUID |
-| `user_id` | TEXT FK | → users.id |
-| `skill` | TEXT | Lowercase, trimmed. E.g., `react`, `machine learning` |
-| `created_at` | TEXT | ISO-8601 |
-
-**Indexes:** `user_id`, `skill` (for matching queries).
 
 ---
 
@@ -801,13 +681,13 @@ When a user's account is deleted (see authentication doc), the account deletion 
 
 | Decision | Choice | Why | Alternatives Considered |
 |----------|--------|-----|------------------------|
-| Invite codes, not "request to join" as primary | Invite code is the authorization | Faster team formation. No approval bottleneck. Leader shares code via their existing channels (Discord, Slack). Discovery + request-join is additive for solo participants. | Request-only — slower, leader must be online to approve. Open join (no code) — no access control. |
+| Invite links + email invites | Two methods for team lead to add members | Invite links are fast (share via Discord/Slack). Email invites are formal (system sends invite). Both are initiated by the team lead — no self-service discovery. | Public team discovery — contradicts invite-only model. Request-to-join — adds approval bottleneck. |
 | One team per user per hackathon | Hard constraint | Prevents gaming (submitting via multiple teams), simplifies submission attribution, and matches real-world hackathon rules. | Multi-team — creates scoring conflicts, unfair advantage. |
 | No member removal during active phase | Phase-gated | Removing a member mid-hackathon is punitive and creates attribution confusion (their commits are in the repo). Organizer moderation tools handle bad actors. | Allow removal anytime — too disruptive. Allow with confirmation — still punitive. |
 | Repo locked after active | Immutable once hacking starts | Submissions are tied to the repo (tags, commits). Changing repos would orphan submission history and break verification. | Allow repo change — breaks submission integrity. |
 | Computed team status, not stored | Derived at query time | Status depends on hackathon phase + team data, which change independently. Storing it would require complex sync logic. Computing it is cheap (one query). | Stored status with triggers — complex, drift-prone. |
 | Lightweight chat, not full messaging | Text-only, no threads, no files | DevSage is a hackathon platform, not Slack. Teams already have external communication tools. In-app chat is for quick coordination only. | Full chat — massive scope increase, maintenance burden. No chat — missing useful feature for quick updates. |
-| Free-text skills, no taxonomy | User-entered tags | Hackathon skills are too diverse for a predefined taxonomy. Free text is flexible. Lowercase normalization handles basic deduplication ("React" = "react"). | Predefined skill list — too restrictive, always incomplete. Skill ontology — overkill for a matching hint. |
+
 | 8-char uppercase alphanumeric invite codes | Readable, short, unique enough | 36^8 = ~2.8 trillion possible codes. Collision is effectively impossible. Uppercase-only avoids ambiguity (no `l` vs `1`, `O` vs `0` confusion with the restricted charset). | Longer codes — harder to type. UUID — not human-friendly. Short numeric — too few combinations. |
 | Auto-leadership transfer | Longest-tenured member | Deterministic, fair, requires no configuration. The person who has been on the team longest is most likely to be invested. | Random — arbitrary. Voting — requires quorum, slow. No transfer — team becomes leaderless, stuck. |
-| Discovery is opt-in by default | `discovery_enabled = true` | Most teams benefit from visibility. Teams that want privacy can opt out. Starting with opt-in maximizes the discovery pool. | Opt-out by default — empty discovery directory. Mandatory — no privacy option. |
+
