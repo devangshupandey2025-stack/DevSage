@@ -10,6 +10,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      gsap:
+        specifier: ^3.14.2
+        version: 3.14.2
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260206.0

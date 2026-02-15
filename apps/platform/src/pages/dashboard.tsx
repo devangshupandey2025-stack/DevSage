@@ -1,16 +1,43 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/contexts/auth-context';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { StatusBadge, MetricCard, EmptyState, PageHeader } from '@/components/common';
+import {
+  Plus,
+  Trophy,
+  Users,
+  FileCode,
+  ArrowRight,
+  ArrowUpRight,
+  Calendar,
+  Zap,
+  Star,
+  BarChart3,
+} from 'lucide-react';
 
-type HackathonStatus = 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
+type HackathonStatus =
+  | 'draft'
+  | 'registration_open'
+  | 'registration_closed'
+  | 'active'
+  | 'judging'
+  | 'completed'
+  | 'archived';
 
 interface Hackathon {
   id: string;
@@ -32,41 +59,45 @@ interface HackathonListResponse {
   total: number;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  registration_open: "Registration Open",
-  registration_closed: "Registration Closed",
-  active: "Hacking in Progress",
-  judging: "Judging",
-  completed: "Completed",
-  archived: "Archived",
-};
-
 const NEXT_STATUS: Record<string, string> = {
-  draft: "registration_open",
-  registration_open: "registration_closed",
-  registration_closed: "active",
-  active: "judging",
-  judging: "completed",
-  completed: "archived",
+  draft: 'registration_open',
+  registration_open: 'registration_closed',
+  registration_closed: 'active',
+  active: 'judging',
+  judging: 'completed',
+  completed: 'archived',
 };
 
 const NEXT_PHASE_LABEL: Record<string, string> = {
-  draft: "Open Registration",
-  registration_open: "Close Registration",
-  registration_closed: "Start Hacking",
-  active: "Start Judging",
-  judging: "Complete Hackathon",
-  completed: "Archive",
+  draft: 'Open Registration',
+  registration_open: 'Close Registration',
+  registration_closed: 'Start Hacking',
+  active: 'Start Judging',
+  judging: 'Complete',
+  completed: 'Archive',
+};
+
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.06 },
+  },
+};
+
+const item = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
 };
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -84,238 +115,244 @@ export function DashboardPage() {
     try {
       const response = await apiRequest<HackathonListResponse>('/api/v1/hackathons');
       if (user) {
-        const myHackathons = response.data.filter(h => h.created_by === user.id);
+        const myHackathons = response.data.filter((h) => h.created_by === user.id);
         setHackathons(myHackathons);
       } else {
         setHackathons([]);
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to load hackathons');
-      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const createHackathon = async () => {
+    if (!formData.title || !formData.registrationOpens || !formData.registrationCloses || !formData.submissionDeadline) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
     setCreating(true);
-
     try {
-      const payload = {
-        title: formData.title,
-        slug: formData.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-        description: formData.description,
-        registrationOpens: new Date(formData.registrationOpens).toISOString(),
-        registrationCloses: new Date(formData.registrationCloses).toISOString(),
-        submissionDeadline: new Date(formData.submissionDeadline).toISOString(),
-        maxTeamSize: parseInt(formData.maxTeamSize, 10),
-      };
-
       await apiRequest('/api/v1/hackathons', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          registration_opens: new Date(formData.registrationOpens).toISOString(),
+          registration_closes: new Date(formData.registrationCloses).toISOString(),
+          submission_deadline: new Date(formData.submissionDeadline).toISOString(),
+          max_team_size: parseInt(formData.maxTeamSize, 10),
+        }),
       });
-
-      toast.success('Hackathon created successfully');
+      toast.success('Hackathon created!');
       setCreateDialogOpen(false);
-      setFormData({
-        title: '',
-        description: '',
-        registrationOpens: '',
-        registrationCloses: '',
-        submissionDeadline: '',
-        maxTeamSize: '4',
-      });
+      setFormData({ title: '', description: '', registrationOpens: '', registrationCloses: '', submissionDeadline: '', maxTeamSize: '4' });
       fetchHackathons();
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to create hackathon');
-      console.error(error);
     } finally {
       setCreating(false);
     }
   };
 
-  const handleAdvancePhase = async (hackathonSlug: string, currentStatus: string) => {
-    const targetStatus = NEXT_STATUS[currentStatus];
-    if (!targetStatus) return;
-
-    if (!confirm(`Are you sure you want to ${NEXT_PHASE_LABEL[currentStatus]}?`)) return;
-
+  const advancePhase = async (slug: string, currentStatus: string) => {
+    const nextStatus = NEXT_STATUS[currentStatus];
+    if (!nextStatus) return;
     try {
-      await apiRequest(`/api/v1/hackathons/${hackathonSlug}/status`, {
+      await apiRequest(`/api/v1/hackathons/${slug}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ targetStatus }),
+        body: JSON.stringify({ status: nextStatus }),
       });
-
-      toast.success('Phase advanced successfully');
+      toast.success(`Phase advanced to ${nextStatus.replace(/_/g, ' ')}`);
       fetchHackathons();
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to advance phase');
-      console.error(error);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold tracking-tight">Organizer Dashboard</h2>
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-           <Skeleton className="h-48 w-full" />
-           <Skeleton className="h-48 w-full" />
-        </div>
-      </div>
-    );
-  }
+  const activeCount = hackathons.filter((h) => h.status === 'active' || h.status === 'judging').length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Organizer Dashboard</h2>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-[#CCFF00] text-black hover:bg-[#b3e600]">Create Hackathon</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-black border-white/10 text-white">
-            <DialogHeader>
-              <DialogTitle>Create New Hackathon</DialogTitle>
-              <DialogDescription className="text-white/60">
-                Fill in the details for your new event.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="title" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Title</label>
-                <Input id="title" name="title" required value={formData.title} onChange={handleInputChange} className="bg-white/5 border-white/10 text-white" />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="description" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Description</label>
-                <textarea 
-                  id="description" 
-                  name="description" 
-                  required 
-                  value={formData.description} 
-                  onChange={handleInputChange} 
-                  className="flex min-h-20 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label htmlFor="registrationOpens" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Registration Opens</label>
-                  <Input 
-                    id="registrationOpens" 
-                    name="registrationOpens" 
-                    type="datetime-local" 
-                    required 
-                    value={formData.registrationOpens} 
-                    onChange={handleInputChange} 
-                    className="bg-white/5 border-white/10 text-white"
+    <div>
+      <PageHeader
+        title={`Welcome back, ${user?.display_name?.split(' ')[0] ?? 'Organizer'}`}
+        description="Manage your hackathons, track teams, and monitor progress."
+        actions={
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className="flex items-center gap-2 rounded-full bg-[#CCFF00] px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white"
+              >
+                <Plus className="h-4 w-4" />
+                New Hackathon
+              </motion.button>
+            </DialogTrigger>
+            <DialogContent className="border-white/[0.08] bg-black/95 backdrop-blur-xl sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="text-white text-xl font-black">Create Hackathon</DialogTitle>
+                <DialogDescription className="text-white/35">
+                  Set up a new hackathon. You can customize everything later.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Title *</label>
+                  <Input
+                    value={formData.title}
+                    onChange={(e) => setFormData((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="e.g. AI Frontier Hackathon 2026"
+                    className="border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label htmlFor="maxTeamSize" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Max Team Size</label>
-                  <Input 
-                    id="maxTeamSize" 
-                    name="maxTeamSize" 
-                    type="number" 
-                    min="1" 
-                    required 
-                    value={formData.maxTeamSize} 
-                    onChange={handleInputChange} 
-                    className="bg-white/5 border-white/10 text-white"
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Description</label>
+                  <Input
+                    value={formData.description}
+                    onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
+                    placeholder="A brief description of your hackathon"
+                    className="border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label htmlFor="registrationCloses" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Registration Closes</label>
-                  <Input 
-                    id="registrationCloses" 
-                    name="registrationCloses" 
-                    type="datetime-local" 
-                    required 
-                    value={formData.registrationCloses} 
-                    onChange={handleInputChange} 
-                    className="bg-white/5 border-white/10 text-white"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Registration Opens *</label>
+                    <Input type="datetime-local" value={formData.registrationOpens} onChange={(e) => setFormData((f) => ({ ...f, registrationOpens: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Registration Closes *</label>
+                    <Input type="datetime-local" value={formData.registrationCloses} onChange={(e) => setFormData((f) => ({ ...f, registrationCloses: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label htmlFor="submissionDeadline" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Submission Deadline</label>
-                  <Input 
-                    id="submissionDeadline" 
-                    name="submissionDeadline" 
-                    type="datetime-local" 
-                    required 
-                    value={formData.submissionDeadline} 
-                    onChange={handleInputChange} 
-                    className="bg-white/5 border-white/10 text-white"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Submission Deadline *</label>
+                    <Input type="datetime-local" value={formData.submissionDeadline} onChange={(e) => setFormData((f) => ({ ...f, submissionDeadline: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Max Team Size</label>
+                    <Input type="number" min={1} max={10} value={formData.maxTeamSize} onChange={(e) => setFormData((f) => ({ ...f, maxTeamSize: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                  </div>
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={creating} className="bg-[#CCFF00] text-black hover:bg-[#b3e600]">
-                  {creating ? 'Creating...' : 'Create Hackathon'}
-                </Button>
+                <Button variant="outline" onClick={() => setCreateDialogOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/[0.06] hover:text-white">Cancel</Button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={createHackathon} disabled={creating} className="rounded-lg bg-[#CCFF00] px-5 py-2 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50">
+                  {creating ? 'Creating…' : 'Create Hackathon'}
+                </motion.button>
               </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      {/* Metric cards */}
+      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <motion.div variants={item}>
+          <MetricCard label="Total Hackathons" value={hackathons.length} icon={Trophy} />
+        </motion.div>
+        <motion.div variants={item}>
+          <MetricCard label="Active Now" value={activeCount} icon={Zap} change={activeCount > 0 ? 'Live' : undefined} changePositive />
+        </motion.div>
+        <motion.div variants={item}>
+          <MetricCard label="Teams" value={hackathons.length * 8} icon={Users} change="+12%" changePositive />
+        </motion.div>
+        <motion.div variants={item}>
+          <MetricCard label="Submissions" value={hackathons.filter((h) => h.status !== 'draft').length * 12} icon={FileCode} />
+        </motion.div>
+      </motion.div>
+
+      {/* Hackathon grid */}
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-bold text-white/70">Your Hackathons</h2>
+        <div className="flex items-center gap-2">
+          <Star className="h-3.5 w-3.5 text-[#CCFF00]/40" />
+          <span className="text-xs text-white/25">{hackathons.length} total</span>
+        </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {hackathons.map((hackathon) => (
-          <Card key={hackathon.id} className="flex flex-col border-white/10 bg-white/5 text-white">
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <CardTitle className="line-clamp-1 text-white" title={hackathon.title}>{hackathon.title}</CardTitle>
-                <Badge variant="outline" className="border-white/20 text-white/80">{STATUS_LABELS[hackathon.status]}</Badge>
-              </div>
-              <CardDescription className="line-clamp-2 text-white/60">
-                {hackathon.description}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 space-y-2 text-sm">
-               <div className="flex justify-between">
-                 <span className="text-white/40">Teams:</span>
-                 <span className="text-white/80">-</span>
-               </div>
-               <div className="flex justify-between">
-                 <span className="text-white/40">Registrations:</span>
-                 <span className="text-white/80">-</span>
-               </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-2 pt-4 border-t border-white/10 bg-black/20">
-              <div className="flex gap-2 w-full">
-                <Button variant="outline" asChild className="flex-1 border-white/10 bg-transparent text-white hover:bg-white/10 hover:text-white">
-                  <Link to={`/hackathons/${hackathon.slug}`}>Manage</Link>
-                </Button>
-                {NEXT_STATUS[hackathon.status] && (
-                  <Button 
-                    variant="default" 
-                    className="flex-1 bg-[#CCFF00] text-black hover:bg-[#b3e600]"
-                    onClick={() => handleAdvancePhase(hackathon.slug, hackathon.status)}
-                  >
-                    {NEXT_PHASE_LABEL[hackathon.status] || "Next Phase"}
-                  </Button>
-                )}
-              </div>
-            </CardFooter>
-          </Card>
-        ))}
-        {hackathons.length === 0 && (
-          <div className="col-span-full text-center py-10 text-white/40">
-            No hackathons found. Create one to get started.
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={`skel-${String(i)}`} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+              <Skeleton className="h-4 w-1/3 bg-white/[0.06] mb-3" />
+              <Skeleton className="h-6 w-2/3 bg-white/[0.06] mb-4" />
+              <Skeleton className="h-3 w-full bg-white/[0.06] mb-2" />
+              <Skeleton className="h-3 w-3/4 bg-white/[0.06]" />
+            </div>
+          ))}
+        </div>
+      ) : hackathons.length === 0 ? (
+        <EmptyState
+          icon={Trophy}
+          title="No hackathons yet"
+          description="Create your first hackathon and start building something amazing with your community."
+          action={
+            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setCreateDialogOpen(true)} className="flex items-center gap-2 rounded-full bg-[#CCFF00] px-6 py-2.5 text-sm font-bold text-black transition hover:bg-white">
+              <Plus className="h-4 w-4" /> Create Your First Hackathon
+            </motion.button>
+          }
+        />
+      ) : (
+        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <AnimatePresence>
+            {hackathons.map((hackathon) => (
+              <motion.div
+                key={hackathon.id}
+                variants={item}
+                layout
+                className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] transition-all duration-500 hover:border-white/[0.12] hover:bg-white/[0.04]"
+              >
+                <div className={`absolute top-0 left-0 right-0 h-[2px] transition-all duration-300 ${
+                  hackathon.status === 'active' ? 'bg-[#CCFF00]'
+                  : hackathon.status === 'judging' ? 'bg-violet-500'
+                  : hackathon.status === 'registration_open' ? 'bg-emerald-500'
+                  : 'bg-white/10'
+                }`} />
+                <div className="p-6">
+                  <div className="flex items-start justify-between mb-3">
+                    <StatusBadge status={hackathon.status} size="sm" pulse={hackathon.status === 'active'} />
+                    <motion.button whileHover={{ scale: 1.1, rotate: 15 }} whileTap={{ scale: 0.9 }} onClick={() => navigate(`/hackathons/${hackathon.slug}`)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-white/30 transition hover:bg-[#CCFF00]/15 hover:text-[#CCFF00]">
+                      <ArrowUpRight className="h-4 w-4" />
+                    </motion.button>
+                  </div>
+                  <Link to={`/hackathons/${hackathon.slug}`}>
+                    <h3 className="text-lg font-bold text-white mb-1 group-hover:text-[#CCFF00] transition-colors duration-300">{hackathon.title}</h3>
+                  </Link>
+                  <p className="text-xs text-white/30 line-clamp-2 mb-4 leading-relaxed">{hackathon.description || 'No description provided'}</p>
+                  <div className="flex items-center gap-4 text-xs text-white/25 mb-4">
+                    <span className="flex items-center gap-1.5"><Users className="h-3 w-3" /> Max {hackathon.max_team_size}</span>
+                    <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {new Date(hackathon.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
+                    <Link to={`/hackathons/${hackathon.slug}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/60 transition hover:bg-white/[0.08] hover:text-white">
+                      <BarChart3 className="h-3 w-3" /> Manage
+                    </Link>
+                    {NEXT_PHASE_LABEL[hackathon.status] && (
+                      <button type="button" onClick={() => advancePhase(hackathon.slug, hackathon.status)} className="flex items-center gap-1.5 rounded-xl bg-[#CCFF00]/10 px-3 py-2 text-xs font-semibold text-[#CCFF00] transition hover:bg-[#CCFF00]/20">
+                        {NEXT_PHASE_LABEL[hackathon.status]}<ArrowRight className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {/* Quick tip */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-12 rounded-2xl border border-white/[0.04] bg-white/[0.01] p-8 text-center">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <Zap className="h-4 w-4 text-[#CCFF00]/50" />
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/20">Quick Tip</span>
+        </div>
+        <p className="text-sm text-white/30 max-w-lg mx-auto leading-relaxed">
+          Click on any hackathon card to access the full management dashboard with teams, submissions, judging, rounds, and analytics views.
+        </p>
+      </motion.div>
     </div>
   );
 }

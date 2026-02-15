@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, createElement, useMemo, useCallback } from 'react';
 import type { ElementType } from 'react';
-import { gsap } from 'gsap';
+import gsap from 'gsap';
 import './TextType.css';
 
 interface TextTypeProps {
