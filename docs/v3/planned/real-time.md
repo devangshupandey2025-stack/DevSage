@@ -1,6 +1,6 @@
 # 14 — Real-time System
 
-> WebSocket Gateway powered by Durable Objects for channel-based pub/sub, user presence tracking, SSE fallback, and a typed client SDK — delivering sub-500ms event propagation across all hackathon surfaces.
+> WebSocket Gateway powered by Durable Objects for channel-based pub/sub, user presence tracking, SSE fallback, and a typed client SDK — delivering sub-500ms event propagation across all hackathon surfaces. Phase 1 uses 5-state hackathon lifecycle (not phases), rounds-based elimination events, GitHub-only VCS webhooks, and no team chat or audience voting.
 
 ---
 
@@ -34,11 +34,11 @@
 | Event propagation latency | < 500ms end-to-end | Leaderboard updates, announcements must feel instant |
 | Connections per hackathon | 10,000 concurrent | Large hackathons with participants + spectators + judges |
 | Reconnection time | < 2s after network recovery | Seamless experience during flaky event Wi-Fi |
-| Message ordering | Per-channel FIFO | Activity feeds and chat must display in correct order |
+| Message ordering | Per-channel FIFO | Activity feeds and announcements must display in correct order |
 | Presence accuracy | < 5s staleness | "Who's online" must reflect reality |
 | Fallback availability | 100% of functionality via SSE | WebSocket-blocked networks still get live updates |
 | Memory per connection | < 2 KB | Durable Objects have 128MB limit |
-| Zero message loss | Guaranteed delivery with ack | Critical events (phase changes, deadlines) cannot be missed |
+| Zero message loss | Guaranteed delivery with ack | Critical events (state changes, deadlines) cannot be missed |
 
 ---
 
@@ -193,13 +193,13 @@ stateDiagram-v2
 
 | Channel Pattern | Purpose | Auto-subscribe | Auth Required |
 |----------------|---------|----------------|---------------|
-| `hackathon:{slug}` | Global hackathon events (phase changes, announcements) | Yes (on connect) | Authenticated |
+| `hackathon:{slug}` | Global hackathon events (state changes, announcements, round events) | Yes (on connect) | Authenticated |
 | `hackathon:{slug}:activity` | Activity feed (commits, PRs, submissions) | No | Authenticated |
 | `hackathon:{slug}:leaderboard` | Score updates, ranking changes | No | Authenticated |
 | `hackathon:{slug}:announcements` | Organizer announcements | No | Authenticated |
-| `hackathon:{slug}:team:{teamId}` | Team-specific events (members, chat) | No | Team member |
+| `hackathon:{slug}:team:{teamId}` | Team-specific events (member joins/leaves) | No | Team member |
 | `hackathon:{slug}:judging` | Judging progress, assignment updates | No | Judge+ role |
-| `hackathon:{slug}:admin` | Admin events (audit, system alerts) | No | Admin+ role |
+| `hackathon:{slug}:organizer` | Organizer events (audit, system alerts) | No | Organizer role |
 | `user:{userId}:notifications` | Personal notifications | Yes (on connect) | Self only |
 
 ### Channel Authorization
@@ -220,7 +220,7 @@ flowchart TD
     G -->|Yes| D
     G -->|No| E
     
-    B -->|admin| H{User is admin+?}
+    B -->|organizer| H{User is organizer?}
     H -->|Yes| D
     H -->|No| E
     
@@ -404,10 +404,16 @@ type ServerMessage =
 
 ```typescript
 type ChannelEvent =
-  // Hackathon lifecycle
-  | { kind: 'hackathon.phase_changed'; fromPhase: string; toPhase: string; triggeredBy: string }
+  // Hackathon lifecycle (5 states: draft, active, judging, completed, archived)
+  | { kind: 'hackathon.state_changed'; fromState: string; toState: string; triggeredBy: string }
   | { kind: 'hackathon.settings_updated'; fields: string[] }
   | { kind: 'hackathon.deadline_warning'; deadline: string; minutesRemaining: number }
+  
+  // Rounds (elimination-based)
+  | { kind: 'round.started'; roundId: string; roundNumber: number; totalRounds: number }
+  | { kind: 'round.completed'; roundId: string; roundNumber: number }
+  | { kind: 'team.eliminated'; teamId: string; teamName: string; roundId: string }
+  | { kind: 'team.advanced'; teamId: string; teamName: string; roundId: string }
   
   // Activity feed
   | { kind: 'activity.commit'; teamId: string; teamName: string; repo: string; branch: string; message: string; author: string }
@@ -421,22 +427,20 @@ type ChannelEvent =
   | { kind: 'announcement.pinned'; id: string; title: string }
   
   // Judging
-  | { kind: 'judging.round_started'; round: number; totalRounds: number }
-  | { kind: 'judging.round_completed'; round: number }
   | { kind: 'judging.score_submitted'; submissionId: string; judgeCount: number; totalJudges: number }
   | { kind: 'judging.leaderboard_updated'; topN: Array<{ teamName: string; score: number; rank: number }> }
-  | { kind: 'judging.audience_vote_updated'; submissionId: string; voteCount: number }
   
   // Team events
   | { kind: 'team.member_joined'; userId: string; username: string }
   | { kind: 'team.member_left'; userId: string; username: string }
-  | { kind: 'team.chat_message'; userId: string; username: string; message: string; timestamp: string }
-  | { kind: 'team.repo_linked'; repo: string; provider: 'github' | 'gitlab' }
+  | { kind: 'team.repo_linked'; repo: string; provider: 'github' }
   
   // Notifications (personal channel only)
   | { kind: 'notification.new'; id: string; type: string; title: string; body: string }
   | { kind: 'notification.badge_update'; unreadCount: number };
 ```
+
+> **Phase 2**: Additional event types will be added for `team.chat_message` (real-time team chat), `judging.audience_vote_updated` (audience voting), and multi-VCS support (`team.repo_linked` with GitLab provider).
 
 ### Message Sequencing
 
@@ -493,7 +497,6 @@ Query params:
 | Live events | ✅ | ✅ |
 | Channel subscriptions | ✅ Dynamic | ⚠️ Fixed at connection time (via query params) |
 | Presence tracking | ✅ Bidirectional | ❌ No presence (server cannot receive client status) |
-| Team chat | ✅ | ❌ (use REST API for sending) |
 | Reconnection | Custom with sequence | Built-in via `Last-Event-ID` header |
 | Binary data | ✅ | ❌ Text only |
 | Latency | Lower (persistent) | Slightly higher (HTTP overhead) |
@@ -501,9 +504,9 @@ Query params:
 ### SSE Message Format
 
 ```
-event: hackathon.phase_changed
+event: hackathon.state_changed
 id: evt_abc123
-data: {"fromPhase":"ACTIVE","toPhase":"JUDGING","triggeredBy":"admin"}
+data: {"fromState":"active","toState":"judging","triggeredBy":"organizer"}
 
 event: activity.commit
 id: evt_abc124
@@ -730,7 +733,8 @@ interface EventRouter {
 | Submission route | `activity.submission` | `hackathon:{slug}:activity` |
 | Team route (join) | `team.member_joined` | `hackathon:{slug}:team:{teamId}` |
 | Judging route (score) | `judging.score_submitted` | `hackathon:{slug}:judging` |
-| Hackathon state machine | `hackathon.phase_changed` | `hackathon:{slug}` |
+| Hackathon state machine | `hackathon.state_changed` | `hackathon:{slug}` |
+| Round transitions | `round.started`, `round.completed`, `team.eliminated` | `hackathon:{slug}` |
 | Cron (deadline check) | `hackathon.deadline_warning` | `hackathon:{slug}` |
 | Announcement route | `announcement.created` | `hackathon:{slug}:announcements` |
 | Notification queue | `notification.new` | `user:{userId}:notifications` |
@@ -827,7 +831,7 @@ Authorization is checked on every `SUBSCRIBE` request:
 | `hackathon:{slug}:announcements` | `participant+` | Role from connection context |
 | `hackathon:{slug}:team:{teamId}` | Team member | Check team membership via D1 |
 | `hackathon:{slug}:judging` | `judge+` | Role from connection context |
-| `hackathon:{slug}:admin` | `admin+` | Role from connection context |
+| `hackathon:{slug}:organizer` | `organizer` | Role from connection context |
 | `user:{userId}:notifications` | Self only | userId must match connection userId |
 
 ### Token Refresh During Long Connections
@@ -850,7 +854,6 @@ JWTs have a 7-day expiry. For connections lasting longer than the access token l
 | Messages sent (total) | 60 | Per minute | Per connection |
 | Subscribe requests | 10 | Per minute | Per connection |
 | Presence updates | 6 | Per minute | Per connection |
-| Chat messages (team channel) | 30 | Per minute | Per user |
 
 ### Enforcement
 
@@ -927,10 +930,11 @@ Only a subset of events require explicit acknowledgment:
 
 | Event | Why Critical |
 |-------|-------------|
-| `hackathon.phase_changed` | UI must reflect current phase |
+| `hackathon.state_changed` | UI must reflect current state |
 | `hackathon.deadline_warning` | Users must see deadline approaching |
 | `announcement.created` (urgent priority) | Organizer expects all participants to see it |
-| `judging.round_started` | Judges must know to begin scoring |
+| `round.started` | Participants and judges must know round has begun |
+| `team.eliminated` | Eliminated team must see their status change |
 
 Non-critical events (activity feed items, presence changes) are fire-and-forget.
 
@@ -957,8 +961,8 @@ Non-critical events (activity feed items, presence changes) are fire-and-forget.
 | GET | `/api/v1/hackathons/:slug/presence` | JWT | participant | Get current online users (from KV) |
 | GET | `/api/v1/hackathons/:slug/presence/count` | JWT | participant | Get online user count only |
 | GET | `/api/v1/hackathons/:slug/activity` | JWT | participant | Get recent activity events (paginated) |
-| POST | `/api/v1/hackathons/:slug/teams/:teamId/chat` | JWT | team member | Send team chat message (for SSE clients) |
-| GET | `/api/v1/hackathons/:slug/teams/:teamId/chat` | JWT | team member | Get team chat history (paginated) |
+
+> **Phase 2**: Team chat REST endpoints (`POST/GET /api/v1/hackathons/:slug/teams/:teamId/chat`) will be added when the team chat feature is introduced.
 
 ---
 
@@ -971,7 +975,7 @@ Non-critical events (activity feed items, presence changes) are fire-and-forget.
 | Gateway DO evicted during active connections | All connections close. Clients reconnect. DO re-initializes from clean state. Catch-up from D1 event log |
 | 500 users subscribe to same channel simultaneously | Fan-out is sequential per DO but fast (~5000 msg/s). Max delay: ~100ms for last recipient |
 | User's role changes while connected | Gateway DO receives role update event, updates connection context, checks channel authorization — may disconnect from restricted channels |
-| Hackathon transitions to ARCHIVED | Gateway DO sends `hackathon.phase_changed`, waits 60s, then closes all connections with `RECONNECT: archived` |
+| Hackathon transitions to archived | Gateway DO sends `hackathon.state_changed`, waits 60s, then closes all connections with `RECONNECT: archived` |
 | Client sends malformed JSON | Error response sent. After 3 consecutive parse failures, connection closed |
 | Server deploys during active connections | Durable Object migration: existing connections maintained. New connections may briefly fail (< 5s) |
 | Internet drops for 5 minutes then returns | Client reconnects with exponential backoff. On success, catches up via `lastSequence`. If gap too large, full REST refresh |
@@ -1042,25 +1046,7 @@ Stored in the Gateway DO's embedded SQLite for fast local access.
 | `connected_at` | TEXT | NOT NULL | Connection start time |
 | `last_ping_at` | TEXT | NOT NULL | Last heartbeat timestamp |
 
-### team_chat_messages
-
-Persistent storage for team chat (messages also delivered in real-time but stored for history).
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | Message ID (`msg_` prefix + UUID) |
-| `hackathon_id` | TEXT | NOT NULL, FK → hackathons.id | Hackathon context |
-| `team_id` | TEXT | NOT NULL, FK → teams.id | Team the message belongs to |
-| `user_id` | TEXT | NOT NULL, FK → users.id | Message author |
-| `content` | TEXT | NOT NULL | Message text (max 2000 chars) |
-| `reply_to_id` | TEXT | NULL, FK → team_chat_messages.id | Thread reply reference |
-| `edited_at` | TEXT | NULL | Last edit timestamp |
-| `deleted_at` | TEXT | NULL | Soft delete timestamp |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Send time |
-
-**Indexes:**
-- `idx_chat_team_created` → `(hackathon_id, team_id, created_at)` — chat history pagination
-- `idx_chat_user` → `(user_id)` — user's message history
+> **Phase 2**: A `team_chat_messages` table will be added for persistent team chat history when real-time team chat is introduced. This will include message content, threading (reply_to_id), edit/delete tracking, and indexes for team-scoped pagination.
 
 ---
 
