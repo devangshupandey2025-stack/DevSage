@@ -144,7 +144,7 @@ sequenceDiagram
     participant U as Invited Member
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/invite<br/>{ email: "member@example.com" }
-    W->>W: Verify: requester is team_leader
+    W->>W: Verify: requester is team_lead
     W->>W: Verify: hackathon status = draft
     W->>W: Verify: team not full
     W->>D1: INSERT INTO team_invites (team_id, email, token_hash, status='pending')
@@ -211,7 +211,7 @@ sequenceDiagram
     participant D1 as D1 Database
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/repo<br/>{ repo_full_name: "owner/repo" }
-    W->>W: Verify: user is team_leader
+    W->>W: Verify: user is team_lead
     W->>W: Verify: hackathon status = draft
     W->>D1: Check repo not linked to another team in this hackathon
 
@@ -238,7 +238,7 @@ The leader can unlink and re-link a different repo, but only before the hackatho
 
 ```
 DELETE /api/v1/hackathons/:slug/teams/:id/repo
-- Requires: team_leader, hackathon status = draft
+- Requires: team_lead, hackathon status = draft
 - Effect: Clears repo_full_name, repo_url, sets bot_active = 0
 ```
 
@@ -296,8 +296,8 @@ Submissions already captured are NOT deleted. The bot simply stops tracking new 
 
 | Role | In Team | In Hackathon Hierarchy | Permissions |
 |------|---------|----------------------|-------------|
-| `leader` | One per team | Maps to `team_leader` (index 4) | Create team, link/unlink repo, manage members, approve join requests, regenerate invite code, dissolve team, submit |
-| `member` | 0 to (max_team_size - 1) | Maps to `participant` (index 5) | View team, push code to linked repo, see invite code status, leave team |
+| `leader` | One per team | Maps to `team_lead` (index 3) | Create team, link/unlink repo, manage members, approve join requests, regenerate invite code, dissolve team, submit |
+| `member` | 0 to (max_team_size - 1) | Maps to `team_member` (index 4) | View team, push code to linked repo, see invite code status, leave team |
 
 Only one leader per team at any time. Leadership can be transferred (see below).
 
@@ -317,7 +317,7 @@ sequenceDiagram
     participant Q as NOTIFICATION_QUEUE
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/transfer-leader<br/>{ new_leader_id: "user-uuid" }
-    W->>W: Verify: requester is current team_leader
+    W->>W: Verify: requester is current team_lead
     W->>D1: Verify: new_leader_id is a member of this team
 
     W->>D1: UPDATE team_members SET role = 'member' WHERE user_id = old_leader
@@ -348,8 +348,8 @@ sequenceDiagram
     participant Q as NOTIFICATION_QUEUE
 
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id/members/:userId
-    W->>W: Verify: requester is team_leader OR hackathon organizer/co-organizer
-    W->>W: Verify: target is not the team_leader (leader must transfer first or leave)
+    W->>W: Verify: requester is team_lead OR hackathon organizer/co-organizer
+    W->>W: Verify: target is not the team_lead (leader must transfer first or leave)
     W->>W: Verify: hackathon status = draft
 
     alt Hackathon is active or later
@@ -412,7 +412,7 @@ sequenceDiagram
     participant Q as NOTIFICATION_QUEUE
 
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id
-    W->>W: Verify: requester is team_leader OR hackathon organizer/co-organizer
+    W->>W: Verify: requester is team_lead OR hackathon organizer/co-organizer
     W->>W: Verify: hackathon status = draft
 
     W->>D1: DELETE FROM team_invites WHERE team_id = ?
@@ -605,7 +605,7 @@ When a user's account is deleted (see authentication doc), the account deletion 
 | `LEADER_CANNOT_BE_REMOVED` | 400 | Attempting to remove the leader (must transfer leadership first) |
 | `INVITE_EXPIRED` | 400 | Email invite token has expired or hackathon is past active phase |
 | `INVITE_ALREADY_ACCEPTED` | 400 | This invite has already been used |
-| `NOT_LEADER` | 403 | Action requires team_leader role |
+| `NOT_LEADER` | 403 | Action requires team_lead role |
 | `TEAM_DISSOLUTION_BLOCKED` | 400 | Cannot dissolve team after `draft` phase |
 
 ---

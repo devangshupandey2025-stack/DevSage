@@ -1,6 +1,6 @@
 # Roles & Permissions
 
-> Layered authorization system with per-hackathon role resolution, workspace-level hierarchy, and fine-grained permission grants — all resolved per-request from database state, never cached in tokens. Uses 7 built-in roles only (no custom roles). No API keys — all access through authenticated sessions.
+> Layered authorization system with per-hackathon role resolution, workspace-level hierarchy, and fine-grained permission grants — all resolved per-request from database state, never cached in tokens. Uses 6 built-in hackathon roles only (no custom roles). No API keys — all access through authenticated sessions.
 
 ---
 
@@ -30,7 +30,7 @@
 |------|-------------|
 | Per-request accuracy | Every request resolves the user's role from live database state — never stale, never cached in JWT |
 | Per-hackathon scoping | A user can be an organizer of one hackathon, a judge in another, and anonymous in a third — all simultaneously |
-| Hierarchical inheritance | Higher roles inherit all permissions of lower roles. `requireRole('judge')` passes for judge, co-organizer, organizer, and admin_owner |
+| Hierarchical inheritance | Higher roles inherit all permissions of lower roles. `requireRole('judge')` passes for judge, co-organizer, and organizer |
 | Workspace layer | Workspaces (clubs or individuals) own hackathons. Workspace-level roles cascade down unless overridden per-hackathon |
 | Auditable | Every role assignment, revocation, and permission change produces an audit event |
 | Zero trust in tokens | JWT contains only identity (`sub`, `ghid`). All authorization is server-side per-request |
@@ -345,7 +345,7 @@ sequenceDiagram
     API->>API: Validate: authenticated user's<br/>email matches invite email
     API->>DB: BEGIN TRANSACTION
     DB-->>DB: UPDATE organizer_invites<br/>SET status='accepted',<br/>accepted_at=NOW,<br/>accepted_by=userId
-    DB-->>DB: INSERT workspace_members (if workspace_id set)<br/>role='workspace_member'
+    DB-->>DB: INSERT workspace_members (if workspace_id set)<br/>role='workspace_owner' (first organizer) or 'workspace_admin' (if owner exists)
     API->>DB: COMMIT
     API-->>Org: 200 { ok: true, workspace_slug? }
 ```
@@ -377,7 +377,7 @@ stateDiagram-v2
 
 ## 7. Permission Matrix
 
-Complete permission matrix for all 7 built-in hackathon roles.
+Complete permission matrix for all 6 built-in hackathon roles.
 
 ### Hackathon Management
 
@@ -569,10 +569,10 @@ async function getTeam(c: Context) {
 ```
 GET    /api/v1/hackathons/:slug/my-role                   # Get current user's role
 GET    /api/v1/hackathons/:slug/organizers                 # List organizers (organizer+)
-POST   /api/v1/hackathons/:slug/organizers                 # Add organizer/co-organizer (admin_owner)
-PUT    /api/v1/hackathons/:slug/organizers/:userId         # Update organizer role (admin_owner)
-DELETE /api/v1/hackathons/:slug/organizers/:userId         # Remove organizer (admin_owner)
-POST   /api/v1/hackathons/:slug/transfer-ownership         # Transfer to another organizer (admin_owner)
+POST   /api/v1/hackathons/:slug/organizers                 # Add organizer/co-organizer (organizer)
+PUT    /api/v1/hackathons/:slug/organizers/:userId         # Update organizer role (organizer)
+DELETE /api/v1/hackathons/:slug/organizers/:userId         # Remove organizer (organizer)
+POST   /api/v1/hackathons/:slug/transfer-ownership         # Transfer to another organizer (organizer)
 ```
 
 ### My Role Response
@@ -675,7 +675,7 @@ sequenceDiagram
 
 ### `organizer_roles`
 
-Stores per-hackathon organizer assignments (owner, admin, moderator).
+Stores per-hackathon organizer assignments (organizer, co_organizer).
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -780,11 +780,11 @@ Workspace membership and roles.
 | Roles NOT in JWT | Per-request DB resolution | A user's role differs per hackathon. JWT-embedded roles would be stale instantly and require refresh on every role change | Role in JWT with refresh endpoint; role in JWT with short expiry |
 | Highest-wins resolution | First match in priority order | User with multiple relationships (organizer + judge) gets deterministic, predictable role. Avoids permission merging complexity | Merge all permissions from all sources; let user choose active role |
 | `anonymous` = authenticated | Separate concept from unauthenticated | Auth middleware blocks unauthenticated. Role system only deals with "what can this authenticated user do in this hackathon?" | anonymous = unauthenticated with public permissions |
-| Platform admin ≠ hackathon admin_owner | Separate table and middleware | Different trust domains. Platform admin manages infrastructure (`shikdd.devsage.org`); hackathon admin_owner manages one event. Conflating them creates privilege escalation risk | Single admin table with scope column; platform admin auto-gets hackathon admin_owner |
-| Built-in roles only (no custom roles) | 7 fixed tiers | Simplifies resolution, reduces complexity. 7 roles cover all use cases for hackathon management. Custom roles add significant complexity for rare edge cases. | Custom roles with cherry-picked permissions — over-engineered for v3 |
+| Platform admin ≠ hackathon organizer | Separate table and middleware | Different trust domains. Platform admin manages infrastructure (`shikdd.devsage.org`); hackathon organizer manages one event. Conflating them creates privilege escalation risk | Single admin table with scope column; platform admin auto-gets hackathon organizer |
+| Built-in roles only (no custom roles) | 6 fixed tiers | Simplifies resolution, reduces complexity. 6 roles cover all use cases for hackathon management. Custom roles add significant complexity for rare edge cases. | Custom roles with cherry-picked permissions — over-engineered for v3 |
 | No API keys | Session-based auth only | All access through authenticated sessions. API keys add complexity (key management, scoping, revocation) for a feature not needed at launch. | Per-hackathon API keys — premature, can add later if needed |
 | Workspace roles cascade as defaults only | Hackathon-level always wins | Organizers need per-hackathon control. A workspace admin might be a judge in a specific hackathon. Cascade provides convenience; override provides control | Workspace roles always apply; no cascade (manual assignment only) |
-| Ownership transfer requires target = organizer | Pre-validation | Prevents transferring to someone unfamiliar with the hackathon. Organizer status proves involvement | Transfer to any authenticated user; transfer to any role |
+| Ownership transfer requires target = co_organizer | Pre-validation | Prevents transferring to someone unfamiliar with the hackathon. Co-organizer status proves involvement | Transfer to any authenticated user; transfer to any role |
 | Workspace owner cannot leave | Must transfer first | Prevents orphaned workspaces with no management. Same pattern as GitHub org ownership | Allow leaving (auto-promote next admin); allow leaving (workspace becomes unmanaged) |
 | Invite-only team formation | No self-service registration | Organizers control participation. Team leads are invited, then they invite members. No public sign-up or team discovery. | Open registration — doesn't match invite-only model |
 

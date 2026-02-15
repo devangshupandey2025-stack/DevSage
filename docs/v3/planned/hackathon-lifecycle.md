@@ -65,7 +65,7 @@ const HACKATHON_STATUS_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> =
   active:    ['judging'],
   judging:   ['completed'],
   completed: ['archived'],
-  archived:  [],  // Terminal state
+  archived:  ['completed'],  // Un-archive for score corrections only
 };
 ```
 
@@ -116,7 +116,7 @@ flowchart TD
 
     D["active → judging"] --> D1["Trigger:<br/>- DO alarm at submission_deadline datetime<br/>- OR hourly cron (safety net)<br/>Preconditions:<br/>- submission_deadline has passed (cannot transition early)<br/>Effect:<br/>- All submissions locked (no new tags accepted)<br/>- Force push detection flags raised<br/>- No new invites accepted"]
 
-    E["judging → completed"] --> E1["Trigger:<br/>- All assigned judges have submitted scores for all assigned submissions<br/>- OR organizer forces finalization (overrides incomplete scoring)<br/>Preconditions (auto):<br/>- Every submission has scores from all assigned judges<br/>Preconditions (forced):<br/>- Organizer role >= admin<br/>- Warning acknowledged: 'N submissions have incomplete scores'"]
+    E["judging → completed"] --> E1["Trigger:<br/>- All assigned judges have submitted scores for all assigned submissions<br/>- OR organizer forces finalization (overrides incomplete scoring)<br/>Preconditions (auto):<br/>- Every submission has scores from all assigned judges<br/>Preconditions (forced):<br/>- Organizer role >= co_organizer<br/>- Warning acknowledged: 'N submissions have incomplete scores'"]
 
     F["completed → archived"] --> F1["Trigger:<br/>- Manual organizer action<br/>Preconditions:<br/>- None<br/>Effect:<br/>- All data becomes read-only<br/>- Leaderboard finalized"]
 ```
@@ -239,7 +239,7 @@ sequenceDiagram
     W->>W: Generate slug from title if not provided<br/>(lowercase, hyphenated, unique check)
 
     W->>D1: INSERT INTO hackathons (id, slug, title, ..., status='draft', workspace_id)
-    W->>D1: INSERT INTO organizer_roles (hackathon_id, user_id, role='owner')
+    W->>D1: INSERT INTO organizer_roles (hackathon_id, user_id, role='organizer')
     W->>D1: INSERT INTO hackathon_tracks (default track, if no tracks specified)
     W->>D1: INSERT INTO rubric_criteria (if provided)
 
@@ -269,8 +269,8 @@ sequenceDiagram
     participant D1 as D1 Database
     participant Q as NOTIFICATION_QUEUE
 
-    C->>W: PATCH /api/v1/hackathons/:slug/status<br/>{ status: "registration_open" }
-    W->>W: Verify role >= admin for this hackathon
+    C->>W: PATCH /api/v1/hackathons/:slug/status<br/>{ status: "active" }
+    W->>W: Verify role >= co_organizer for this hackathon
 
     W->>DO: POST /transition { target_status, expected_version }
     DO->>DO: Validate: is target_status in TRANSITIONS[current_status]?
@@ -590,13 +590,13 @@ sequenceDiagram
     participant DO as DO
 
     C->>W: POST /api/v1/hackathons/:slug/clone<br/>{ new_title, new_slug?, dates }
-    W->>W: Verify role >= admin on source hackathon
+    W->>W: Verify role >= co_organizer on source hackathon
     W->>D1: Fetch source hackathon + tracks + rubric + judges
 
     W->>D1: INSERT new hackathon (status=draft, new dates)
     W->>D1: INSERT cloned tracks (new IDs, same config)
     W->>D1: INSERT cloned rubric criteria (mapped to new track IDs)
-    W->>D1: INSERT organizer_roles (cloner as owner)
+    W->>D1: INSERT organizer_roles (cloner as organizer)
     W->>D1: INSERT judge invitations (re-invited, status=pending)
     W->>DO: POST /initialize (new hackathon ID, config)
 
@@ -662,7 +662,7 @@ Only allowed in `draft` state before any participants have registered. Once a ha
 
 ```
 DELETE /api/v1/hackathons/:slug
-- Requires: role = owner, status = draft
+- Requires: role = organizer, status = draft
 - Effect: Hard delete from D1, destroy DO instance
 - Audit: hackathon_deleted event (captured before deletion)
 ```
