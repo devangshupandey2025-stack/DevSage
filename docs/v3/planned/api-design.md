@@ -338,7 +338,7 @@ import { CreateTeamRequestSchema } from '@devsage/shared';
 app.post(
   '/teams',
   authMiddleware,
-  requireRole('participant'),
+  requireRole('team_member'),
   zValidator('json', CreateTeamRequestSchema),
   async (c) => {
     const body = c.req.valid('json');  // Fully typed, validated
@@ -372,7 +372,7 @@ app.get(
 app.get(
   '/teams/:teamId',
   authMiddleware,
-  requireRole('participant'),
+  requireRole('team_member'),
   zValidator('param', z.object({
     teamId: z.string().uuid(),
   })),
@@ -431,8 +431,8 @@ sequenceDiagram
 
     C->>MW: Request with JWT cookie
     MW->>MW: authMiddleware:<br/>Extract + verify JWT
-    MW->>MW: requireRole('participant'):<br/>1. Look up hackathon by slug<br/>2. Resolve user's role<br/>3. Check hierarchy
-    MW->>H: Context set:<br/>c.get('user') = JWTPayload<br/>c.get('hackathon') = Hackathon<br/>c.get('role') = 'team_leader'
+    MW->>MW: requireRole('team_member'):<br/>1. Look up hackathon by slug<br/>2. Resolve user's role<br/>3. Check hierarchy
+    MW->>H: Context set:<br/>c.get('user') = JWTPayload<br/>c.get('hackathon') = Hackathon<br/>c.get('role') = 'team_lead'
     H->>H: Handler-level checks<br/>(own team? assigned?)
     H->>C: Response
 ```
@@ -605,7 +605,7 @@ SSE endpoints provide real-time data streaming for activity feeds, notifications
 ### SSE Endpoints
 
 ```
-GET /api/v1/hackathons/:slug/events          # Hackathon activity stream (participant+)
+GET /api/v1/hackathons/:slug/events          # Hackathon activity stream (team_member+)
 GET /api/v1/notifications/stream              # User notification stream (authenticated)
 GET /api/v1/hackathons/:slug/leaderboard/live # Live leaderboard updates (during judging)
 ```
@@ -638,7 +638,7 @@ data: {"timestamp":"2026-03-15T14:31:00Z"}
 ```mermaid
 flowchart TD
     A["Client: EventSource('/api/v1/.../events')"] --> B["authMiddleware<br/>(JWT from cookie)"]
-    B --> C["requireRole('participant')"]
+    B --> C["requireRole('team_member')"]
     C --> D["Open SSE stream<br/>(Response with Transfer-Encoding: chunked)"]
     D --> E["Subscribe to Durable Object<br/>(Real-Time Gateway)"]
     E --> F["Stream events as they arrive"]
@@ -679,7 +679,7 @@ const corsConfig = {
     const allowed = [
       env.FRONTEND_URL,          // https://devsage.org
       env.PLATFORM_URL,          // https://platform.devsage.org
-      env.ADMIN_URL,             // https://admin.devsage.org
+      env.ADMIN_URL,             // https://shikdd.devsage.org
       'http://localhost:5173',   // Vite dev (web)
       'http://localhost:5174',   // Vite dev (admin)
       'http://localhost:5175',   // Vite dev (docs)
@@ -726,43 +726,43 @@ const corsConfig = {
 | GET | `/hackathons` | – | – | List non-draft hackathons |
 | POST | `/hackathons` | JWT | organizer | Create hackathon |
 | GET | `/hackathons/:slug` | opt | anonymous | Get hackathon details |
-| PUT | `/hackathons/:slug` | JWT | admin | Update hackathon |
-| PATCH | `/hackathons/:slug/status` | JWT | admin | Transition state |
-| DELETE | `/hackathons/:slug` | JWT | owner | Delete hackathon (draft only) |
-| POST | `/hackathons/:slug/clone` | JWT | admin | Clone hackathon |
-| POST | `/hackathons/:slug/transfer-ownership` | JWT | owner | Transfer to admin |
+| PUT | `/hackathons/:slug` | JWT | co_organizer | Update hackathon |
+| PATCH | `/hackathons/:slug/status` | JWT | co_organizer | Transition state |
+| DELETE | `/hackathons/:slug` | JWT | organizer | Delete hackathon (draft only) |
+| POST | `/hackathons/:slug/clone` | JWT | co_organizer | Clone hackathon |
+| POST | `/hackathons/:slug/transfer-ownership` | JWT | organizer | Transfer to co_organizer |
 | GET | `/hackathons/:slug/my-role` | JWT | anonymous | Get user's role |
-| GET | `/hackathons/:slug/events` | JWT | participant | SSE activity stream |
+| GET | `/hackathons/:slug/events` | JWT | team_member | SSE activity stream |
 
 ### Teams
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
 | GET | `…/:slug/teams` | opt | anonymous | List teams |
-| POST | `…/:slug/teams` | JWT | participant | Create team |
-| GET | `…/:slug/teams/:teamId` | JWT | participant | Get team details |
-| PUT | `…/:slug/teams/:teamId` | JWT | team_leader | Update team |
-| DELETE | `…/:slug/teams/:teamId` | JWT | team_leader | Dissolve team |
-| POST | `…/:slug/teams/:teamId/join` | JWT | participant | Join via invite code |
-| POST | `…/:slug/teams/:teamId/leave` | JWT | participant | Leave team |
-| DELETE | `…/:slug/teams/:teamId/members/:userId` | JWT | team_leader | Remove member |
-| POST | `…/:slug/teams/:teamId/transfer-leader` | JWT | team_leader | Transfer leadership |
-| GET | `…/:slug/teams/:teamId/repos` | JWT | participant | List linked repos |
-| POST | `…/:slug/teams/:teamId/repos` | JWT | team_leader | Link repository |
-| DELETE | `…/:slug/teams/:teamId/repos/:repoId` | JWT | team_leader | Unlink repository |
-| GET | `…/:slug/teams/:teamId/commits` | JWT | participant | Commit log (cursor) |
-| GET | `…/:slug/teams/:teamId/bot-status` | JWT | team_leader | Bot health check |
-| POST | `…/:slug/teams/:teamId/invites` | JWT | team_leader | Send team invite (email) |
-| GET | `…/:slug/teams/:teamId/invites` | JWT | team_leader | List pending team invites |
-| DELETE | `…/:slug/teams/:teamId/invites/:inviteId` | JWT | team_leader | Revoke team invite |
+| POST | `…/:slug/teams` | JWT | team_member | Create team |
+| GET | `…/:slug/teams/:teamId` | JWT | team_member | Get team details |
+| PUT | `…/:slug/teams/:teamId` | JWT | team_lead | Update team |
+| DELETE | `…/:slug/teams/:teamId` | JWT | team_lead | Dissolve team |
+| POST | `…/:slug/teams/:teamId/join` | JWT | team_member | Join via invite code |
+| POST | `…/:slug/teams/:teamId/leave` | JWT | team_member | Leave team |
+| DELETE | `…/:slug/teams/:teamId/members/:userId` | JWT | team_lead | Remove member |
+| POST | `…/:slug/teams/:teamId/transfer-leader` | JWT | team_lead | Transfer leadership |
+| GET | `…/:slug/teams/:teamId/repos` | JWT | team_member | List linked repos |
+| POST | `…/:slug/teams/:teamId/repos` | JWT | team_lead | Link repository |
+| DELETE | `…/:slug/teams/:teamId/repos/:repoId` | JWT | team_lead | Unlink repository |
+| GET | `…/:slug/teams/:teamId/commits` | JWT | team_member | Commit log (cursor) |
+| GET | `…/:slug/teams/:teamId/bot-status` | JWT | team_lead | Bot health check |
+| POST | `…/:slug/teams/:teamId/invites` | JWT | team_lead | Send team invite (email) |
+| GET | `…/:slug/teams/:teamId/invites` | JWT | team_lead | List pending team invites |
+| DELETE | `…/:slug/teams/:teamId/invites/:inviteId` | JWT | team_lead | Revoke team invite |
 
 ### Submissions
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/submissions` | JWT | participant | List submissions |
-| GET | `…/:slug/submissions/:subId` | JWT | participant | Get submission details |
-| POST | `…/:slug/submissions/:subId/finalize` | JWT | team_leader | Mark as final |
+| GET | `…/:slug/submissions` | JWT | team_member | List submissions |
+| GET | `…/:slug/submissions/:subId` | JWT | team_member | Get submission details |
+| POST | `…/:slug/submissions/:subId/finalize` | JWT | team_lead | Mark as final |
 | GET | `…/:slug/submissions/:subId/diff` | JWT | judge | View submission diff |
 | GET | `…/:slug/submissions/:subId/ai-review` | JWT | judge | Get AI review |
 
@@ -770,40 +770,40 @@ const corsConfig = {
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| POST | `…/:slug/judges` | JWT | admin | Invite judge |
-| GET | `…/:slug/judges` | JWT | admin | List judges |
+| POST | `…/:slug/judges` | JWT | co_organizer | Invite judge |
+| GET | `…/:slug/judges` | JWT | co_organizer | List judges |
 | POST | `…/:slug/judges/:id/respond` | JWT | anonymous | Accept/decline invite |
-| DELETE | `…/:slug/judges/:id` | JWT | admin | Remove judge |
+| DELETE | `…/:slug/judges/:id` | JWT | co_organizer | Remove judge |
 | GET | `…/:slug/rubric` | opt | anonymous | Get rubric criteria |
-| POST | `…/:slug/rubric` | JWT | admin | Create/update rubric |
-| POST | `…/:slug/judges/assign` | JWT | admin | Run auto-assignment |
+| POST | `…/:slug/rubric` | JWT | co_organizer | Create/update rubric |
+| POST | `…/:slug/judges/assign` | JWT | co_organizer | Run auto-assignment |
 | GET | `…/:slug/judges/:id/assignments` | JWT | judge | Get judge's assignments |
 | POST | `…/:slug/scores` | JWT | judge | Submit scores (batch) |
-| GET | `…/:slug/scores` | JWT | admin | List all scores |
+| GET | `…/:slug/scores` | JWT | co_organizer | List all scores |
 | GET | `…/:slug/leaderboard` | opt | anonymous | Weighted leaderboard |
-| GET | `…/:slug/leaderboard/live` | JWT | moderator | SSE live leaderboard |
-| POST | `…/:slug/results/publish` | JWT | admin | Publish final results |
+| GET | `…/:slug/leaderboard/live` | JWT | co_organizer | SSE live leaderboard |
+| POST | `…/:slug/results/publish` | JWT | co_organizer | Publish final results |
 
 ### Rounds
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/rounds` | JWT | participant | List rounds |
-| POST | `…/:slug/rounds` | JWT | admin | Create round |
-| GET | `…/:slug/rounds/:roundId` | JWT | participant | Get round details |
-| PUT | `…/:slug/rounds/:roundId` | JWT | admin | Update round |
-| DELETE | `…/:slug/rounds/:roundId` | JWT | admin | Delete round (draft only) |
-| PATCH | `…/:slug/rounds/:roundId/status` | JWT | admin | Transition round state (active/judging/completed) |
-| POST | `…/:slug/rounds/:roundId/eliminate` | JWT | admin | Eliminate teams from round |
+| GET | `…/:slug/rounds` | JWT | team_member | List rounds |
+| POST | `…/:slug/rounds` | JWT | co_organizer | Create round |
+| GET | `…/:slug/rounds/:roundId` | JWT | team_member | Get round details |
+| PUT | `…/:slug/rounds/:roundId` | JWT | co_organizer | Update round |
+| DELETE | `…/:slug/rounds/:roundId` | JWT | co_organizer | Delete round (draft only) |
+| PATCH | `…/:slug/rounds/:roundId/status` | JWT | co_organizer | Transition round state (active/judging/completed) |
+| POST | `…/:slug/rounds/:roundId/eliminate` | JWT | co_organizer | Eliminate teams from round |
 
 ### Participant Invites (Hackathon-Level)
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| POST | `…/:slug/invites` | JWT | admin | Create invite (email or generate link) |
-| GET | `…/:slug/invites` | JWT | admin | List all invites |
-| DELETE | `…/:slug/invites/:inviteId` | JWT | admin | Revoke invite |
-| GET | `…/:slug/invites/link` | JWT | admin | Get/regenerate shareable invite link |
+| POST | `…/:slug/invites` | JWT | co_organizer | Create invite (email or generate link) |
+| GET | `…/:slug/invites` | JWT | co_organizer | List all invites |
+| DELETE | `…/:slug/invites/:inviteId` | JWT | co_organizer | Revoke invite |
+| GET | `…/:slug/invites/link` | JWT | co_organizer | Get/regenerate shareable invite link |
 | GET | `…/:slug/invites/:code/check` | – | – | Check invite validity (public) |
 | POST | `…/:slug/invites/:code/accept` | JWT | – | Accept invite and join hackathon |
 
@@ -811,40 +811,40 @@ const corsConfig = {
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/organizers` | JWT | admin | List organizers |
-| POST | `…/:slug/organizers` | JWT | owner | Add organizer |
-| PUT | `…/:slug/organizers/:userId` | JWT | owner | Update organizer role |
-| DELETE | `…/:slug/organizers/:userId` | JWT | owner | Remove organizer |
+| GET | `…/:slug/organizers` | JWT | co_organizer | List organizers |
+| POST | `…/:slug/organizers` | JWT | organizer | Add organizer |
+| PUT | `…/:slug/organizers/:userId` | JWT | organizer | Update organizer role |
+| DELETE | `…/:slug/organizers/:userId` | JWT | organizer | Remove organizer |
 
 ### Webhook Deliveries & Force Pushes
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/webhook-deliveries` | JWT | admin | List webhook deliveries |
-| GET | `…/:slug/webhook-deliveries/:id` | JWT | admin | Get delivery details |
-| POST | `…/:slug/webhook-deliveries/:id/retry` | JWT | admin | Retry dead-lettered |
-| GET | `…/:slug/force-pushes` | JWT | moderator | List force pushes |
-| PUT | `…/:slug/force-pushes/:id/resolve` | JWT | admin | Mark as reviewed |
+| GET | `…/:slug/webhook-deliveries` | JWT | co_organizer | List webhook deliveries |
+| GET | `…/:slug/webhook-deliveries/:id` | JWT | co_organizer | Get delivery details |
+| POST | `…/:slug/webhook-deliveries/:id/retry` | JWT | co_organizer | Retry dead-lettered |
+| GET | `…/:slug/force-pushes` | JWT | co_organizer | List force pushes |
+| PUT | `…/:slug/force-pushes/:id/resolve` | JWT | co_organizer | Mark as reviewed |
 
 ### Hackathon Notifications Config
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/notifications/config` | JWT | admin | Get notification config |
-| PUT | `…/:slug/notifications/config` | JWT | admin | Update notification config |
-| POST | `…/:slug/notifications/broadcast` | JWT | admin | Send announcement |
-| GET | `…/:slug/notifications/deliveries` | JWT | admin | Delivery history |
-| GET | `…/:slug/notifications/stats` | JWT | admin | Delivery statistics |
+| GET | `…/:slug/notifications/config` | JWT | co_organizer | Get notification config |
+| PUT | `…/:slug/notifications/config` | JWT | co_organizer | Update notification config |
+| POST | `…/:slug/notifications/broadcast` | JWT | co_organizer | Send announcement |
+| GET | `…/:slug/notifications/deliveries` | JWT | co_organizer | Delivery history |
+| GET | `…/:slug/notifications/stats` | JWT | co_organizer | Delivery statistics |
 
 ### Audit Trail
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `…/:slug/audit` | JWT | admin | Query audit trail (cursor) |
-| GET | `…/:slug/audit/:eventId` | JWT | admin | Get single event |
-| GET | `…/:slug/audit/entity/:type/:id` | JWT | admin | Events for entity |
-| GET | `…/:slug/audit/actor/:actorId` | JWT | admin | Events by actor |
-| GET | `…/:slug/audit/export` | JWT | admin | Export audit data |
+| GET | `…/:slug/audit` | JWT | co_organizer | Query audit trail (cursor) |
+| GET | `…/:slug/audit/:eventId` | JWT | co_organizer | Get single event |
+| GET | `…/:slug/audit/entity/:type/:id` | JWT | co_organizer | Events for entity |
+| GET | `…/:slug/audit/actor/:actorId` | JWT | co_organizer | Events by actor |
+| GET | `…/:slug/audit/export` | JWT | co_organizer | Export audit data |
 
 > **Phase 2**: Hash chain integrity verification (`/audit/integrity`), R2 archive listing (`/audit/archives`).
 
