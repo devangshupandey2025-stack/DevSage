@@ -1,6 +1,6 @@
 # Webhooks & Integrations
 
-> Multi-provider VCS integration platform with asynchronous webhook pipeline, internal event bus, normalized event model, provider marketplace, and outbound webhook delivery — enabling GitHub, GitLab, and Bitbucket repositories to drive submission capture, commit tracking, force push detection, and bot lifecycle management through a unified processing layer.
+> GitHub App integration with asynchronous webhook pipeline, internal event bus, and normalized event model — enabling GitHub repositories to drive submission capture, commit tracking, force push detection, and bot lifecycle management through a structured processing layer.
 
 ---
 
@@ -9,26 +9,21 @@
 - [Design Goals](#design-goals)
 - [1. Integration Architecture](#1-integration-architecture)
 - [2. Inbound Webhook Pipeline](#2-inbound-webhook-pipeline)
-- [3. Provider Abstraction](#3-provider-abstraction)
-- [4. GitHub Integration](#4-github-integration)
-- [5. GitLab Integration](#5-gitlab-integration)
-- [6. Bitbucket Integration](#6-bitbucket-integration)
-- [7. Event Normalization](#7-event-normalization)
-- [8. Queue Processing](#8-queue-processing)
-- [9. Push Handler](#9-push-handler)
-- [10. Tag Handler](#10-tag-handler)
-- [11. Installation Handler](#11-installation-handler)
-- [12. Force Push Detection](#12-force-push-detection)
-- [13. Commit Status Posting](#13-commit-status-posting)
-- [14. Internal Event Bus](#14-internal-event-bus)
-- [15. Outbound Webhooks](#15-outbound-webhooks)
-- [16. Integration Marketplace](#16-integration-marketplace)
-- [17. Idempotency & Reliability](#17-idempotency--reliability)
-- [18. API Endpoints](#18-api-endpoints)
-- [19. Edge Cases](#19-edge-cases)
-- [20. Error Codes](#20-error-codes)
-- [21. Database Tables](#21-database-tables)
-- [22. Decision Log](#22-decision-log)
+- [3. GitHub Integration](#3-github-integration)
+- [4. Event Normalization](#4-event-normalization)
+- [5. Queue Processing](#5-queue-processing)
+- [6. Push Handler](#6-push-handler)
+- [7. Tag Handler](#7-tag-handler)
+- [8. Installation Handler](#8-installation-handler)
+- [9. Force Push Detection](#9-force-push-detection)
+- [10. Commit Status Posting](#10-commit-status-posting)
+- [11. Internal Event Bus](#11-internal-event-bus)
+- [12. Idempotency & Reliability](#12-idempotency--reliability)
+- [13. API Endpoints](#13-api-endpoints)
+- [14. Edge Cases](#14-edge-cases)
+- [15. Error Codes](#15-error-codes)
+- [16. Database Tables](#16-database-tables)
+- [17. Decision Log](#17-decision-log)
 
 ---
 
@@ -36,13 +31,12 @@
 
 | Goal | Description |
 |------|-------------|
-| Multi-provider VCS | Support GitHub, GitLab, and Bitbucket through a unified normalized event model |
+| GitHub-first VCS | GitHub App integration as the sole VCS provider. Provider abstraction exists for future extensibility |
 | Sub-50ms ingestion | Webhook endpoint does only verify → normalize → enqueue. Zero D1 writes, zero external API calls in the synchronous path |
 | Exactly-once processing | Idempotency at every layer — webhook delivery ID, DB constraints, DO locks — so redelivered webhooks are safe |
-| Internal event bus | All system events (not just VCS) flow through a single bus for notifications, audit, analytics, and outbound webhooks |
-| Outbound webhooks | Organizers can register webhook endpoints to receive hackathon events in real time |
-| Provider marketplace | Pluggable integration model so new VCS providers or third-party tools can be added without core changes |
-| Fail-open external calls | GitHub/GitLab/Bitbucket API calls (commit statuses, etc.) use 10-second timeouts and never block submission processing |
+| Internal event bus | All system events (not just VCS) flow through a single bus for notifications, audit, and analytics |
+| Rounds-aware submissions | Tag handler maps submission tags to hackathon rounds, associating each submission with the correct round |
+| Fail-open external calls | GitHub API calls (commit statuses, etc.) use 10-second timeouts and never block submission processing |
 | Observable | Every webhook received, processed, failed, or dead-lettered is logged for debugging and audit |
 
 ---
@@ -51,16 +45,14 @@
 
 ```mermaid
 flowchart TD
-    subgraph "Inbound (VCS → DevSage)"
+    subgraph "Inbound (GitHub → DevSage)"
         GH["GitHub App"]
-        GL["GitLab Webhook"]
-        BB["Bitbucket Webhook"]
     end
 
     subgraph "API Worker — Synchronous Path"
-        WH["POST /webhooks/:provider"]
-        WH --> SIG["Signature Verification<br/>(provider-specific)"]
-        SIG --> NORM["Event Normalization<br/>(provider → NormalizedEvent)"]
+        WH["POST /webhooks/github"]
+        WH --> SIG["Signature Verification<br/>(HMAC-SHA256)"]
+        SIG --> NORM["Event Normalization<br/>(GitHub → NormalizedEvent)"]
         NORM --> ENQ["Enqueue → WEBHOOK_QUEUE"]
     end
 
@@ -70,7 +62,6 @@ flowchart TD
         DISP --> PH["Push Handler"]
         DISP --> TH["Tag Handler"]
         DISP --> IH["Installation Handler"]
-        DISP --> MH["Merge/PR Handler"]
     end
 
     subgraph "Internal Event Bus"
@@ -78,18 +69,14 @@ flowchart TD
         BUS --> NF["Notification Handler"]
         BUS --> AU["Audit Handler"]
         BUS --> AN["Analytics Handler"]
-        BUS --> OW["Outbound Webhook Dispatcher"]
+        BUS --> RT["Real-time Broadcaster<br/>(WebSocket/SSE)"]
     end
 
-    subgraph "Outbound (DevSage → External)"
+    subgraph "Outbound (DevSage → GitHub)"
         CS["Commit Status API"]
-        OWH["Organizer Webhook Endpoints"]
-        SL["Slack / Discord"]
     end
 
     GH -->|POST + HMAC-SHA256| WH
-    GL -->|POST + X-Gitlab-Token| WH
-    BB -->|POST + HMAC-SHA256| WH
 
     PH --> BUS
     TH --> BUS
@@ -97,8 +84,6 @@ flowchart TD
 
     PH --> CS
     TH --> CS
-    OW --> OWH
-    OW --> SL
 
     style WH fill:#3b82f6,color:#fff
     style BUS fill:#7c3aed,color:#fff
@@ -112,100 +97,39 @@ The synchronous webhook handler is deliberately minimal. Its only job is to auth
 
 ```mermaid
 sequenceDiagram
-    participant VCS as VCS Provider
+    participant GH as GitHub
     participant W as API Worker
     participant Q as WEBHOOK_QUEUE
 
-    VCS->>W: POST /webhooks/:provider<br/>Headers: signature, event type, delivery ID
-    W->>W: 1. Look up provider config<br/>(signature algorithm, secret binding)
-    W->>W: 2. Verify cryptographic signature<br/>(timing-safe comparison)
-    W->>W: 3. Extract delivery ID<br/>(idempotency key)
-    W->>W: 4. Parse event type from header
-    W->>W: 5. normalizeEvent(provider, type, payload, deliveryId)
+    GH->>W: POST /webhooks/github<br/>Headers: x-hub-signature-256,<br/>x-github-event, x-github-delivery
+    W->>W: 1. Verify HMAC-SHA256 signature<br/>(timing-safe comparison)
+    W->>W: 2. Extract delivery ID<br/>(x-github-delivery header)
+    W->>W: 3. Extract event type<br/>(x-github-event header)
+    W->>W: 4. normalizeEvent(type, payload, deliveryId)
 
     alt Valid signature + recognized event
-        W->>Q: env.WEBHOOK_QUEUE.send({<br/>  provider, deliveryId,<br/>  normalizedEvent<br/>})
-        W-->>VCS: 202 Accepted
+        W->>Q: env.WEBHOOK_QUEUE.send({<br/>  deliveryId,<br/>  normalizedEvent<br/>})
+        W-->>GH: 202 Accepted
     else Valid signature + unknown event
-        W-->>VCS: 200 OK (acknowledged, discarded)
+        W-->>GH: 200 OK (acknowledged, discarded)
     else Invalid signature
-        W-->>VCS: 401 Invalid signature
+        W-->>GH: 401 Invalid signature
     end
 
     Note over W: Total wall-clock: <50ms<br/>Zero D1 writes<br/>Zero external API calls
 ```
 
-### Signature Verification by Provider
+### Signature Verification
 
-| Provider | Header | Algorithm | Secret Binding |
-|----------|--------|-----------|---------------|
-| GitHub | `x-hub-signature-256` | HMAC-SHA256 | `GITHUB_WEBHOOK_SECRET` |
-| GitLab | `x-gitlab-token` | Direct token comparison | `GITLAB_WEBHOOK_TOKEN` |
-| Bitbucket | `x-hub-signature` | HMAC-SHA256 | `BITBUCKET_WEBHOOK_SECRET` |
+| Header | Algorithm | Secret Binding |
+|--------|-----------|---------------|
+| `x-hub-signature-256` | HMAC-SHA256 | `GITHUB_WEBHOOK_SECRET` |
 
-All HMAC verifications use `crypto.subtle` with timing-safe comparison to prevent timing attacks.
+HMAC verification uses `crypto.subtle` with timing-safe comparison to prevent timing attacks.
 
 ---
 
-## 3. Provider Abstraction
-
-Each VCS provider implements a `WebhookProvider` interface that handles the differences in payload format, authentication, and API capabilities.
-
-```typescript
-interface WebhookProvider {
-  readonly name: 'github' | 'gitlab' | 'bitbucket';
-
-  // Signature verification
-  verifySignature(request: Request, secret: string): Promise<boolean>;
-
-  // Extract provider-specific metadata
-  extractDeliveryId(request: Request): string;
-  extractEventType(request: Request): string;
-
-  // Normalize raw payload into unified event
-  normalizeEvent(
-    eventType: string,
-    payload: unknown,
-    deliveryId: string
-  ): NormalizedEvent | null;  // null = unrecognized, discard
-
-  // Outbound API calls (fail-open)
-  postCommitStatus(params: CommitStatusParams): Promise<void>;
-  getFileContent(params: FileContentParams): Promise<string | null>;
-  listBranches(params: ListBranchesParams): Promise<string[]>;
-}
-
-interface CommitStatusParams {
-  repoFullName: string;
-  sha: string;
-  state: 'success' | 'failure' | 'pending';
-  description: string;
-  context: string;        // e.g., "devsage/submission"
-  targetUrl?: string;     // Link back to DevSage
-  accessToken: string;
-}
-```
-
-### Provider Registration
-
-```typescript
-interface ProviderRegistry {
-  providers: Map<string, WebhookProvider>;
-
-  register(provider: WebhookProvider): void;
-  get(name: string): WebhookProvider | null;
-  list(): WebhookProvider[];
-}
-
-// Built-in providers registered at startup
-registry.register(new GitHubProvider());
-registry.register(new GitLabProvider());
-registry.register(new BitbucketProvider());
-```
-
----
-
-## 4. GitHub Integration
+## 3. GitHub Integration
 
 ### GitHub App Configuration
 
@@ -214,9 +138,9 @@ registry.register(new BitbucketProvider());
 | Type | GitHub App (not OAuth App) |
 | Webhook URL | `https://api.devsage.org/webhooks/github` |
 | Permissions | Contents (Read), Metadata (Read), Commit statuses (Write) |
-| Subscribed Events | `push`, `create`, `delete`, `installation`, `installation_repositories`, `pull_request` |
+| Subscribed Events | `push`, `create`, `delete`, `installation`, `installation_repositories` |
 | Authentication | HMAC-SHA256 (`x-hub-signature-256`) |
-| Installation scope | Per-repository (user selects repos during install) |
+| Installation scope | Per-repository (team lead selects repos during install) |
 
 ### GitHub Event Mapping
 
@@ -231,7 +155,6 @@ registry.register(new BitbucketProvider());
 | `installation` | `action = 'deleted'` | `app_uninstalled` |
 | `installation_repositories` | `action = 'added'` | `repos_added` |
 | `installation_repositories` | `action = 'removed'` | `repos_removed` |
-| `pull_request` | `action = 'opened' \| 'synchronize'` | `pull_request` |
 
 ### GitHub App Authentication for API Calls
 
@@ -249,95 +172,31 @@ Token caching: Installation tokens are cached in KV with 55-minute TTL (5-minute
 
 ---
 
-## 5. GitLab Integration
+## 4. Event Normalization
 
-### GitLab Webhook Configuration
-
-| Property | Value |
-|----------|-------|
-| Type | Project webhook (configured per-repo in GitLab) |
-| Webhook URL | `https://api.devsage.org/webhooks/gitlab` |
-| Secret Token | `GITLAB_WEBHOOK_TOKEN` (shared per DevSage instance) |
-| Events | Push events, Tag push events, Merge request events |
-| Authentication | `X-Gitlab-Token` header (direct comparison) |
-
-### GitLab Event Mapping
-
-| GitLab Event | Condition | Normalized Type |
-|-------------|-----------|----------------|
-| Push Hook | `ref` starts with `refs/heads/` | `push` |
-| Tag Push Hook | `ref` starts with `refs/tags/` + `after ≠ 000...` | `tag_created` |
-| Tag Push Hook | `ref` starts with `refs/tags/` + `after = 000...` | `tag_deleted` |
-| Merge Request Hook | `action = 'open' \| 'update'` | `pull_request` |
-
-### GitLab API Authentication
-
-GitLab uses project-level access tokens. Each linked GitLab repo stores a `project_access_token` (encrypted at rest) used for commit status posting and file reads.
-
----
-
-## 6. Bitbucket Integration
-
-### Bitbucket Webhook Configuration
-
-| Property | Value |
-|----------|-------|
-| Type | Repository webhook (configured per-repo in Bitbucket) |
-| Webhook URL | `https://api.devsage.org/webhooks/bitbucket` |
-| Events | `repo:push`, `pullrequest:created`, `pullrequest:updated` |
-| Authentication | HMAC-SHA256 (`X-Hub-Signature` header) |
-
-### Bitbucket Event Mapping
-
-| Bitbucket Event | Condition | Normalized Type |
-|----------------|-----------|----------------|
-| `repo:push` | Change includes tag ref | `tag_created` or `tag_deleted` |
-| `repo:push` | Change includes branch ref | `push` |
-| `pullrequest:created` | – | `pull_request` |
-| `pullrequest:updated` | – | `pull_request` |
-
-### Bitbucket Limitations
-
-- Bitbucket doesn't separate tag creates from pushes — both arrive as `repo:push`. The handler inspects the `changes[]` array to detect tag operations.
-- Force push detection uses the `changes[].forced` flag (available since Bitbucket API v2.0).
-- Commit status posting uses app passwords (stored encrypted per-linked-repo).
-
----
-
-## 7. Event Normalization
-
-All provider-specific payloads are normalized into a unified event model before enqueuing.
+All GitHub-specific payloads are normalized into a unified event model before enqueuing. The normalized model uses a provider-agnostic interface to allow future VCS provider support without changing downstream handlers.
 
 ```mermaid
 flowchart LR
-    subgraph "Raw Provider Events"
-        R1["GitHub push"]
-        R2["GitLab Push Hook"]
-        R3["Bitbucket repo:push"]
-        R4["GitHub create (tag)"]
-        R5["GitLab Tag Push Hook"]
-        R6["GitHub installation"]
-        R7["GitHub pull_request"]
-        R8["GitLab Merge Request"]
-        R9["Bitbucket pullrequest"]
+    subgraph "Raw GitHub Events"
+        R1["push"]
+        R2["create (tag)"]
+        R3["delete (tag)"]
+        R4["installation"]
+        R5["installation_repositories"]
     end
 
     subgraph "Normalized Events"
         N1["NormalizedPushEvent"]
         N2["NormalizedTagEvent"]
         N3["NormalizedInstallationEvent"]
-        N4["NormalizedPullRequestEvent"]
     end
 
     R1 --> N1
-    R2 --> N1
-    R3 --> N1
-    R4 --> N2
-    R5 --> N2
-    R6 --> N3
-    R7 --> N4
-    R8 --> N4
-    R9 --> N4
+    R2 --> N2
+    R3 --> N2
+    R4 --> N3
+    R5 --> N3
 ```
 
 ### Normalized Event Types
@@ -345,22 +204,22 @@ flowchart LR
 ```typescript
 // Base for all normalized events
 interface NormalizedEventBase {
-  deliveryId: string;          // Provider's delivery/request ID (idempotency key)
-  provider: 'github' | 'gitlab' | 'bitbucket';
+  deliveryId: string;          // GitHub's x-github-delivery header (idempotency key)
+  provider: 'github';          // Currently GitHub-only. Field exists for future extensibility
   receivedAt: string;          // ISO-8601 when DevSage received the webhook
 }
 
 interface NormalizedPushEvent extends NormalizedEventBase {
   type: 'push';
-  repoFullName: string;        // "owner/repo" (GitHub/BB) or "namespace/project" (GitLab)
+  repoFullName: string;        // "owner/repo"
   branch: string;              // "main", "develop", etc.
   forced: boolean;             // Force push flag
   headSha: string;             // New HEAD after push
   beforeSha: string;           // Previous HEAD before push
   commits: NormalizedCommit[]; // Up to 20 most recent
-  pusherLogin: string;         // Username of the pusher
+  pusherLogin: string;         // GitHub username of the pusher
   pusherEmail: string | null;  // Email if available
-  compareUrl: string | null;   // Provider's compare URL (before...after)
+  compareUrl: string | null;   // GitHub compare URL (before...after)
 }
 
 interface NormalizedCommit {
@@ -369,7 +228,7 @@ interface NormalizedCommit {
   authorName: string;
   authorEmail: string;
   timestamp: string;           // ISO-8601
-  url: string;                 // Link to commit on provider
+  url: string;                 // Link to commit on GitHub
   added: string[];             // Files added
   modified: string[];          // Files modified
   removed: string[];           // Files removed
@@ -394,38 +253,22 @@ interface NormalizedInstallationEvent extends NormalizedEventBase {
   senderLogin: string;
 }
 
-interface NormalizedPullRequestEvent extends NormalizedEventBase {
-  type: 'pull_request';
-  action: 'opened' | 'updated';
-  repoFullName: string;
-  prNumber: number;
-  prTitle: string;
-  prBody: string;
-  sourceBranch: string;
-  targetBranch: string;
-  headSha: string;
-  authorLogin: string;
-  url: string;                 // Link to PR on provider
-}
-
 type NormalizedEvent =
   | NormalizedPushEvent
   | NormalizedTagEvent
-  | NormalizedInstallationEvent
-  | NormalizedPullRequestEvent;
+  | NormalizedInstallationEvent;
 ```
 
 ---
 
-## 8. Queue Processing
+## 5. Queue Processing
 
 ### Queue Configuration
 
 | Queue | Binding | Purpose | Max Batch | Max Retries | Retry Delay |
 |-------|---------|---------|-----------|-------------|-------------|
-| `webhook-inbound` | `WEBHOOK_QUEUE` | VCS webhook processing | 10 | 3 | Exponential (30s, 2min, 10min) |
+| `webhook-inbound` | `WEBHOOK_QUEUE` | GitHub webhook processing | 10 | 3 | Exponential (30s, 2min, 10min) |
 | `event-bus` | `EVENT_QUEUE` | Internal event distribution | 10 | 3 | Exponential (30s, 2min, 10min) |
-| `outbound-webhooks` | `OUTBOUND_WEBHOOK_QUEUE` | Organizer webhook delivery | 5 | 5 | Exponential (1min, 5min, 15min, 30min, 1hr) |
 
 ### Dispatcher
 
@@ -438,15 +281,13 @@ flowchart TD
     B -->|tag_deleted| E["tagDeleteHandler(event)"]
     B -->|app_installed / repos_added| F["installationHandler(event)"]
     B -->|app_uninstalled / repos_removed| G["installationHandler(event)"]
-    B -->|pull_request| H["pullRequestHandler(event)"]
-    B -->|unknown| I["Log warning + ack"]
+    B -->|unknown| H["Log warning + ack"]
 
-    C --> J["Emit to EVENT_QUEUE"]
-    D --> J
-    E --> J
-    F --> J
-    G --> J
-    H --> J
+    C --> I["Emit to EVENT_QUEUE"]
+    D --> I
+    E --> I
+    F --> I
+    G --> I
 ```
 
 ### Dead Letter Handling
@@ -461,7 +302,7 @@ After `max_retries` failures:
 
 ---
 
-## 9. Push Handler
+## 6. Push Handler
 
 Processes push events: logs commits to the commit log and detects force pushes.
 
@@ -500,9 +341,9 @@ flowchart TD
 
 ---
 
-## 10. Tag Handler
+## 7. Tag Handler
 
-Processes tag creation and deletion events. Tag creation drives the submission pipeline.
+Processes tag creation and deletion events. Tag creation drives the submission pipeline. The handler is **rounds-aware** — it maps each submission tag to the currently active round.
 
 ### Tag Create Flow
 
@@ -514,19 +355,37 @@ flowchart TD
     C -->|Yes| E["Get hackathon config<br/>(submission_tag_pattern)"]
     E --> F{"Tag matches pattern?<br/>(regex: e.g., ^submission_v\\d+$)"}
     F -->|No| G["Ack + skip<br/>(not a submission tag)"]
-    F -->|Yes| H["Idempotency check<br/>(delivery_id)"]
-    H --> I["Call HackathonStateMachine DO<br/>POST /accept-submission"]
-    I --> J{"DO response?"}
-    J -->|accepted| K["INSERT submission<br/>(status: 'received')"]
-    K --> L["Post commit status (success)<br/>via provider.postCommitStatus()"]
-    L --> M["Emit: submission.received"]
-    J -->|rejected (deadline, locked, etc.)| N["INSERT submission<br/>(status: 'invalid',<br/>rejection_reason)"]
-    N --> O["Post commit status (failure)<br/>via provider.postCommitStatus()"]
-    O --> P["Emit: submission.rejected"]
+    F -->|Yes| H["Extract version from tag name<br/>(version = round number)"]
+    H --> I["Look up round:<br/>SELECT FROM hackathon_rounds<br/>WHERE round_number = :version<br/>AND hackathon_id = :hackathonId"]
+    I --> J{"Round exists<br/>and status = 'active'?"}
+    J -->|No| K["Reject: round not active<br/>or does not exist"]
+    J -->|Yes| L["Check team not eliminated<br/>in previous round"]
+    L --> M{"Team eliminated?"}
+    M -->|Yes| N["Reject: team eliminated<br/>in previous round"]
+    M -->|No| O["Idempotency check<br/>(delivery_id)"]
+    O --> P["Call HackathonStateMachine DO<br/>POST /accept-submission<br/>(includes round_id)"]
+    P --> Q{"DO response?"}
+    Q -->|accepted| R["INSERT submission<br/>(status: 'received',<br/>round_id, version = round_number)"]
+    R --> S["Post commit status (success)<br/>to GitHub"]
+    S --> T["Emit: submission.received"]
+    Q -->|rejected| U["INSERT submission<br/>(status: 'invalid',<br/>rejection_reason)"]
+    U --> V["Post commit status (failure)<br/>to GitHub"]
+    V --> W["Emit: submission.rejected"]
+
+    K --> V
+    N --> V
 
     style D fill:#6b7280,color:#fff
     style G fill:#6b7280,color:#fff
 ```
+
+### Round Resolution
+
+1. **Extract version** from the tag name using the hackathon's `submission_tag_pattern` regex (capture group).
+2. **Map version → round**: `version` = `round_number` in the `hackathon_rounds` table.
+3. **Validate round status**: Round must be in `active` status to accept submissions.
+4. **Check elimination**: If the team was eliminated in a prior round (via `round_results` table), reject the submission.
+5. **One submission per team per round**: Enforced by `UNIQUE(team_id, round_id)` on the `submissions` table.
 
 ### Tag Delete Flow
 
@@ -544,9 +403,9 @@ flowchart LR
 
 ---
 
-## 11. Installation Handler
+## 8. Installation Handler
 
-Manages bot activation when the VCS app is installed, uninstalled, or repos are added/removed.
+Manages bot activation when the GitHub App is installed, uninstalled, or repos are added/removed. Only **team leads** install the GitHub App.
 
 ```mermaid
 flowchart TD
@@ -570,7 +429,7 @@ When a GitHub App is installed on a repo that hasn't been linked to a team yet, 
 
 ---
 
-## 12. Force Push Detection
+## 9. Force Push Detection
 
 Force pushes are flagged for organizer review, never auto-invalidated. This prevents false positives from legitimate rebases.
 
@@ -612,21 +471,21 @@ flowchart TD
 
 ---
 
-## 13. Commit Status Posting
+## 10. Commit Status Posting
 
-After processing submissions or running validation, DevSage posts status checks back to the VCS provider.
+After processing submissions or running validation, DevSage posts status checks back to GitHub.
 
 ```mermaid
 sequenceDiagram
     participant W as Queue Handler
-    participant P as Provider (GitHub/GitLab/BB)
+    participant GH as GitHub API
 
     W->>W: Prepare status params:<br/>sha, state, description, context
 
-    W->>P: provider.postCommitStatus({<br/>  repoFullName, sha,<br/>  state: 'success',<br/>  description: 'Submission received',<br/>  context: 'devsage/submission'<br/>})
+    W->>GH: POST /repos/:owner/:repo/statuses/:sha<br/>{state, description, context, target_url}
 
     alt Success
-        P-->>W: 201 Created
+        GH-->>W: 201 Created
         W->>W: Log: status posted
     else Timeout (>10s)
         W->>W: Log warning (fail-open)
@@ -644,14 +503,22 @@ sequenceDiagram
 | Context | State | When |
 |---------|-------|------|
 | `devsage/submission` | `success` | Submission tag accepted and recorded |
-| `devsage/submission` | `failure` | Submission rejected (deadline, locked, invalid tag) |
+| `devsage/submission` | `failure` | Submission rejected (deadline, round not active, team eliminated, invalid tag) |
 | `devsage/submission` | `pending` | Submission received, validation in progress |
 | `devsage/validation` | `success` | Automated validation checks passed |
 | `devsage/validation` | `failure` | Automated validation checks failed |
 
+### Commit Status Target URL
+
+The `target_url` in commit statuses points to the submission page on the hackathon's subdomain:
+
+```
+https://{slug}.devsage.org/submissions/{submission_id}
+```
+
 ### Fail-Open Policy
 
-All outbound VCS API calls follow the fail-open pattern:
+All outbound GitHub API calls follow the fail-open pattern:
 - 10-second timeout via `AbortController`.
 - Timeouts and 5xx errors are logged but do NOT fail the submission.
 - 401/403 errors trigger a `bot.auth_failed` event (installation token may have been revoked).
@@ -659,7 +526,7 @@ All outbound VCS API calls follow the fail-open pattern:
 
 ---
 
-## 14. Internal Event Bus
+## 11. Internal Event Bus
 
 All system events — not just VCS webhooks — flow through a unified internal event bus. This decouples event producers from consumers.
 
@@ -667,7 +534,7 @@ All system events — not just VCS webhooks — flow through a unified internal 
 flowchart TD
     subgraph "Event Producers"
         VP["VCS Pipeline<br/>(push, tag, install)"]
-        API["API Handlers<br/>(team created, phase changed)"]
+        API["API Handlers<br/>(team created, round changed)"]
         DO["Durable Objects<br/>(submission locked, deadline hit)"]
         CRON["Cron Trigger<br/>(scheduled checks)"]
     end
@@ -680,7 +547,6 @@ flowchart TD
         NF["Notification Handler"]
         AU["Audit Handler"]
         AN["Analytics Handler"]
-        OW["Outbound Webhook Dispatcher"]
         RT["Real-time Broadcaster<br/>(WebSocket/SSE)"]
     end
 
@@ -692,7 +558,6 @@ flowchart TD
     BUS --> NF
     BUS --> AU
     BUS --> AN
-    BUS --> OW
     BUS --> RT
 ```
 
@@ -717,191 +582,42 @@ interface InternalEvent {
 }
 ```
 
-### Event Catalog (Selected)
+### Event Catalog
 
 | Event Type | Source | Payload (Key Fields) |
 |-----------|--------|---------------------|
-| `submission.received` | VCS pipeline | team_id, tag_name, sha, provider |
-| `submission.rejected` | VCS pipeline | team_id, tag_name, reason |
-| `submission.finalized` | API | team_id, submission_id |
+| `submission.received` | VCS pipeline | team_id, tag_name, sha, round_id |
+| `submission.rejected` | VCS pipeline | team_id, tag_name, reason, round_id |
+| `submission.finalized` | API | team_id, submission_id, round_id |
 | `submission.tag_deleted` | VCS pipeline | team_id, tag_name |
 | `force_push.detected` | VCS pipeline | team_id, severity, affected_submissions |
-| `bot.activated` | VCS pipeline | team_id, repo_full_name, provider |
+| `bot.activated` | VCS pipeline | team_id, repo_full_name |
 | `bot.deactivated` | VCS pipeline | team_id, repo_full_name |
-| `bot.auth_failed` | VCS pipeline | team_id, provider, error |
+| `bot.auth_failed` | VCS pipeline | team_id, error |
 | `team.created` | API | team_id, hackathon_id, team_name |
 | `team.member_joined` | API | team_id, user_id |
-| `team.repo_linked` | API | team_id, repo_full_name, provider |
-| `hackathon.phase_changed` | DO / API | hackathon_id, from_phase, to_phase |
+| `team.repo_linked` | API | team_id, repo_full_name |
+| `hackathon.state_changed` | DO / API | hackathon_id, from_state, to_state |
 | `hackathon.deadline_warning` | Cron | hackathon_id, deadline_type, minutes_remaining |
-| `judging.score_submitted` | API | judge_id, submission_id, total_score |
-| `judging.results_published` | API | hackathon_id, winner_team_ids |
-| `system.webhook_dead_lettered` | Queue | delivery_id, provider, error |
+| `round.started` | API | hackathon_id, round_id, round_number |
+| `round.completed` | API | hackathon_id, round_id, teams_advanced, teams_eliminated |
+| `judging.score_submitted` | API | judge_id, submission_id, total_score, round_id |
+| `judging.results_published` | API | hackathon_id, round_id, winner_team_ids |
+| `system.webhook_dead_lettered` | Queue | delivery_id, error |
 
 ---
 
-## 15. Outbound Webhooks
-
-Organizers can register webhook endpoints to receive hackathon events in real time. This enables custom integrations — Slack bots, dashboards, CI pipelines, etc.
-
-### Outbound Webhook Configuration
-
-```typescript
-interface OutboundWebhookConfig {
-  id: string;                        // UUID
-  hackathon_id: string;              // Which hackathon
-  url: string;                       // HTTPS endpoint to deliver to
-  secret: string;                    // Shared secret for HMAC signing (generated, shown once)
-  events: string[];                  // Event types to subscribe to (e.g., ["submission.*", "team.created"])
-  active: boolean;                   // Enable/disable without deleting
-  description: string;               // Human label
-  created_by: string;                // User who created
-  created_at: string;
-  updated_at: string;
-}
-```
-
-### Outbound Delivery Flow
-
-```mermaid
-sequenceDiagram
-    participant BUS as Event Bus
-    participant OW as Outbound Dispatcher
-    participant DB as Database
-    participant EP as External Endpoint
-
-    BUS->>OW: Internal event received
-    OW->>DB: Find outbound webhooks WHERE<br/>hackathon_id AND event type matches<br/>AND active = true
-    DB-->>OW: [webhook1, webhook2, ...]
-
-    loop For each matching webhook
-        OW->>OW: Build payload:<br/>{ event, payload, timestamp, delivery_id }
-        OW->>OW: Sign with HMAC-SHA256<br/>(webhook.secret)
-        OW->>EP: POST webhook.url<br/>Headers: X-DevSage-Signature,<br/>X-DevSage-Event, X-DevSage-Delivery
-        alt 2xx response
-            OW->>DB: Log delivery: success
-        else Non-2xx or timeout
-            OW->>DB: Log delivery: failed<br/>(will retry)
-        end
-    end
-```
-
-### Outbound Delivery Payload
-
-```json
-{
-  "event": "submission.received",
-  "delivery_id": "del_abc123",
-  "timestamp": "2026-03-15T14:30:00Z",
-  "hackathon": {
-    "id": "h_xyz",
-    "slug": "spring-hack-2026",
-    "name": "Spring Hack 2026"
-  },
-  "payload": {
-    "team_id": "t_abc",
-    "team_name": "Team Alpha",
-    "tag_name": "submission_v1",
-    "sha": "abc123def456",
-    "provider": "github",
-    "repo_full_name": "teamalpha/project"
-  }
-}
-```
-
-### Outbound Security
-
-- Endpoints must be HTTPS (HTTP rejected at configuration time).
-- Every delivery is signed with HMAC-SHA256 using the webhook's secret.
-- Signature is sent in `X-DevSage-Signature-256` header.
-- 10-second timeout per delivery attempt.
-- Maximum 5 retries with exponential backoff (1min → 5min → 15min → 30min → 1hr).
-- After all retries exhausted: webhook auto-disabled, organizer notified.
-- Maximum 10 outbound webhooks per hackathon.
-
-### Outbound Webhook API
-
-```
-POST   /api/v1/hackathons/:slug/webhooks           # Create outbound webhook (admin+)
-GET    /api/v1/hackathons/:slug/webhooks           # List webhooks (admin+)
-GET    /api/v1/hackathons/:slug/webhooks/:id       # Get webhook details (admin+)
-PUT    /api/v1/hackathons/:slug/webhooks/:id       # Update webhook (admin+)
-DELETE /api/v1/hackathons/:slug/webhooks/:id       # Delete webhook (admin+)
-POST   /api/v1/hackathons/:slug/webhooks/:id/test  # Send test event (admin+)
-GET    /api/v1/hackathons/:slug/webhooks/:id/deliveries  # List delivery history (admin+)
-```
-
----
-
-## 16. Integration Marketplace
-
-A pluggable integration model for third-party tools beyond VCS providers.
-
-### Built-in Integrations
-
-| Integration | Type | Description |
-|------------|------|-------------|
-| GitHub | VCS | Full app integration (commits, tags, PRs, bot) |
-| GitLab | VCS | Webhook-based (commits, tags, MRs) |
-| Bitbucket | VCS | Webhook-based (commits, tags, PRs) |
-| Slack | Notification | Post events to Slack channels via incoming webhooks |
-| Discord | Notification | Post events to Discord channels via webhooks |
-
-### Integration Manifest
-
-Each integration (built-in or third-party) is described by a manifest:
-
-```typescript
-interface IntegrationManifest {
-  id: string;                        // Unique identifier (e.g., "github", "slack")
-  name: string;                      // Display name
-  description: string;               // What it does
-  version: string;                   // Semver
-  category: 'vcs' | 'notification' | 'ci' | 'analytics' | 'other';
-  icon_url: string;                  // Icon for marketplace UI
-
-  // What the integration needs from the organizer
-  config_schema: JSONSchema;         // JSON Schema for configuration fields
-
-  // What events the integration can receive
-  supported_events: string[];        // Event type patterns (e.g., "submission.*")
-
-  // Capabilities
-  capabilities: {
-    inbound_webhooks: boolean;       // Can receive VCS webhooks
-    outbound_notifications: boolean; // Can send notifications
-    commit_status: boolean;          // Can post commit statuses
-    file_read: boolean;              // Can read repo files
-  };
-}
-```
-
-### Marketplace API
-
-```
-GET    /api/v1/integrations                              # List available integrations
-GET    /api/v1/integrations/:integrationId               # Get integration details
-
-POST   /api/v1/hackathons/:slug/integrations             # Enable integration for hackathon (admin+)
-GET    /api/v1/hackathons/:slug/integrations             # List enabled integrations (admin+)
-PUT    /api/v1/hackathons/:slug/integrations/:id         # Update integration config (admin+)
-DELETE /api/v1/hackathons/:slug/integrations/:id         # Disable integration (admin+)
-```
-
----
-
-## 17. Idempotency & Reliability
+## 12. Idempotency & Reliability
 
 ### Idempotency Keys at Every Layer
 
 | Layer | Key | Mechanism |
 |-------|-----|-----------|
-| Webhook ingestion | Provider delivery ID header | Passed through to queue message |
+| Webhook ingestion | `x-github-delivery` header | Passed through to queue message |
 | Queue consumer | `delivery_id` in `webhook_deliveries` | Pre-check query before processing |
 | Submission creation | `UNIQUE(webhook_delivery_id)` on submissions | DB constraint prevents duplicates |
 | DO submission lock | `UNIQUE(webhook_delivery_id)` in DO SQLite | DO-level constraint |
-| Tag uniqueness | `UNIQUE(team_id, tag_name)` on submissions | One submission per tag per team |
-| Outbound delivery | `UNIQUE(webhook_id, event_id)` | One delivery per webhook per event |
+| Tag + round uniqueness | `UNIQUE(team_id, round_id)` on submissions | One submission per team per round |
 
 ### Delivery Tracking
 
@@ -910,8 +626,8 @@ Every inbound webhook is tracked in `webhook_deliveries`:
 ```typescript
 interface WebhookDelivery {
   id: string;                    // UUID
-  delivery_id: string;           // Provider's delivery ID (idempotency key)
-  provider: 'github' | 'gitlab' | 'bitbucket';
+  delivery_id: string;           // GitHub's x-github-delivery header (idempotency key)
+  provider: 'github';            // Currently GitHub-only
   event_type: string;            // Normalized event type
   status: 'received' | 'processing' | 'processed' | 'failed' | 'dead_lettered';
   repo_full_name: string;        // Which repo triggered it
@@ -928,95 +644,85 @@ interface WebhookDelivery {
 
 ### Retry Behavior
 
-- VCS providers (GitHub, GitLab) may redeliver webhooks up to 3 times on their own.
+- GitHub may redeliver webhooks up to 3 times on its own.
 - Cloudflare Queues retry failed messages according to the queue configuration.
 - All handlers are safe for redelivery — idempotency checks run before any writes.
 - After `max_retries`, messages are dead-lettered (not lost — tracked and queryable).
 
 ---
 
-## 18. API Endpoints
+## 13. API Endpoints
 
 ### Webhook Ingestion (Public)
 
 ```
 POST /webhooks/github              # GitHub App webhook receiver
-POST /webhooks/gitlab              # GitLab webhook receiver
-POST /webhooks/bitbucket           # Bitbucket webhook receiver
 ```
 
-### Webhook Delivery History (Admin)
+### Webhook Delivery History (organizer+)
 
 ```
-GET  /api/v1/hackathons/:slug/webhook-deliveries                  # List deliveries (admin+)
-GET  /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId      # Get delivery details (admin+)
-POST /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId/retry  # Retry dead-lettered (admin+)
+GET  /api/v1/hackathons/:slug/webhook-deliveries                  # List deliveries (organizer+)
+GET  /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId      # Get delivery details (organizer+)
+POST /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId/retry  # Retry dead-lettered (organizer+)
 ```
 
-### Commit Log (Participant+)
+### Commit Log
 
 ```
-GET  /api/v1/hackathons/:slug/teams/:teamId/commits     # List team's commit log (own team or mod+)
-GET  /api/v1/hackathons/:slug/commits                   # List all commits (mod+)
+GET  /api/v1/hackathons/:slug/teams/:teamId/commits     # List team's commit log (own team or organizer+)
+GET  /api/v1/hackathons/:slug/commits                   # List all commits (organizer+)
 ```
 
-### Force Push Events (Moderator+)
+### Force Push Events (organizer+)
 
 ```
-GET  /api/v1/hackathons/:slug/force-pushes              # List force push events (mod+)
-PUT  /api/v1/hackathons/:slug/force-pushes/:id/resolve  # Mark as reviewed (admin+)
+GET  /api/v1/hackathons/:slug/force-pushes              # List force push events (organizer+)
+PUT  /api/v1/hackathons/:slug/force-pushes/:id/resolve  # Mark as reviewed (organizer+)
 ```
 
 ### Bot Status
 
 ```
-GET  /api/v1/hackathons/:slug/teams/:teamId/bot-status  # Check bot activation (team_leader+)
-POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health check (team_leader+)
+GET  /api/v1/hackathons/:slug/teams/:teamId/bot-status  # Check bot activation (team_lead for own team, organizer+)
+POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health check (team_lead for own team, organizer+)
 ```
 
 ---
 
-## 19. Edge Cases
+## 14. Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
 | Webhook arrives for repo not linked to any team | Logged in `webhook_deliveries` with `team_id = null`, processing skipped |
-| Same tag pushed to two repos linked to the same team | Each produces a separate submission attempt. Second is rejected by `UNIQUE(team_id, tag_name)` |
+| Same tag pushed to two repos linked to the same team | Each produces a separate submission attempt. Second is rejected by `UNIQUE(team_id, round_id)` |
 | GitHub App uninstalled after submission received | Submission is preserved. Commit status posting will fail (logged, fail-open). Bot marked inactive |
-| GitLab project access token revoked | Commit status posting fails. `bot.auth_failed` event emitted. Organizer notified |
 | Force push on a branch that had a submission tag | Submission is preserved (tags are separate refs). Flagged as `warning` severity for review |
 | Tag deleted after submission | Submission is NOT deleted (immutable). Audit event logged. Organizer warned |
-| Webhook payload too large (>1MB) | Rejected at Cloudflare level (Workers request size limit). Provider receives 413 |
-| Duplicate delivery ID from provider | Idempotency check catches it. Second delivery is acked and skipped |
+| Webhook payload too large (>1MB) | Rejected at Cloudflare level (Workers request size limit). GitHub receives 413 |
+| Duplicate delivery ID from GitHub | Idempotency check catches it. Second delivery is acked and skipped |
 | Queue consumer crashes mid-processing | Message returned to queue for retry. Idempotency check prevents duplicate writes |
-| Outbound webhook endpoint returns 3xx redirect | NOT followed. Treated as failure. Organizers must configure the final URL |
-| Outbound webhook endpoint is unreachable for 24+ hours | Auto-disabled after 5 consecutive total failures across all events. Organizer notified |
 | Team changes linked repo | Old repo's bot_active set to false. New repo checked for pending installations |
-| Multiple VCS providers linked to same team | Supported. Each repo has its own `team_repos` entry with provider-specific config |
 | Webhook secret rotated | Old secret continues to work for 24 hours (dual-accept window). New secret takes priority |
 | GitHub rate limit (5000 req/hr) hit during status posting | Queued for retry with exponential backoff. Submission processing is unaffected |
+| Tag submitted for non-existent round | Rejected with "round not found" reason. Commit status posted as failure |
+| Tag submitted for completed/pending round | Rejected with "round not active" reason. Only rounds with `status = 'active'` accept submissions |
+| Tag submitted by eliminated team | Rejected with "team eliminated" reason. Team was eliminated in a previous round |
+| Team lead installs GitHub App before creating team | Installation stored in `pending_installations`. Auto-linked when team is created and repo is connected |
 
 ---
 
-## 20. Error Codes
+## 15. Error Codes
 
 | Code | HTTP | Condition |
 |------|------|-----------|
 | `WEBHOOK_INVALID_SIGNATURE` | 401 | HMAC signature verification failed |
-| `WEBHOOK_UNKNOWN_PROVIDER` | 400 | Unrecognized provider in URL path |
 | `WEBHOOK_PAYLOAD_TOO_LARGE` | 413 | Payload exceeds 1MB limit |
 | `WEBHOOK_PARSE_ERROR` | 400 | Payload could not be parsed as JSON |
 | `DELIVERY_NOT_FOUND` | 404 | Webhook delivery ID does not exist |
 | `DELIVERY_NOT_RETRYABLE` | 400 | Only dead-lettered deliveries can be retried |
-| `OUTBOUND_WEBHOOK_NOT_FOUND` | 404 | Outbound webhook ID does not exist |
-| `OUTBOUND_URL_NOT_HTTPS` | 400 | Outbound webhook URL must be HTTPS |
-| `OUTBOUND_MAX_WEBHOOKS` | 400 | Hackathon has reached 10 outbound webhooks limit |
-| `OUTBOUND_INVALID_EVENTS` | 400 | One or more event types are not recognized |
-| `INTEGRATION_NOT_FOUND` | 404 | Integration ID does not exist in marketplace |
-| `INTEGRATION_ALREADY_ENABLED` | 409 | Integration is already enabled for this hackathon |
-| `INTEGRATION_CONFIG_INVALID` | 400 | Integration configuration does not match schema |
-| `BOT_NOT_INSTALLED` | 400 | VCS app not installed on the linked repository |
-| `BOT_AUTH_FAILED` | 502 | VCS provider returned auth error when posting status |
+| `BOT_NOT_INSTALLED` | 400 | GitHub App not installed on the linked repository |
+| `BOT_AUTH_FAILED` | 502 | GitHub returned auth error when posting status |
 | `REPO_NOT_LINKED` | 400 | Repository is not linked to any team in this hackathon |
 | `COMMIT_LOG_NOT_FOUND` | 404 | No commit log entries for this team |
 | `FORCE_PUSH_NOT_FOUND` | 404 | Force push event ID does not exist |
@@ -1024,20 +730,20 @@ POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health che
 
 ---
 
-## 21. Database Tables
+## 16. Database Tables
 
 ### `webhook_deliveries`
 
-Tracks every inbound webhook from VCS providers.
+Tracks every inbound webhook from GitHub.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Internal delivery record ID |
-| `delivery_id` | TEXT | UNIQUE, NOT NULL | Provider's delivery ID (idempotency key) |
-| `provider` | TEXT | NOT NULL, CHECK IN ('github','gitlab','bitbucket') | VCS provider |
+| `delivery_id` | TEXT | UNIQUE, NOT NULL | GitHub's `x-github-delivery` header (idempotency key) |
+| `provider` | TEXT | NOT NULL, DEFAULT 'github' | VCS provider (currently always 'github') |
 | `event_type` | TEXT | NOT NULL | Normalized event type |
 | `status` | TEXT | NOT NULL, DEFAULT 'received' | received, processing, processed, failed, dead_lettered |
-| `repo_full_name` | TEXT | NOT NULL | Repository identifier |
+| `repo_full_name` | TEXT | NOT NULL | Repository identifier (owner/repo) |
 | `hackathon_id` | TEXT | FK → hackathons.id, NULL | Resolved hackathon (null if unlinked repo) |
 | `team_id` | TEXT | FK → teams.id, NULL | Resolved team (null if unlinked repo) |
 | `payload_hash` | TEXT | NOT NULL | SHA-256 of raw payload |
@@ -1066,12 +772,11 @@ Stores individual commits from push events.
 | `author_name` | TEXT | NOT NULL | Git author name |
 | `author_email` | TEXT | NOT NULL | Git author email |
 | `committed_at` | TEXT | NOT NULL | Commit timestamp (ISO-8601) |
-| `url` | TEXT | NOT NULL | Link to commit on VCS provider |
+| `url` | TEXT | NOT NULL | Link to commit on GitHub |
 | `files_added` | INTEGER | NOT NULL, DEFAULT 0 | Number of files added |
 | `files_modified` | INTEGER | NOT NULL, DEFAULT 0 | Number of files modified |
 | `files_removed` | INTEGER | NOT NULL, DEFAULT 0 | Number of files removed |
 | `branch` | TEXT | NOT NULL | Branch name |
-| `provider` | TEXT | NOT NULL | VCS provider |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
 **Indexes:** INDEX(`hackathon_id`, `team_id`, `committed_at`), INDEX(`sha`), INDEX(`delivery_id`)
@@ -1099,109 +804,43 @@ Records force push detections and organizer resolution.
 | `resolved_by` | TEXT | FK → users.id, NULL | Organizer who reviewed |
 | `resolved_at` | TEXT | NULL | When reviewed |
 | `resolution_note` | TEXT | NULL | Organizer's notes |
-| `provider` | TEXT | NOT NULL | VCS provider |
-| `pusher_login` | TEXT | NOT NULL | Username of force pusher |
+| `pusher_login` | TEXT | NOT NULL | GitHub username of force pusher |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
 **Indexes:** INDEX(`hackathon_id`, `created_at`), INDEX(`team_id`), INDEX(`resolved`)
 
 ---
 
-### `outbound_webhooks`
-
-Organizer-configured webhook endpoints for receiving events.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique webhook ID |
-| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Which hackathon |
-| `url` | TEXT | NOT NULL | HTTPS endpoint URL |
-| `secret_hash` | TEXT | NOT NULL | SHA-256 of the signing secret |
-| `events` | TEXT | NOT NULL | JSON array of event type patterns |
-| `active` | INTEGER | NOT NULL, DEFAULT 1 | 1 = enabled, 0 = disabled |
-| `description` | TEXT | NOT NULL, DEFAULT '' | Human label |
-| `consecutive_failures` | INTEGER | NOT NULL, DEFAULT 0 | Failure counter (resets on success) |
-| `created_by` | TEXT | FK → users.id, NOT NULL | Who created |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `disabled_at` | TEXT | NULL | When auto-disabled due to failures |
-
-**Indexes:** INDEX(`hackathon_id`, `active`), INDEX(`hackathon_id`)
-
----
-
-### `outbound_webhook_deliveries`
-
-Tracks every outbound webhook delivery attempt.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique delivery ID |
-| `webhook_id` | TEXT | FK → outbound_webhooks.id, NOT NULL, ON DELETE CASCADE | Which webhook |
-| `event_id` | TEXT | NOT NULL | Internal event ID that triggered delivery |
-| `event_type` | TEXT | NOT NULL | Event type (e.g., "submission.received") |
-| `status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, delivered, failed, dead_lettered |
-| `http_status` | INTEGER | NULL | Response status code from endpoint |
-| `response_ms` | INTEGER | NULL | Response time in milliseconds |
-| `error_message` | TEXT | NULL | Error details if failed |
-| `attempts` | INTEGER | NOT NULL, DEFAULT 0 | Number of delivery attempts |
-| `next_retry_at` | TEXT | NULL | When next retry is scheduled |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `delivered_at` | TEXT | NULL | When successfully delivered |
-
-**Indexes:** UNIQUE(`webhook_id`, `event_id`), INDEX(`webhook_id`, `status`), INDEX(`next_retry_at`)
-
----
-
 ### `pending_installations`
 
-Stores VCS app installations for repos not yet linked to teams.
+Stores GitHub App installations for repos not yet linked to teams.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique record ID |
-| `provider` | TEXT | NOT NULL | VCS provider |
-| `repo_full_name` | TEXT | NOT NULL | Repository identifier |
-| `installation_id` | TEXT | NOT NULL | Provider's installation ID |
-| `installed_by` | TEXT | NOT NULL | Username who installed |
+| `repo_full_name` | TEXT | UNIQUE, NOT NULL | Repository identifier (owner/repo) |
+| `installation_id` | TEXT | NOT NULL | GitHub installation ID |
+| `installed_by` | TEXT | NOT NULL | GitHub username who installed |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** UNIQUE(`provider`, `repo_full_name`), INDEX(`repo_full_name`)
+**Indexes:** UNIQUE(`repo_full_name`)
 
 ---
 
-### `hackathon_integrations`
-
-Tracks which integrations are enabled per hackathon.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique record ID |
-| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Which hackathon |
-| `integration_id` | TEXT | NOT NULL | Integration manifest ID |
-| `config` | TEXT | NOT NULL, DEFAULT '{}' | JSON config matching integration's config_schema |
-| `active` | INTEGER | NOT NULL, DEFAULT 1 | 1 = enabled, 0 = disabled |
-| `enabled_by` | TEXT | FK → users.id, NOT NULL | Who enabled |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`hackathon_id`, `integration_id`), INDEX(`hackathon_id`)
-
----
-
-## 22. Decision Log
+## 17. Decision Log
 
 | Decision | Choice | Why | Alternatives Considered |
 |----------|--------|-----|------------------------|
+| GitHub-only for Phase 1 | Single VCS provider, provider abstraction for future extensibility | GitHub is the dominant VCS for hackathons. Multi-provider adds complexity without immediate value. Provider interface allows adding GitLab/Bitbucket later without changing downstream handlers | Multi-provider from day one (complexity); no abstraction (harder to extend later) |
 | Synchronous handler does zero D1 writes | Verify → normalize → enqueue only | GitHub times out webhooks at 10 seconds. Any D1 write risks exceeding that. Queue processing is unbounded in time | Write delivery record synchronously (too slow); accept and process inline (timeout risk) |
-| Multi-provider via normalized events | Single `NormalizedEvent` union type | Adding a provider means implementing one interface. All downstream handlers (push, tag, install) work unchanged | Provider-specific handlers everywhere (duplication); adapter pattern per handler (complex) |
-| Force pushes flagged, not auto-invalidated | Organizer review with severity levels | Reachability checks require provider API (rate limits, downtime). Legitimate rebases are common. False positives would punish teams unfairly | Auto-invalidate all affected submissions; require reachability proof before flagging |
-| Fail-open for all outbound API calls | 10-second timeout, log warning, proceed | Submission processing must never depend on external API availability. A GitHub outage should not block hackathon operations | Fail-closed (block until success); retry indefinitely (resource waste) |
-| Idempotency at every layer | Delivery ID + DB constraints + DO locks | VCS providers redeliver webhooks. Queues retry on failure. Multiple layers ensure no duplicates even under concurrent processing | Single idempotency check at ingestion (not sufficient for queue retries); optimistic locking only (race conditions) |
-| Internal event bus via Cloudflare Queue | Single `EVENT_QUEUE` with fan-out consumers | Decouples producers from consumers. Adding a new consumer (e.g., analytics) requires zero changes to producers. Queue provides durability and retry | Direct function calls (coupling); separate queues per consumer (operational overhead); external event bus like Kafka (overkill for scale) |
-| Outbound webhooks auto-disable after failures | 5 consecutive failures across all events | Prevents wasting resources on unreachable endpoints. Organizer is notified and can re-enable manually. Better than silently dropping events forever | Never disable (resource waste); disable after time-based window (less precise); require manual monitoring (poor UX) |
-| Pending installations table | Store installs for unlinked repos | Teams may link repos after the GitHub App is installed. Without this, they'd have to reinstall. Matches natural user flow: install app → create team → link repo | Require linking before install (poor UX); check GitHub API on link (rate limits, latency) |
-| GitLab uses project tokens, not app-level auth | Per-repo project access tokens | GitLab doesn't have the same App model as GitHub. Project tokens are scoped and revocable per-repo. Simpler than group-level tokens | GitLab group tokens (broader scope than needed); OAuth app tokens (complex setup for users); personal tokens (security risk) |
-| Webhook secret dual-accept on rotation | Old secret valid for 24 hours after rotation | Prevents webhook delivery failures during rotation. VCS providers may have in-flight deliveries signed with the old secret | Immediate cutover (missed webhooks); queue-based replay (complex); no rotation support (security risk) |
-| Max 20 commits stored per push | Truncate to most recent 20 | Large merges can contain hundreds of commits. Storing all would blow up D1 storage. 20 covers typical development velocity per push | Store all (storage concern); store only count (lose commit detail); configurable per hackathon (complexity) |
-| Pull request events normalized | `NormalizedPullRequestEvent` type | Enables future features: PR-based submissions, automated code review triggers, PR activity in team feeds | Ignore PRs entirely (limits future features); PR-only submissions (too different from tag model) |
+| Normalized event model despite single provider | Events normalized into provider-agnostic types | Downstream handlers (push, tag, install) remain unchanged if a new provider is added. Clean separation of concerns | GitHub-specific types everywhere (tight coupling); skip normalization for single provider (refactor later) |
+| Force pushes flagged, not auto-invalidated | Organizer review with severity levels | Reachability checks require GitHub API (rate limits, downtime). Legitimate rebases are common. False positives would punish teams unfairly | Auto-invalidate all affected submissions; require reachability proof before flagging |
+| Fail-open for all outbound API calls | 10-second timeout, log warning, proceed | Submission processing must never depend on GitHub API availability. A GitHub outage should not block hackathon operations | Fail-closed (block until success); retry indefinitely (resource waste) |
+| Idempotency at every layer | Delivery ID + DB constraints + DO locks | GitHub redelivers webhooks. Queues retry on failure. Multiple layers ensure no duplicates even under concurrent processing | Single idempotency check at ingestion (not sufficient for queue retries); optimistic locking only (race conditions) |
+| Internal event bus via Cloudflare Queue | Single `EVENT_QUEUE` with fan-out consumers | Decouples producers from consumers. Adding a new consumer (e.g., analytics) requires zero changes to producers. Queue provides durability and retry | Direct function calls (coupling); separate queues per consumer (operational overhead) |
+| Pending installations table | Store installs for unlinked repos | Team leads may install the GitHub App before linking their repo to a team. Without this, they'd have to reinstall. Matches natural user flow: install app → create team → link repo | Require linking before install (poor UX); check GitHub API on link (rate limits, latency) |
+| No outbound webhooks for Phase 1 | Internal event bus only. No organizer-configured external endpoints | Adds significant complexity (delivery tracking, retry, auto-disable). Organizer demand is unproven. Can be added in Phase 2 if needed | Outbound webhooks from day one (complexity); Slack/Discord built-in integrations (scope creep) |
+| No integration marketplace | GitHub is the sole integration. No plugin/marketplace system | Plugin/marketplace adds operational complexity and security surface. GitHub covers the core VCS need. Keep scope tight for Phase 1 | Marketplace with manifests (over-engineering); built-in Slack/Discord (scope creep) |
+| Webhook secret dual-accept on rotation | Old secret valid for 24 hours after rotation | Prevents webhook delivery failures during rotation. GitHub may have in-flight deliveries signed with the old secret | Immediate cutover (missed webhooks); no rotation support (security risk) |
+| Max 20 commits stored per push | Truncate to most recent 20 | Large merges can contain hundreds of commits. Storing all would blow up D1 storage. 20 covers typical development velocity per push | Store all (storage concern); store only count (lose commit detail) |
+| Rounds-aware tag handler | Tag version maps to round_number in hackathon_rounds | Submissions are per-round. The tag handler must know which round a submission belongs to, validate the round is active, and check team elimination status | Round-agnostic handler (doesn't support multi-round hackathons); require round ID in tag name (rigid) |
