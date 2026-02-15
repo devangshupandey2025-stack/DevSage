@@ -99,7 +99,7 @@ graph TD
     CRON -->|"scheduled()"| API
 
     subgraph Storage
-        D1[("D1 / SQLite<br/>28+ tables")]
+        D1[("D1 / SQLite<br/>~31 tables")]
         KV["KV<br/>OAuth state · rate limits<br/>session cache · feature flags"]
         R2["R2<br/>Sponsor assets · avatars<br/>submission artifacts · exports"]
         AE["Analytics Engine<br/>Event time-series"]
@@ -212,26 +212,25 @@ mindmap
     **Identity & Access**
       Authentication
         GitHub + Google OAuth
-        Passkeys / WebAuthn
+        Passkeys / WebAuthn (Phase 2)
         Refresh Token Rotation
-        MFA
+        MFA (Phase 2)
       Roles & Permissions
-        7-Tier Hierarchy
+        6-Tier Hackathon Hierarchy
           Anonymous
           Team Member
           Team Lead
           Judge
           Co-Organizer
           Organizer
-          Admin (internal DevSage/shikdd team)
+        Platform Admin (separate system, shikdd.devsage.org)
         Admin creates workspaces, invites Organizers
         Organizer invites Co-Orgs, Judges
         Participants sign up via hackathon link
         Bulk Invite via Excel Upload
-        API Key Scopes
     **Core Platform**
       Hackathon Lifecycle
-        7-State Machine
+        5-State Machine
         Multi-Track Support
         Templates
         Custom Phases
@@ -394,7 +393,7 @@ DevSage/
 │   # NOTE: Participant sites ({slug}.devsage.org) live in separate repos
 ├── packages/
 │   ├── config/                 # Shared tsconfig variants + ESLint flat config
-│   ├── db/                     # Drizzle ORM schemas (28+ tables) + D1 migrations
+│   ├── db/                     # Drizzle ORM schemas (~31 tables) + D1 migrations
 │   │   ├── src/schema/         # Table definitions (one file per domain)
 │   │   └── migrations/         # SQL migration files
 │   └── shared/                 # Zod schemas, types, constants (only dep: zod)
