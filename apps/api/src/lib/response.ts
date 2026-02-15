@@ -3,12 +3,20 @@ import type { Context } from 'hono';
 interface SuccessMeta {
   etag?: string;
   cached?: boolean;
+  timestamp?: string;
 }
 
 interface PaginationMeta extends SuccessMeta {
   total: number;
   limit: number;
   offset: number;
+  has_more: boolean;
+}
+
+interface CursorPaginationMeta extends SuccessMeta {
+  limit: number;
+  cursor: string | null;
+  has_more: boolean;
 }
 
 export function successResponse<T>(
@@ -52,7 +60,30 @@ export function paginatedResponse<T>(
     total,
     limit,
     offset,
+    has_more: offset + data.length < total,
+    timestamp: new Date().toISOString(),
     ...meta,
   };
   return c.json({ ok: true, data, meta: paginationMeta }, 200);
+}
+
+export function cursorPaginatedResponse<T>(
+  c: Context,
+  data: T[],
+  limit: number,
+  nextCursor: string | null,
+  meta?: SuccessMeta
+) {
+  const cursorMeta: CursorPaginationMeta = {
+    limit,
+    cursor: nextCursor,
+    has_more: nextCursor !== null,
+    timestamp: new Date().toISOString(),
+    ...meta,
+  };
+  return c.json({ ok: true, data, meta: cursorMeta }, 200);
+}
+
+export function noContentResponse(c: Context) {
+  return c.body(null, 204);
 }

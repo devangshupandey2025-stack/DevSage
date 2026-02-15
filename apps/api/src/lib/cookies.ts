@@ -4,13 +4,28 @@ import { JWT_EXPIRY_SECONDS, REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_EXPIRY_SEC
 
 const ACCESS_TOKEN_COOKIE_NAME = 'access_token';
 
-function isProduction(frontendUrl: string): boolean {
+function isSecure(frontendUrl: string): boolean {
   try {
-    const url = new URL(frontendUrl);
-    return url.protocol === 'https:';
+    return new URL(frontendUrl).protocol === 'https:';
   } catch {
     return false;
   }
+}
+
+// workers.dev is on the Public Suffix List — subdomains are cross-site.
+// SameSite=None is required for cross-origin cookie sending.
+function isCrossSite(frontendUrl: string): boolean {
+  try {
+    return new URL(frontendUrl).hostname.endsWith('.workers.dev');
+  } catch {
+    return false;
+  }
+}
+
+function sameSitePolicy(frontendUrl: string): 'Strict' | 'Lax' | 'None' {
+  if (!isSecure(frontendUrl)) return 'Lax';
+  if (isCrossSite(frontendUrl)) return 'None';
+  return 'Strict';
 }
 
 // ─── Access Token Cookie ─────────────────────────────────────
@@ -20,24 +35,20 @@ export function getAccessTokenCookie(c: Context): string | undefined {
 }
 
 export function setAccessTokenCookie(c: Context, token: string, frontendUrl: string): void {
-  const production = isProduction(frontendUrl);
-
   setCookie(c, ACCESS_TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: production ? 'Strict' : 'Lax',
-    secure: production,
+    sameSite: sameSitePolicy(frontendUrl),
+    secure: isSecure(frontendUrl),
     path: '/',
     maxAge: JWT_EXPIRY_SECONDS,
   });
 }
 
 export function clearAccessTokenCookie(c: Context, frontendUrl: string): void {
-  const production = isProduction(frontendUrl);
-
   deleteCookie(c, ACCESS_TOKEN_COOKIE_NAME, {
     path: '/',
-    secure: production,
-    sameSite: production ? 'Strict' : 'Lax',
+    secure: isSecure(frontendUrl),
+    sameSite: sameSitePolicy(frontendUrl),
   });
 }
 
@@ -48,36 +59,29 @@ export function getRefreshTokenCookie(c: Context): string | undefined {
 }
 
 export function setRefreshTokenCookie(c: Context, token: string, frontendUrl: string): void {
-  const production = isProduction(frontendUrl);
-
   setCookie(c, REFRESH_TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: production ? 'Strict' : 'Lax',
-    secure: production,
+    sameSite: sameSitePolicy(frontendUrl),
+    secure: isSecure(frontendUrl),
     path: '/auth/refresh',
     maxAge: REFRESH_TOKEN_EXPIRY_SECONDS,
   });
 }
 
 export function clearRefreshTokenCookie(c: Context, frontendUrl: string): void {
-  const production = isProduction(frontendUrl);
-
   deleteCookie(c, REFRESH_TOKEN_COOKIE_NAME, {
     path: '/auth/refresh',
-    secure: production,
-    sameSite: production ? 'Strict' : 'Lax',
+    secure: isSecure(frontendUrl),
+    sameSite: sameSitePolicy(frontendUrl),
   });
 }
 
 // ─── Legacy Cleanup ──────────────────────────────────────────
 
-/** Clear the v2 'session' cookie if it still exists. */
 export function clearLegacySessionCookie(c: Context, frontendUrl: string): void {
-  const production = isProduction(frontendUrl);
-
   deleteCookie(c, 'session', {
     path: '/',
-    secure: production,
-    sameSite: production ? 'Strict' : 'Lax',
+    secure: isSecure(frontendUrl),
+    sameSite: sameSitePolicy(frontendUrl),
   });
 }

@@ -28,6 +28,7 @@ import {
 } from '../lib/oauth.js';
 import type { Context } from 'hono';
 import type { UserIdentity } from '../lib/user-service.js';
+import { isAllowedOrigin } from '../lib/allowed-origin.js';
 import {
   createRefreshToken,
   rotateRefreshToken,
@@ -45,7 +46,7 @@ function resolveAppOrigin(frontendOrigin: string, env: Env): AppOrigin {
 }
 
 function resolveFrontendOrigin(origin: string | undefined, env: Env): string {
-  if (origin && [env.FRONTEND_URL, env.PLATFORM_URL, env.ADMIN_URL].includes(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     return origin;
   }
   return env.FRONTEND_URL;
@@ -377,6 +378,48 @@ auth.post('/logout-all', async (c) => {
   clearLegacySessionCookie(c, frontendUrl);
 
   return successResponse(c, { message: 'All sessions revoked' });
+});
+
+/**
+ * DELETE /auth/account — Delete account (GDPR)
+ * Revokes all tokens, clears cookies, and soft-deletes the user.
+ */
+auth.delete('/account', async (c) => {
+  const token = getAccessTokenCookie(c);
+  if (!token) {
+    return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
+  }
+
+  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid or expired token');
+  }
+
+  const db = createDbClient(c.env.DB);
+
+  // Revoke all sessions
+  await revokeAllUserTokens(db, payload.sub);
+
+  // Anonymize user record (GDPR soft-delete)
+  const now = new Date().toISOString();
+  const anonymizedEmail = `deleted_${crypto.randomUUID()}@deleted.devsage.org`;
+  await db
+    .update(users)
+    .set({
+      display_name: 'Deleted User',
+      email: anonymizedEmail,
+      avatar_url: null,
+      github_username: `deleted_${payload.sub.slice(0, 8)}`,
+      updated_at: now,
+    })
+    .where(eq(users.id, payload.sub));
+
+  const frontendUrl = resolveFrontendOrigin(c.req.header('Origin'), c.env);
+  clearAccessTokenCookie(c, frontendUrl);
+  clearRefreshTokenCookie(c, frontendUrl);
+  clearLegacySessionCookie(c, frontendUrl);
+
+  return successResponse(c, { message: 'Account deleted' });
 });
 
 export default auth;

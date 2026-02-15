@@ -3,6 +3,8 @@ import type { Env } from './types/env.js';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { errorHandler } from './middleware/error-handler.js';
 import { corsMiddleware } from './middleware/cors.js';
+import { requestIdMiddleware } from './middleware/request-id.js';
+import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { DEADLINE_REMINDER_WINDOW_MS } from './lib/constants.js';
 import { isNotificationMessage } from './lib/queue-utils.js';
 import auth from './routes/auth.js';
@@ -15,6 +17,8 @@ import judging from './routes/judging.js';
 import admin from './routes/admin.js';
 import invites from './routes/invites.js';
 import workspaces from './routes/workspaces.js';
+import notifications from './routes/notifications.js';
+import audit from './routes/audit.js';
 import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 import type { NotificationMessage } from './queue/notification-handler.js';
@@ -23,8 +27,11 @@ export { HackathonStateMachine } from './durable-objects/hackathon-state-machine
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Middleware chain: CORS → Request ID → Rate Limiter → Error Handler → Auth → Role → Handler
 app.onError(errorHandler);
 app.use('*', corsMiddleware);
+app.use('*', requestIdMiddleware);
+app.use('*', rateLimitMiddleware);
 
 app.route('/auth', auth);
 app.route('/api/v1/workspaces', workspaces);
@@ -36,6 +43,8 @@ app.route('/api/v1/hackathons', submissions);
 app.route('/api/v1/hackathons', judging);
 app.route('/api/v1/admin', admin);
 app.route('/api/v1/invites', invites);
+app.route('/api/v1/notifications', notifications);
+app.route('/api/v1/hackathons', audit);
 
 app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });

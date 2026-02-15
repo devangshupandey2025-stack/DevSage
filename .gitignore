@@ -20,6 +20,8 @@ out/
 .env.*.local
 .env.production
 !apps/web/.env.production
+!apps/admin/.env.production
+!apps/platform/.env.production
 !**/.env.example
 .dev.vars
 .envrc

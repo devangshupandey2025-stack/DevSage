@@ -1,12 +1,13 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-02-12  
-**Commit:** e2320ae  
+**Generated:** 2026-02-15  
 **Branch:** main
 
 ## OVERVIEW
 
-DevSage — edge-native hackathon platform. Turborepo monorepo: Cloudflare Workers API (Hono + D1 + Durable Objects + Queues) + React SPA (Vite + Tailwind v4 + shadcn/ui). pnpm workspaces, TypeScript strict throughout.
+DevSage — edge-native GitHub-native hackathon platform. Turborepo monorepo: Cloudflare Workers API (Hono + D1 + Durable Objects + Queues) + three React SPAs (Vite + Tailwind v4 + shadcn/ui). pnpm workspaces, TypeScript strict throughout.
+
+Three frontend apps: Admin (`shikdd.devsage.org`), Organizer/Judge Platform (`platform.devsage.org`), Main Website (`devsage.org`). Participant sites (`{slug}.devsage.org`) live in separate repos.
 
 ## STRUCTURE
 
@@ -14,14 +15,17 @@ DevSage — edge-native hackathon platform. Turborepo monorepo: Cloudflare Worke
 DevSage/
 ├── apps/
 │   ├── api/          # Cloudflare Worker — Hono API, DOs, queue consumer, cron
-│   ├── web/          # React SPA — Vite, React Router v7, Tailwind v4, shadcn/ui
-│   └── worker/       # ORPHANED — no package.json, leftover from earlier experiment
+│   ├── admin/        # shikdd.devsage.org — Platform admin panel (React + Vite)
+│   ├── platform/     # platform.devsage.org — Organizer/Judge dashboard (React + Vite + Tailwind v4 + shadcn/ui)
+│   └── web/          # devsage.org — Main website (React + Vite)
 ├── packages/
 │   ├── config/       # Shared tsconfig variants (base, react, worker) + ESLint flat config
-│   ├── db/           # Drizzle ORM schemas (~15 tables) + D1 migrations
+│   ├── db/           # Drizzle ORM schemas (~31 tables) + D1 migrations
 │   └── shared/       # Zod schemas, types, constants (only dep: zod)
-├── docs/             # architecture.md, setup.md, deployment.md, secrets.md, contributing.md
-└── .sisyphus/        # Plans, notepads, learnings (agent workspace)
+├── docs/
+│   ├── v2/           # Previous production documentation
+│   └── v3/planned/   # Current architecture specification (source of truth)
+└── templates/        # Hackathon site template for {slug}.devsage.org
 ```
 
 ## WHERE TO LOOK
@@ -35,8 +39,9 @@ DevSage/
 | Add middleware | `apps/api/src/middleware/` | Hono `MiddlewareHandler<AuthAppEnv>` pattern |
 | Add DB table | `packages/db/src/schema/` | Drizzle SQLite, re-export from `schema/index.ts`, run `drizzle-kit generate` |
 | Add Zod schema | `packages/shared/src/schemas/` | Re-export from `src/index.ts` with `.js` extension |
-| Add UI page | `apps/web/src/pages/` | Add route in `App.tsx`, wrap with `ProtectedRoute` if auth required |
-| Add UI component | `apps/web/src/components/` | shadcn/ui primitives in `components/ui/` |
+| Add admin page | `apps/admin/src/pages/` | shikdd.devsage.org — platform admin features |
+| Add organizer page | `apps/platform/src/pages/` | platform.devsage.org — hackathon management |
+| Add website page | `apps/web/src/pages/` | devsage.org — public marketing/info pages |
 | Add judging endpoint | `apps/api/src/routes/judging.ts` | Judge invites, rubric, scoring, leaderboard |
 | Add webhook handler | `apps/api/src/routes/webhooks.ts` | HMAC signature verification, enqueue to WEBHOOK_QUEUE |
 | Add notification type | `apps/api/src/queue/notification-handler.ts` | Add case to switch, add recipient resolution logic |
@@ -48,27 +53,38 @@ DevSage/
 ## DEPENDENCY GRAPH
 
 ```
-apps/api  → @devsage/shared, @devsage/db, @devsage/config
-apps/web  → @devsage/shared
+apps/api      → @devsage/shared, @devsage/db, @devsage/config
+apps/admin    → @devsage/shared
+apps/platform → @devsage/shared
+apps/web      → @devsage/shared
 packages/db     → @devsage/config
 packages/shared → (standalone, only zod)
 packages/config → (standalone, configs only)
 ```
 
+**Dependency rules:**
+- `apps/admin`, `apps/platform`, `apps/web` may import from `packages/shared` only (never from `db` or `api`)
+- No circular dependencies. No cross-app imports
+- Participant sites (`{slug}.devsage.org`) are maintained in separate repositories
+
 ## CODE MAP
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `HackathonStateMachine` | Class | `api/src/durable-objects/hackathon-state-machine.ts` | Core DO: 7-state lifecycle, submission locking, deadline alarms |
-| `authMiddleware` / `optionalAuth` | Middleware | `api/src/middleware/auth.ts` | JWT extraction + validation from HttpOnly cookie |
-| `requireRole(minRole)` | Middleware | `api/src/middleware/role.ts` | Per-request role resolution (7-tier hierarchy) |
-| `resolveRole()` | Function | `api/src/middleware/role.ts` | Checks organizer_roles → judges → team_members → anonymous |
-| `signJWT()` / `verifyJWT()` | Function | `api/src/lib/jwt.ts` | Custom HMAC SHA-256 via `crypto.subtle`, 7-day expiry |
-| `apiRequest<T>()` | Function | `web/src/lib/api.ts` | Fetch wrapper: cookies, 401→redirect, VITE_API_ORIGIN |
-| `AuthProvider` / `useAuth()` | Context | `web/src/contexts/auth-context.tsx` | User state: `{ user, isAuthenticated, isLoading, logout }` |
+| `HackathonStateMachine` | Class | `api/src/durable-objects/hackathon-state-machine.ts` | Core DO: 5-state lifecycle, submission locking, deadline alarms |
+| `authMiddleware` / `optionalAuth` | Middleware | `api/src/middleware/auth.ts` | JWT extraction + validation from HttpOnly `access_token` cookie |
+| `requireRole(minRole)` | Middleware | `api/src/middleware/role.ts` | Per-request role resolution (6-tier hierarchy) |
+| `resolveRole()` | Function | `api/src/middleware/role.ts` | Checks organizer_roles → judges → team_members → workspace_members → anonymous |
+| `requirePlatformAdmin` | Middleware | `api/src/middleware/platform-admin.ts` | Checks `platform_admins` table for shikdd admin access |
+| `requestIdMiddleware` | Middleware | `api/src/middleware/request-id.ts` | Generates `X-Request-Id` header on every request |
+| `rateLimitMiddleware` | Middleware | `api/src/middleware/rate-limit.ts` | Per-IP/per-user rate limiting via KV |
+| `signJWT()` / `verifyJWT()` | Function | `api/src/lib/jwt.ts` | Custom HMAC SHA-256 via `crypto.subtle`, 15-min access token expiry |
+| `createRefreshToken()` / `rotateRefreshToken()` | Function | `api/src/lib/refresh-token.ts` | Opaque refresh tokens with family-based replay detection, 30-day expiry |
+| `successResponse()` / `errorResponse()` / `paginatedResponse()` | Function | `api/src/lib/response.ts` | Standard envelope: `{ ok, data, meta }` / `{ ok, error: { code, message } }` |
+| `insertAuditEvent()` | Function | `api/src/lib/audit.ts` | Audit logging with hash chain integrity (user/system/bot/cron actors) |
 | `normalizeGitHubEvent()` | Function | `api/src/lib/webhook-normalize.ts` | Parses GitHub payloads → typed union (push, tag, install) |
-| `successResponse()` / `errorResponse()` | Function | `api/src/lib/response.ts` | Standard envelope: `{ ok, data, meta }` / `{ ok, error }` |
-| `insertAuditEvent()` | Function | `api/src/lib/audit.ts` | Audit logging (user/system/bot/cron actors) |
+| `apiRequest<T>()` | Function | `web/src/lib/api.ts` | Fetch wrapper: cookies, 401→auto-refresh→retry, VITE_API_ORIGIN |
+| `AuthProvider` / `useAuth()` | Context | `*/src/contexts/auth-context.tsx` | User state: `{ user, isAuthenticated, isLoading, logout }` |
 
 ## CONVENTIONS
 
@@ -78,14 +94,15 @@ packages/config → (standalone, configs only)
 - **no-explicit-any**: Warn, not error — but never use `as any` / `@ts-ignore` / `@ts-expect-error`
 - **Timestamps**: All UTC ISO-8601 (`new Date().toISOString()`)
 - **UUIDs**: `crypto.randomUUID()` (Workers-native)
-- **Response envelope**: `{ ok: true, data, meta }` / `{ ok: false, error: { code, message } }` on all v2 routes
-- **Pagination**: `limit` (1–100, default 10–20), `offset` (default 0)
-- **Roles**: 7 per-hackathon roles: `anonymous | participant | team_leader | judge | moderator | admin | owner`. Resolved per-request via `resolveRole()`, NOT in JWT
-- **Auth**: Manual OAuth 2.0 (Google + GitHub) → JWT in HttpOnly cookie. NOT `@hono/oauth-providers` (broken on Workers)
-- **JWT**: Custom HMAC SHA-256 via `crypto.subtle`. Payload: `{ sub, ghid, ghu, iat, exp }`. 7-day expiry. No external JWT lib
-- **State machine**: `DRAFT → REGISTRATION_OPEN → REGISTRATION_CLOSED → ACTIVE → JUDGING → COMPLETED → ARCHIVED`. Forward-only, no backward/skip
+- **Response envelope**: `{ ok: true, data, meta }` / `{ ok: false, error: { code, message } }` on all routes
+- **Pagination**: Offset (default) with `limit` (1–100, default 20), `offset` (default 0), `has_more`. Cursor for append-only endpoints (audit, commits, notifications)
+- **Roles**: 6 per-hackathon roles: `organizer | co_organizer | judge | team_lead | team_member | anonymous`. Resolved per-request via `resolveRole()`, NOT in JWT. Platform admins are a separate layer (`shikdd.devsage.org`)
+- **Auth**: Manual OAuth 2.0 (Google + GitHub) → dual-token: 15-min access JWT + 30-day rotating refresh token in HttpOnly cookies. NOT `@hono/oauth-providers` (broken on Workers)
+- **JWT**: Custom HMAC SHA-256 via `crypto.subtle`. Payload: `{ sub, ghid, ghu, fam, iat, exp }`. No external JWT lib
+- **State machine**: `draft → active → judging → completed → archived`. Forward-only, except `archived → completed` (un-archive for score corrections)
 - **Services**: Fail-open pattern — 10s timeout via AbortController, log warning, never throw
-- **Audit trail**: Every mutation logs audit event via `insertAuditEvent()`
+- **Audit trail**: Every mutation logs audit event via `insertAuditEvent()` with hash chain integrity
+- **Middleware chain**: CORS → Request ID → Rate Limiter → Error Handler → Auth → Role Resolution → Handler
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -98,7 +115,9 @@ packages/config → (standalone, configs only)
 - No `console.log` — use `console.warn`/`console.error` for structured logs
 - External JWT libraries — use `crypto.subtle` only
 - Storing roles in JWT — resolve per-request per-hackathon
-- Backward/skip state transitions — forward-only through 7 states
+- Backward state transitions — forward-only through 5 states (except archived→completed un-archive)
+- Setting cookie domain to `.devsage.org` — cookies are per-subdomain to prevent cross-domain leakage
+- Putting organizer/management features in `apps/web` — those belong in `apps/platform`
 
 ## WRANGLER / DEPLOY
 
@@ -159,16 +178,17 @@ pnpm deploy:web              # Deploy web app
 - API prod secrets: deploy via `wrangler secret put` or `wrangler secret bulk`
 - Web env: only `VITE_*` (client-visible). **Never put secrets in web app.**
 - `.env*` files gitignored (except `apps/web/.env.production`)
-- Required secrets: `JWT_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `SMTP_URL/USERNAME/PASSWORD/EMAIL_ADDR`
+- Required secrets: `JWT_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `PLATFORM_URL`, `ADMIN_URL`, `SMTP_URL/USERNAME/PASSWORD/EMAIL_ADDR`
 
 ## NOTES
 
-- `apps/worker/` exists but is orphaned (no package.json) — leftover from earlier experiment
+- Three frontend apps: `admin` (shikdd.devsage.org), `platform` (platform.devsage.org), `web` (devsage.org)
+- Participant sites (`{slug}.devsage.org`) are separate repos, generated from `templates/hackathon-site/`
 - Vite dev proxy: `/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (prefix matching)
-- Production API: `https://api.devsage.org`. v2 routes use `/api/v1/` prefix with slug-based hackathon addressing
+- Production API: `https://api.devsage.org`. Routes use `/api/v1/` prefix with slug-based hackathon addressing
 - DB migrations path in wrangler.jsonc: `../../packages/db/migrations` (relative from apps/api)
 - Durable Objects MUST be re-exported from `apps/api/src/index.ts` or wrangler fails
-- Cron trigger: `0 * * * *` (hourly) — checks submission deadlines, auto-transitions phases
+- Cron trigger: `0 * * * *` (hourly) — checks submission deadlines, sends reminder notifications
 - OAuth state stored in KV with 10-min TTL
-- Plan docs: `.sisyphus/plans/devsage-mvp.md` (architecture), `.sisyphus/plans/backend-v2.md` (v2 rewrite)
-- Complexity hotspots: `hackathon-state-machine.ts` (606 LOC), `judging.ts` (587 LOC), `notification-handler.ts` (461 LOC), `home.tsx` (1054 LOC)
+- v3 architecture docs: `docs/v3/planned/` (authoritative specification)
+- Complexity hotspots: `hackathon-state-machine.ts`, `judging.ts`, `notification-handler.ts`

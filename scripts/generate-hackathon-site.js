@@ -1,26 +1,12 @@
-/**
- * Hackathon Site Generator CLI
- *
- * Usage:
- *   pnpm generate:site --config '<base64-encoded-json>'
- *
- * The config JSON must include at minimum: slug, title
- * All other fields have sensible defaults.
- *
- * Prerequisites:
- *   - gh CLI authenticated (for GitHub repo creation)
- *   - wrangler authenticated (for Cloudflare deployment)
- *   - pnpm available
- */
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const os = require('os');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'hackathon-site');
 const CF_ACCOUNT_ID = 'cf3386ad6d48a38a199781a39b2324ad';
 const GITHUB_ORG = 'SHIKDD-org';
 const API_ORIGIN = 'https://api.devsage.org';
+const DOMAIN_SUFFIX = 'devsage.org';
 
 function log(step, msg) {
   console.log(`\n[${'='.repeat(3)}] Step ${step}: ${msg}`);
@@ -39,12 +25,17 @@ function parseArgs() {
     console.log(`
 Hackathon Site Generator
 
-Usage:
+Usage (run from repo root):
   pnpm generate:site --config '<base64-encoded-json>'
+
+The site is scaffolded into ../{slug}/ (sibling to this repo),
+pushed to SHIKDD-org/{slug}-site on GitHub, and deployed to
+{slug}.devsage.org via Cloudflare Workers.
 
 Config JSON fields:
   slug              (required) Hackathon slug (e.g., "hack001")
   title             (required) Hackathon title
+  workspaceName     (optional) Workspace name, defaults to slug
   description       (optional) Description text
   accentColor       (optional) Hex color, default "#2DD4BF"
   registrationStart (optional) ISO date string
@@ -82,10 +73,10 @@ Example:
     fail('Config must include "title" (string).');
   }
 
-  // Apply defaults
   return {
     slug: config.slug,
     title: config.title,
+    workspaceName: config.workspaceName || config.slug,
     description: config.description || '',
     accentColor: config.accentColor || '#2DD4BF',
     registrationStart: config.registrationStart || new Date().toISOString(),
@@ -107,7 +98,7 @@ function copyDirSync(src, dest) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.wrangler') {
-      continue; // Skip build artifacts
+      continue;
     }
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
@@ -122,20 +113,53 @@ function run(cmd, cwd) {
   execSync(cmd, { cwd, stdio: 'inherit' });
 }
 
+function seedHackathonViaApi(config) {
+  const apiUrl = `${config.apiOrigin}/api/v1/hackathons`;
+  const body = JSON.stringify({
+    slug: config.slug,
+    title: config.title,
+    description: config.description,
+    max_team_size: config.maxTeamSize,
+    starts_at: config.hackingStart,
+    workspace_name: config.workspaceName,
+  });
+
+  try {
+    const result = execSync(
+      `curl -s -X POST "${apiUrl}" -H "Content-Type: application/json" -d '${body.replace(/'/g, "'\\''")}'`,
+      { encoding: 'utf8', timeout: 15000 }
+    );
+    const parsed = JSON.parse(result);
+    if (parsed.ok) {
+      console.log(`  Hackathon seeded: ${parsed.data?.id || config.slug}`);
+    } else {
+      console.warn(`  API seed returned error (may already exist): ${parsed.error?.message || JSON.stringify(parsed.error)}`);
+    }
+  } catch (err) {
+    console.warn(`  Could not seed via API (create manually): ${err.message || err}`);
+  }
+}
+
 function main() {
   const config = parseArgs();
   const repoName = `${config.slug}-site`;
-  const workDir = path.join(os.tmpdir(), `hackathon-site-${config.slug}-${Date.now()}`);
+  const workDir = path.resolve(__dirname, '..', '..', config.slug);
+  const domain = `${config.slug}.${DOMAIN_SUFFIX}`;
 
   console.log('');
   console.log('='.repeat(60));
   console.log(`  Hackathon Site Generator`);
-  console.log(`  Slug:  ${config.slug}`);
-  console.log(`  Title: ${config.title}`);
-  console.log(`  Repo:  ${GITHUB_ORG}/${repoName}`);
+  console.log(`  Slug:   ${config.slug}`);
+  console.log(`  Title:  ${config.title}`);
+  console.log(`  Repo:   ${GITHUB_ORG}/${repoName}`);
+  console.log(`  Domain: ${domain}`);
+  console.log(`  Dir:    ${workDir}`);
   console.log('='.repeat(60));
 
-  // Step 1: Verify prerequisites
+  if (fs.existsSync(workDir)) {
+    fail(`Directory already exists: ${workDir}\nRemove it first or choose a different slug.`);
+  }
+
   log(1, 'Verifying prerequisites...');
   try {
     execSync('gh auth status', { stdio: 'pipe' });
@@ -150,7 +174,6 @@ function main() {
     fail('wrangler not authenticated. Run "wrangler login" first.');
   }
 
-  // Step 2: Copy template
   log(2, `Copying template to ${workDir}...`);
   if (!fs.existsSync(TEMPLATE_DIR)) {
     fail(`Template directory not found: ${TEMPLATE_DIR}`);
@@ -158,7 +181,6 @@ function main() {
   copyDirSync(TEMPLATE_DIR, workDir);
   console.log('  Template copied.');
 
-  // Step 3: Write site.config.json
   log(3, 'Writing site.config.json...');
   const siteConfig = {
     slug: config.slug,
@@ -182,7 +204,6 @@ function main() {
   );
   console.log('  site.config.json written.');
 
-  // Step 4: Write wrangler.jsonc
   log(4, 'Writing wrangler.jsonc...');
   const wranglerConfig = {
     $schema: 'node_modules/wrangler/config-schema.json',
@@ -201,16 +222,14 @@ function main() {
   );
   console.log('  wrangler.jsonc written.');
 
-  // Step 5: Write .env.production
   log(5, 'Writing .env.production...');
   fs.writeFileSync(
     path.join(workDir, '.env.production'),
-    `VITE_API_ORIGIN=${config.apiOrigin}\n`,
+    `VITE_API_ORIGIN=${config.apiOrigin}\nVITE_HACKATHON_SLUG=${config.slug}\n`,
     'utf8'
   );
   console.log('  .env.production written.');
 
-  // Step 6: Update index.html title
   log(6, 'Updating index.html title...');
   const indexPath = path.join(workDir, 'index.html');
   let indexHtml = fs.readFileSync(indexPath, 'utf8');
@@ -218,36 +237,38 @@ function main() {
   fs.writeFileSync(indexPath, indexHtml, 'utf8');
   console.log(`  Title set to "${config.title}".`);
 
-  // Step 7: Install dependencies
-  log(7, 'Installing dependencies (pnpm install)...');
+  log(7, 'Seeding hackathon in database...');
+  seedHackathonViaApi(config);
+
+  log(8, 'Installing dependencies (pnpm install)...');
   run('pnpm install', workDir);
 
-  // Step 8: Build
-  log(8, 'Building site (pnpm build)...');
+  log(9, 'Building site (pnpm build)...');
   run('pnpm build', workDir);
 
-  // Step 9: Initialize git and create GitHub repo
-  log(9, `Creating GitHub repo ${GITHUB_ORG}/${repoName}...`);
+  log(10, `Creating GitHub repo ${GITHUB_ORG}/${repoName}...`);
   run('git init', workDir);
   run('git add -A', workDir);
-  run(`git commit -m "Initial hackathon site for ${config.title}"`, workDir);
+  run(`git commit -m "Initial hackathon site: ${config.title}"`, workDir);
   run(
     `gh repo create ${GITHUB_ORG}/${repoName} --public --source=. --remote=origin --push`,
     workDir
   );
   console.log(`  Repo created: https://github.com/${GITHUB_ORG}/${repoName}`);
 
-  // Step 10: Deploy to Cloudflare Workers
-  log(10, 'Deploying to Cloudflare Workers...');
+  log(11, 'Deploying to Cloudflare Workers...');
   run('npx wrangler deploy', workDir);
 
-  // Done!
   console.log('');
   console.log('='.repeat(60));
   console.log('  DONE!');
-  console.log(`  GitHub:     https://github.com/${GITHUB_ORG}/${repoName}`);
-  console.log(`  Deployed:   https://hackathon-${config.slug}.devsage.workers.dev`);
-  console.log(`  Work dir:   ${workDir}`);
+  console.log(`  GitHub:   https://github.com/${GITHUB_ORG}/${repoName}`);
+  console.log(`  Workers:  https://hackathon-${config.slug}.devsage-org.workers.dev`);
+  console.log(`  Domain:   https://${domain}`);
+  console.log(`  Site dir: ${workDir}`);
+  console.log('');
+  console.log('  Next: Add custom domain in Cloudflare Dashboard:');
+  console.log(`    Workers > hackathon-${config.slug} > Settings > Domains > Add Custom Domain > ${domain}`);
   console.log('='.repeat(60));
   console.log('');
 }

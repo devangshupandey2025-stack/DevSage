@@ -13,7 +13,7 @@ export const HACKATHON_STATUS_TRANSITIONS: Record<HackathonStatus, HackathonStat
   active: ['judging'],
   judging: ['completed'],
   completed: ['archived'],
-  archived: [],
+  archived: ['completed'],
 };
 
 export const ORGANIZER_ROLES = ['organizer', 'co_organizer'] as const;

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq, ne, desc, count } from 'drizzle-orm';
+import { eq, ne, desc, count, and } from 'drizzle-orm';
 import { createDbClient, hackathons as hackathonsTable, organizerRoles } from '@devsage/db';
 import {
   CreateHackathonRequestSchema,
@@ -350,6 +350,169 @@ hackathons.delete(
     });
 
     return c.body(null, 204);
+  },
+);
+
+/**
+ * GET /:slug/my-role — Get the current user's resolved role for this hackathon
+ */
+hackathons.get(
+  '/:slug/my-role',
+  authMiddleware,
+  requireRole('anonymous'),
+  async (c) => {
+    const role = c.get('role');
+    const hackathon = c.get('hackathon');
+    return successResponse(c, {
+      hackathon_id: hackathon.id,
+      slug: hackathon.slug,
+      role,
+    });
+  },
+);
+
+/**
+ * POST /:slug/clone — Clone a hackathon as a new draft
+ */
+hackathons.post(
+  '/:slug/clone',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
+
+    const body = await c.req.json<{ title?: string }>().catch(() => ({ title: undefined }));
+    const newTitle = body.title || `${hackathon.title} (Copy)`;
+    const newSlug = generateSlug(newTitle) + '-' + crypto.randomUUID().slice(0, 6);
+    const newId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await db.insert(hackathonsTable).values({
+      id: newId,
+      workspace_id: hackathon.workspace_id,
+      slug: newSlug,
+      title: newTitle,
+      tagline: hackathon.tagline,
+      description: hackathon.description,
+      rules_md: hackathon.rules_md,
+      status: 'draft',
+      min_team_size: hackathon.min_team_size,
+      max_team_size: hackathon.max_team_size,
+      max_teams: hackathon.max_teams,
+      submission_tag_pattern: hackathon.submission_tag_pattern,
+      allow_resubmission: hackathon.allow_resubmission,
+      allow_registration_during_active: hackathon.allow_registration_during_active,
+      notify_all_on_deadline: hackathon.notify_all_on_deadline,
+      show_judge_comments_to_participants: hackathon.show_judge_comments_to_participants,
+      registration_mode: hackathon.registration_mode,
+      allowed_email_domains: hackathon.allowed_email_domains,
+      require_repo: hackathon.require_repo,
+      timezone: hackathon.timezone,
+      tracks: hackathon.tracks,
+      prizes: hackathon.prizes,
+      settings: hackathon.settings,
+      created_by: user.sub,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Copy the organizer role for the current user
+    await db.insert(organizerRoles).values({
+      id: crypto.randomUUID(),
+      hackathon_id: newId,
+      user_id: user.sub,
+      role: 'organizer',
+      created_at: now,
+    });
+
+    await insertAuditEvent(db, {
+      hackathonId: newId,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.clone',
+      entityType: 'hackathon',
+      entityId: newId,
+      changes: { before: {}, after: { cloned_from: hackathon.id } },
+    });
+
+    const created = await db
+      .select()
+      .from(hackathonsTable)
+      .where(eq(hackathonsTable.id, newId))
+      .get();
+
+    return successResponse(c, created, undefined, 201);
+  },
+);
+
+/**
+ * POST /:slug/transfer-ownership — Transfer organizer ownership to a co_organizer
+ */
+hackathons.post(
+  '/:slug/transfer-ownership',
+  authMiddleware,
+  requireRole('organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
+
+    const body = await c.req.json<{ target_user_id: string }>();
+    if (!body.target_user_id) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'target_user_id is required');
+    }
+
+    // Verify target is a co_organizer of this hackathon
+    const targetRole = await db
+      .select()
+      .from(organizerRoles)
+      .where(and(
+        eq(organizerRoles.hackathon_id, hackathon.id),
+        eq(organizerRoles.user_id, body.target_user_id),
+        eq(organizerRoles.role, 'co_organizer'),
+      ))
+      .get();
+
+    if (!targetRole) {
+      return errorResponse(c, 400, 'INVALID_TARGET', 'Target user must be a co_organizer of this hackathon');
+    }
+
+    const now = new Date().toISOString();
+
+    // Promote target to organizer
+    await db
+      .update(organizerRoles)
+      .set({ role: 'organizer' })
+      .where(and(
+        eq(organizerRoles.hackathon_id, hackathon.id),
+        eq(organizerRoles.user_id, body.target_user_id),
+      ));
+
+    // Demote current owner to co_organizer
+    await db
+      .update(organizerRoles)
+      .set({ role: 'co_organizer' })
+      .where(and(
+        eq(organizerRoles.hackathon_id, hackathon.id),
+        eq(organizerRoles.user_id, user.sub),
+      ));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.transfer_ownership',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+      changes: {
+        before: { owner: user.sub },
+        after: { owner: body.target_user_id },
+      },
+    });
+
+    return successResponse(c, { message: 'Ownership transferred' });
   },
 );
 

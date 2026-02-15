@@ -1,5 +1,10 @@
 import { config } from '@/config';
 
+function loginUrl(): string {
+  const origin = encodeURIComponent(window.location.origin);
+  return `${config.apiOrigin}/auth/github?origin=${origin}`;
+}
+
 export default function Footer() {
   return (
     <footer className="py-12 px-4 border-t border-white/5 bg-black/40 backdrop-blur-sm">
@@ -18,11 +23,11 @@ export default function Footer() {
 
         <div className="flex items-center gap-6">
           <a 
-            href={`https://devsage.org/hackathons/${config.slug}`}
+            href={loginUrl()}
             className="text-sm font-medium transition-colors hover:text-white"
             style={{ color: config.accentColor }}
           >
-            Register on DevSage &rarr;
+            Register Now &rarr;
           </a>
         </div>
       </div>

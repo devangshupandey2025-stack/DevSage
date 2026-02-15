@@ -1,28 +1,16 @@
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../types/env.js';
-
-const DEV_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
-];
-
-function getAllowedOrigins(env: Env): string[] {
-  return [
-    env.FRONTEND_URL,
-    env.PLATFORM_URL,
-    env.ADMIN_URL,
-    ...DEV_ORIGINS,
-  ].filter(Boolean);
-}
+import { isAllowedOrigin } from '../lib/allowed-origin.js';
 
 export const corsMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   const origin = c.req.header('Origin');
-  if (origin && getAllowedOrigins(c.env).includes(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     c.header('Access-Control-Allow-Origin', origin);
     c.header('Access-Control-Allow-Credentials', 'true');
-    c.header('Access-Control-Allow-Headers', 'Content-Type');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, Last-Event-ID');
     c.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    c.header('Access-Control-Expose-Headers', 'X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, ETag');
+    c.header('Access-Control-Max-Age', '86400');
     c.header('Vary', 'Origin');
   }
 
