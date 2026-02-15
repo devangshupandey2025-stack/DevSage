@@ -105,8 +105,8 @@ When adding new code, place it in the correct location:
 | Middleware | `apps/api/src/middleware/` | `MiddlewareHandler<AuthAppEnv>` pattern |
 | DB table | `packages/db/src/schema/` | Drizzle SQLite; re-export from `schema/index.ts` |
 | Zod schema | `packages/shared/src/schemas/` | Re-export from `src/index.ts` with `.js` extension |
-| UI page | `apps/web/src/pages/` | Add route in `App.tsx`; wrap with `ProtectedRoute` if auth required |
-| UI component | `apps/web/src/components/` | shadcn/ui primitives in `components/ui/` |
+| UI page | `apps/platform/src/pages/` | Add route in `App.tsx`; wrap with `ProtectedRoute` if auth required |
+| UI component | `apps/platform/src/components/` | shadcn/ui primitives in `components/ui/` |
 | Shared type | `packages/shared/src/types/` | Re-export from `src/index.ts` |
 
 **All new schemas, types, and modules must be re-exported from their package's barrel file (`index.ts`).** Failing to do so breaks downstream imports.
@@ -150,7 +150,7 @@ it('should create a hackathon', async () => {
 
 ### Web Tests
 
-Location: `apps/web/src/__tests__/`
+Location: `apps/platform/src/__tests__/`
 
 - jsdom with `@testing-library/react`
 - Test behavior, not implementation

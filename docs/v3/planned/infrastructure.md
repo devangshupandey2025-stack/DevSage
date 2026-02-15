@@ -453,7 +453,7 @@ async function cronHandler(event: ScheduledEvent, env: Env, ctx: ExecutionContex
 
 ```
 apps/api/.dev.vars       # API secrets (gitignored)
-apps/web/.env.local      # Web dev overrides (gitignored)
+apps/platform/.env.local # Platform dev overrides (gitignored)
 ```
 
 ### Production Secret Deployment

@@ -380,16 +380,18 @@ DevSage/
 │   │   └── vitest.config.ts    # Cloudflare Workers test pool
 │   ├── admin/                  # shikdd.devsage.org — Admin panel (React + Vite)
 │   │   └── src/                # Workspace management, organizer invites, platform config
-│   └── web/                    # platform.devsage.org — Organizer dashboard (React + Vite + Tailwind v4)
-│       ├── src/
-│       │   ├── pages/          # Route-level page components
-│       │   ├── components/     # Shared + shadcn/ui components
-│       │   │   ├── ui/         # shadcn/ui primitives
-│       │   ├── contexts/       # React contexts (auth, theme, real-time)
-│       │   ├── hooks/          # Custom hooks (useWebSocket, useAuth, useApi)
-│       │   ├── lib/            # API client, utilities
-│       │   └── types/          # Frontend-specific types
-│       └── vite.config.ts      # Dev proxy, build config
+│   ├── platform/               # platform.devsage.org — Organizer dashboard (React + Vite + Tailwind v4)
+│   │   ├── src/
+│   │   │   ├── pages/          # Route-level page components
+│   │   │   ├── components/     # Shared + shadcn/ui components
+│   │   │   │   ├── ui/         # shadcn/ui primitives
+│   │   │   ├── contexts/       # React contexts (auth, theme, real-time)
+│   │   │   ├── hooks/          # Custom hooks (useWebSocket, useAuth, useApi)
+│   │   │   ├── lib/            # API client, utilities
+│   │   │   └── types/          # Frontend-specific types
+│   │   └── vite.config.ts      # Dev proxy, build config
+│   └── web/                    # devsage.org — Main website (React + Vite)
+│       └── src/
 │   # NOTE: Participant sites ({slug}.devsage.org) live in separate repos
 ├── packages/
 │   ├── config/                 # Shared tsconfig variants + ESLint flat config
@@ -411,10 +413,12 @@ graph LR
     API["apps/api"] --> SHARED["packages/shared"]
     API --> DB["packages/db"]
     API --> CONFIG["packages/config"]
+    PLATFORM["apps/platform"] --> SHARED
     WEB["apps/web"] --> SHARED
     DB --> CONFIG
 
     style API fill:#e8e8ff,stroke:#6366f1
+    style PLATFORM fill:#f0fdf4,stroke:#22c55e
     style WEB fill:#f0fdf4,stroke:#22c55e
     style SHARED fill:#fef3c7,stroke:#f59e0b
     style DB fill:#fef3c7,stroke:#f59e0b
@@ -423,6 +427,7 @@ graph LR
 
 **Dependency rules:**
 - `apps/api` may import from `packages/shared`, `packages/db`, and `packages/config`
+- `apps/platform` may import from `packages/shared` only (never from `db` or `api`)
 - `apps/web` may import from `packages/shared` only (never from `db` or `api`)
 - `apps/admin` may import from `packages/shared` only (never from `db` or `api`)
 - `packages/shared` has zero internal dependencies (only `zod`)
@@ -592,9 +597,7 @@ flowchart LR
 | [14](./real-time.md) | Real-Time System | Integration Layer | 2 |
 | [15](./analytics.md) | Analytics & Insights | Observability | 2 |
 | [16](./sponsor-portal.md) | Sponsor Management (Organizer-managed) | Growth & Engagement | 2 |
-
 | [18](./federation.md) | Collaborative Workspaces | Platform Extensibility | 3 |
-
 
 ### Guide Docs
 

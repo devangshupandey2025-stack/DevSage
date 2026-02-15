@@ -147,7 +147,7 @@ jobs:
           name: build-output
           path: |
             apps/api/dist/
-            apps/web/dist/
+            apps/platform/dist/
 
   bundle-analysis:
     runs-on: ubuntu-latest
@@ -177,7 +177,7 @@ jobs:
       - name: Deploy to staging
         run: |
           pnpm deploy:api:staging
-          pnpm deploy:web:staging
+pnpm deploy:platform:staging
 
   deploy-production:
     runs-on: ubuntu-latest
@@ -257,11 +257,11 @@ pnpm deploy:web
 pnpm deploy:web:staging
 ```
 
-This runs `tsc --noEmit && vite build` followed by `wrangler deploy` from `apps/web/`.
+This runs `tsc --noEmit && vite build` followed by `wrangler deploy` from `apps/platform/`.
 
 ### Web Environment Variables
 
-The production env file `apps/web/.env.production` is committed to the repository:
+The production env file `apps/platform/.env.production` is committed to the repository:
 
 ```env
 VITE_API_ORIGIN=https://api.devsage.org

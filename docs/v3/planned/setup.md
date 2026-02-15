@@ -147,7 +147,7 @@ cp apps/api/.dev.vars.example apps/api/.dev.vars
 
 ### Web Environment
 
-The web app uses `apps/web/.env.development`:
+The web app uses `apps/platform/.env.development`:
 
 ```env
 VITE_API_ORIGIN=http://localhost:8787
@@ -386,7 +386,7 @@ Create `.vscode/launch.json`:
       "request": "launch",
       "program": "${workspaceFolder}/node_modules/.bin/vitest",
       "args": ["--run", "--reporter=verbose"],
-      "cwd": "${workspaceFolder}/apps/web",
+      "cwd": "${workspaceFolder}/apps/platform",
       "console": "integratedTerminal"
     }
   ]
