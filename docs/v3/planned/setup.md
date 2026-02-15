@@ -237,24 +237,22 @@ pnpm seed
 ```
 
 This creates:
-- **3 sample hackathons** (one in each phase: REGISTRATION_OPEN, ACTIVE, COMPLETED)
+- **3 sample hackathons** (one in each phase: draft, active, completed)
 - **10 sample users** with various roles
 - **5 teams** with members across the active hackathon
 - **3 submissions** with validation results
 - **Sample judging scores** and leaderboard data
 - **Announcement and notification records**
-- **Mentor profiles** with availability schedules
 - **Sponsor entries** with tier configurations
 
 ### Seed Accounts
 
 | Username | Role | Password/Auth |
 |----------|------|---------------|
-| `admin@devsage.local` | Platform owner | OAuth bypass in dev mode |
-| `organizer@devsage.local` | Hackathon admin | OAuth bypass in dev mode |
+| `admin@devsage.local` | Platform admin (super_admin) | OAuth bypass in dev mode |
+| `organizer@devsage.local` | Hackathon organizer | OAuth bypass in dev mode |
 | `judge1@devsage.local` | Judge | OAuth bypass in dev mode |
-| `participant1@devsage.local` | Participant | OAuth bypass in dev mode |
-| `mentor1@devsage.local` | Mentor | OAuth bypass in dev mode |
+| `participant1@devsage.local` | Team lead | OAuth bypass in dev mode |
 
 In development mode, a dev-only auth endpoint allows logging in as any seed user without OAuth:
 

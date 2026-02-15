@@ -315,7 +315,7 @@ sequenceDiagram
     Note over L: After tag is accepted (submission status = received)
 
     L->>W: PATCH /api/v1/hackathons/:slug/submissions/:id<br/>{ demo_url: "https://demo.example.com" }
-    W->>W: Verify: requester is team_leader
+    W->>W: Verify: requester is team_lead
     W->>W: Verify: submission status in ['received', 'validated']
     W->>D1: UPDATE submissions SET demo_url = ?
     W-->>L: 200 OK
@@ -623,7 +623,7 @@ sequenceDiagram
     participant D1 as D1 Database
 
     L->>W: POST /api/v1/hackathons/:slug/submissions/:id/finalize
-    W->>W: Verify: requester is team_leader
+    W->>W: Verify: requester is team_lead
     W->>W: Verify: submission belongs to current active round
     W->>W: Verify: submission status = 'validated'
 

@@ -216,7 +216,7 @@ interface ProtectedRouteProps {
 // RoleGuard — requires minimum role within a hackathon
 interface RoleGuardProps {
   children: React.ReactNode;
-  minRole: 'participant' | 'team_leader' | 'judge' | 'organizer';
+  minRole: 'team_member' | 'team_lead' | 'judge' | 'co_organizer' | 'organizer';
   hackathonSlug: string;
   fallback?: React.ReactNode;  // Show instead of redirect
 }
