@@ -1,6 +1,6 @@
 # Audit Trail
 
-> Append-only, tamper-evident audit log that records every state-changing operation across the platform — with cryptographic hash chaining for integrity verification, a queryable REST API, GDPR-compliant anonymization, retention policies, and full decision traceability from score to commit to AI review prompt.
+> Append-only audit log that records every state-changing operation across the platform — with a queryable REST API, GDPR-compliant anonymization, export capabilities, and full decision traceability from score to commit to AI review prompt.
 
 ---
 
@@ -10,19 +10,17 @@
 - [1. Audit Architecture](#1-audit-architecture)
 - [2. Audit Event Structure](#2-audit-event-structure)
 - [3. Actor Model](#3-actor-model)
-- [4. Hash Chain Integrity](#4-hash-chain-integrity)
-- [5. Event Catalog](#5-event-catalog)
-- [6. Decision Traceability](#6-decision-traceability)
-- [7. Audit Event Ingestion](#7-audit-event-ingestion)
-- [8. Query API](#8-query-api)
-- [9. Export & Reporting](#9-export--reporting)
-- [10. GDPR & Data Anonymization](#10-gdpr--data-anonymization)
-- [11. Retention & Archival](#11-retention--archival)
-- [12. Platform Admin Audit Dashboard](#12-platform-admin-audit-dashboard)
-- [13. Edge Cases](#13-edge-cases)
-- [14. Error Codes](#14-error-codes)
-- [15. Database Tables](#15-database-tables)
-- [16. Decision Log](#16-decision-log)
+- [4. Event Catalog](#4-event-catalog)
+- [5. Decision Traceability](#5-decision-traceability)
+- [6. Audit Event Ingestion](#6-audit-event-ingestion)
+- [7. Query API](#7-query-api)
+- [8. Export & Reporting](#8-export--reporting)
+- [9. GDPR & Data Anonymization](#9-gdpr--data-anonymization)
+- [10. Platform Admin Audit Dashboard](#10-platform-admin-audit-dashboard)
+- [11. Edge Cases](#11-edge-cases)
+- [12. Error Codes](#12-error-codes)
+- [13. Database Tables](#13-database-tables)
+- [14. Decision Log](#14-decision-log)
 
 ---
 
@@ -30,15 +28,13 @@
 
 | Goal | Description |
 |------|-------------|
-| Append-only | No UPDATE or DELETE on audit records. Once written, immutable forever (until retention-based archival) |
-| Tamper-evident | Cryptographic hash chain links each event to its predecessor. Any modification or deletion breaks the chain |
+| Append-only | No UPDATE or DELETE on audit records. Once written, immutable (except GDPR anonymization) |
 | Fail-open | Audit writes never block primary operations. If D1 insert fails, the operation proceeds and the failure is logged |
 | Actor attribution | Every event records WHO (actor ID + type), WHAT (action + entity), and contextual details |
 | Decision traceability | Full chain from score → rubric → submission → commit → AI review → prompt hash |
 | Queryable API | REST endpoints for filtering by hackathon, actor, entity, action, time range |
-| Exportable | CSV and JSON export for compliance, analysis, and archival |
+| Exportable | CSV and JSON export for compliance and analysis |
 | GDPR compliant | Anonymization mechanism replaces PII with pseudonymous identifiers upon user deletion |
-| Retention-aware | Configurable retention periods with automated archival to R2 cold storage |
 
 ---
 
@@ -57,19 +53,16 @@ flowchart TD
 
     subgraph "Audit Ingestion"
         FN["insertAuditEvent()<br/>(fail-open, non-blocking)"]
-        HC["Hash Chain Computer<br/>(sequential per hackathon)"]
     end
 
     subgraph "Storage"
-        D1["D1 — audit_events<br/>(hot: 0–12 months)"]
-        R2["R2 — audit archives<br/>(cold: 12+ months)"]
+        D1["D1 — audit_events"]
     end
 
     subgraph "Consumers"
         QAPI["Query API<br/>(REST endpoints)"]
         EXP["Export Service<br/>(CSV / JSON)"]
         DASH["Admin Dashboard"]
-        INT["Integrity Verifier<br/>(cron)"]
     end
 
     API --> FN
@@ -79,19 +72,14 @@ flowchart TD
     QH --> FN
     AUTH --> FN
 
-    FN --> HC
-    HC --> D1
-    D1 -.->|"archival cron"| R2
+    FN --> D1
 
     D1 --> QAPI
     D1 --> EXP
     D1 --> DASH
-    D1 --> INT
 
     style FN fill:#3b82f6,color:#fff
-    style HC fill:#7c3aed,color:#fff
     style D1 fill:#10b981,color:#fff
-    style R2 fill:#6b7280,color:#fff
 ```
 
 ### Key Invariant
@@ -113,7 +101,7 @@ interface AuditEvent {
 
   // Who
   actor_id: string | null;           // User UUID (null for system/bot/cron actors)
-  actor_type: 'user' | 'system' | 'bot' | 'cron' | 'api_key';
+  actor_type: 'user' | 'system' | 'bot' | 'cron';
   actor_ip: string | null;           // Request IP address (null for non-HTTP actors)
   actor_user_agent: string | null;   // Request User-Agent (truncated to 256 chars)
 
@@ -165,7 +153,7 @@ For an update to hackathon settings:
 
 ## 3. Actor Model
 
-Five actor types cover all possible event sources.
+Four actor types cover all possible event sources.
 
 ```mermaid
 flowchart LR
@@ -173,9 +161,8 @@ flowchart LR
     S["system<br/>Internal operation<br/>(actor_id = null)"]
     B["bot<br/>VCS webhook action<br/>(actor_id = null)"]
     C["cron<br/>Scheduled task<br/>(actor_id = null)"]
-    K["api_key<br/>Programmatic access<br/>(actor_id = key owner UUID)"]
 
-    U & S & B & C & K --> AE["audit_events"]
+    U & S & B & C --> AE["audit_events"]
 ```
 
 | Actor Type | When | actor_id | actor_ip | Example |
@@ -184,7 +171,6 @@ flowchart LR
 | `system` | Internal system operation | null | null | Auto-assigning judges, sending notifications |
 | `bot` | VCS webhook-triggered action | null | null | Submission received, force push detected |
 | `cron` | Scheduled task | null | null | Deadline reminder, auto-phase-transition |
-| `api_key` | Programmatic API access | Key owner's UUID | Request IP | External tool reading submissions |
 
 ### Actor Context Enrichment
 
@@ -245,7 +231,9 @@ Each hackathon maintains its own independent hash chain. Platform-level events (
 
 The first event in each chain has `prev_hash = null` and uses `'GENESIS'` as the previous hash input to the hash function.
 
-### Integrity Verification
+### Integrity Verification — *Phase 2*
+
+> **Phase 2**: Automated daily verification. In Phase 1, integrity can be checked on-demand via the `/audit/integrity` endpoint.
 
 A cron job runs daily to verify chain integrity:
 
@@ -399,14 +387,6 @@ flowchart TD
 | `org.member_role_changed` | user | org_member | `{ user_id, from_role, to_role }` |
 | `org.ownership_transferred` | user | organization | `{ from_user_id, to_user_id }` |
 
-### API Key Events
-
-| Action | Actor | Entity Type | Details |
-|--------|-------|-------------|---------|
-| `api_key.created` | user | api_key | `{ key_prefix, scopes, hackathon_id }` |
-| `api_key.revoked` | user | api_key | `{ key_prefix }` |
-| `api_key.used` | api_key | api_key | `{ key_prefix, endpoint, ip }` |
-
 ### System Events
 
 | Action | Actor | Entity Type | Details |
@@ -474,7 +454,7 @@ async function insertAuditEvent(
   input: {
     hackathonId?: string;
     actorId?: string;
-    actorType: 'user' | 'system' | 'bot' | 'cron' | 'api_key';
+    actorType: 'user' | 'system' | 'bot' | 'cron';
     action: string;
     entityType: string;
     entityId: string;
@@ -544,7 +524,7 @@ flowchart TD
     style B fill:#f59e0b,color:#fff
 ```
 
-If transaction acquisition fails (timeout, contention), the audit event is written WITHOUT hash chain linkage (`prev_hash = null`, `hash = computed without chain`). A repair cron job fills in missing chain links periodically.
+If transaction acquisition fails (timeout, contention), the audit event is written WITHOUT hash chain linkage (`prev_hash = null`, `hash = computed without chain`). A repair cron job fills in missing chain links periodically *(Phase 2 — in Phase 1, unchained events are left as-is and flagged in integrity checks)*.
 
 ---
 
@@ -553,14 +533,14 @@ If transaction acquisition fails (timeout, contention), the audit event is writt
 ### REST Endpoints
 
 ```
-GET  /api/v1/hackathons/:slug/audit                    # Query hackathon audit trail (admin+)
-GET  /api/v1/hackathons/:slug/audit/:eventId            # Get single event (admin+)
-GET  /api/v1/hackathons/:slug/audit/entity/:entityType/:entityId  # Events for entity (admin+)
-GET  /api/v1/hackathons/:slug/audit/actor/:actorId      # Events by actor (admin+)
-GET  /api/v1/hackathons/:slug/audit/integrity           # Verify chain integrity (admin+)
+GET  /api/v1/hackathons/:slug/audit                    # Query hackathon audit trail (organizer+)
+GET  /api/v1/hackathons/:slug/audit/:eventId            # Get single event (organizer+)
+GET  /api/v1/hackathons/:slug/audit/entity/:entityType/:entityId  # Events for entity (organizer+)
+GET  /api/v1/hackathons/:slug/audit/actor/:actorId      # Events by actor (organizer+)
+GET  /api/v1/hackathons/:slug/audit/integrity           # Verify chain integrity (organizer+)
 
-GET  /api/v1/admin/audit                                # Platform-wide audit (super_admin)
-GET  /api/v1/admin/audit/user/:userId                   # All events by user (super_admin)
+GET  /api/v1/admin/audit                                # Platform-wide audit (platform admin)
+GET  /api/v1/admin/audit/user/:userId                   # All events by user (platform admin)
 ```
 
 ### Query Parameters
@@ -659,8 +639,8 @@ If integrity is broken:
 ### Export Formats
 
 ```
-GET /api/v1/hackathons/:slug/audit/export?format=csv    # CSV export (admin+)
-GET /api/v1/hackathons/:slug/audit/export?format=json   # JSON export (admin+)
+GET /api/v1/hackathons/:slug/audit/export?format=csv    # CSV export (organizer+)
+GET /api/v1/hackathons/:slug/audit/export?format=json   # JSON export (organizer+)
 ```
 
 Exports support all the same query parameters as the query API for filtering.
@@ -680,9 +660,11 @@ evt_002,2,h_xyz,u_jane,user,team.created,team,t_abc,"{""name"":""Alpha""}",2026-
 | Max rows per export | 10,000 |
 | Export timeout | 30 seconds |
 | Rate limit | 5 exports per hour per user |
-| Sensitive field masking | IP addresses redacted for non-super-admin exports |
+| Sensitive field masking | IP addresses redacted in exports (visible in dashboard only) |
 
-### Large Exports
+### Large Exports — *Phase 2*
+
+> **Phase 2**: Background export jobs via queue + R2. In Phase 1, exports are inline-only (up to 10,000 rows). Requests exceeding the limit return `AUDIT_EXPORT_TOO_LARGE` with guidance to narrow filters.
 
 For exports exceeding 10,000 rows, a background export job is created:
 
@@ -709,7 +691,9 @@ sequenceDiagram
 
 ---
 
-## 10. GDPR & Data Anonymization
+## 10. GDPR & Data Anonymization — *Phase 2*
+
+> **Phase 2**: Automated batch anonymization. In Phase 1, user deletion removes the user record and nullifies `actor_id` on audit events (simple nullification). The full pseudonymous-ID replacement and PII scrubbing described below is Phase 2.
 
 When a user exercises their right to deletion (GDPR Article 17), audit records are anonymized rather than deleted — preserving the audit trail while removing personally identifiable information.
 
@@ -763,7 +747,9 @@ Anonymization changes data but does NOT recompute hashes. The affected events ar
 
 ---
 
-## 11. Retention & Archival
+## 11. Retention & Archival — *Phase 2*
+
+> **Phase 2**: R2 cold storage archival and tiered retention. In Phase 1, all audit events stay in D1 with no automatic archival. Archival becomes necessary once a hackathon accumulates 12+ months of data.
 
 ### Retention Tiers
 
@@ -801,40 +787,96 @@ flowchart TD
 ### Archive Retrieval
 
 ```
-GET /api/v1/hackathons/:slug/audit/archives              # List archive files (admin+)
-GET /api/v1/hackathons/:slug/audit/archives/:archiveId    # Download archive file (admin+)
+GET  /api/v1/hackathons/:slug/audit/archives              # List archive files (organizer+)
+GET  /api/v1/hackathons/:slug/audit/archives/:archiveId    # Download archive file (organizer+)
 ```
 
 Archive download URLs are pre-signed R2 URLs with 1-hour expiry.
 
 ---
 
-## 12. Platform Admin Audit Dashboard
+## 12. Audit Dashboards
 
-Super admins have access to a platform-wide audit dashboard.
+### Per-Hackathon Organizer Dashboard
 
-### Dashboard Views
+Organizers (and above) have access to a per-hackathon audit dashboard showing activity within their hackathon.
+
+#### Dashboard Views
+
+| View | Query | Purpose |
+|------|-------|---------|
+| Recent activity | Last 100 events for this hackathon | Real-time monitoring |
+| Actor activity | All events by a specific actor in this hackathon | Investigate user behavior |
+| Security events | `auth.*` actions within this hackathon, sorted by time | Monitor login anomalies |
+| Failed operations | Events with error details for this hackathon | Identify system issues |
+| Chain integrity | Last verification result for this hackathon | Trust verification |
+
+#### Organizer Dashboard API
+
+```
+GET /api/v1/hackathons/:slug/audit/dashboard/recent     # Recent hackathon activity (organizer+)
+GET /api/v1/hackathons/:slug/audit/dashboard/security   # Security event feed (organizer+)
+GET /api/v1/hackathons/:slug/audit/dashboard/integrity  # Chain integrity summary (organizer+)
+GET /api/v1/hackathons/:slug/audit/dashboard/stats      # Event volume statistics (organizer+)
+```
+
+#### Per-Hackathon Statistics Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "hackathon_id": "h_xyz",
+    "total_events": 1042,
+    "events_today": 42,
+    "events_this_week": 215,
+    "by_actor_type": {
+      "user": 680,
+      "bot": 240,
+      "system": 98,
+      "cron": 24
+    },
+    "by_action_prefix": {
+      "submission": 120,
+      "team": 85,
+      "auth": 450,
+      "hackathon": 32,
+      "score": 68
+    },
+    "chain_integrity": {
+      "valid": true,
+      "last_checked": "2026-03-16T03:00:00Z"
+    }
+  }
+}
+```
+
+### Platform Admin Dashboard
+
+Platform admins (at `admin.devsage.org`) have access to a platform-wide audit dashboard with cross-hackathon visibility.
+
+#### Platform Dashboard Views
 
 | View | Query | Purpose |
 |------|-------|---------|
 | Recent activity | Last 100 events across all hackathons | Real-time monitoring |
-| User activity | All events by a specific user | Investigate user behavior |
-| Security events | `auth.*` actions, sorted by time | Monitor login anomalies |
-| Failed operations | Events with error details | Identify system issues |
-| Chain integrity | Last verification results per hackathon | Trust verification |
+| User activity | All events by a specific user across hackathons | Investigate user behavior |
+| Security events | `auth.*` actions platform-wide, sorted by time | Monitor login anomalies |
+| Failed operations | Events with error details across all hackathons | Identify system issues |
+| Chain integrity | Verification results for all hackathons | Trust verification |
 | Anonymization log | All anonymized user records | GDPR compliance tracking |
 
-### Dashboard API
+#### Platform Dashboard API
 
 ```
-GET /api/v1/admin/audit/dashboard/recent                # Recent platform activity
-GET /api/v1/admin/audit/dashboard/security              # Security event feed
-GET /api/v1/admin/audit/dashboard/integrity             # Chain integrity summary
-GET /api/v1/admin/audit/dashboard/anonymizations        # Anonymization log
-GET /api/v1/admin/audit/dashboard/stats                 # Event volume statistics
+GET /api/v1/admin/audit/dashboard/recent                # Recent platform activity (platform admin)
+GET /api/v1/admin/audit/dashboard/security              # Security event feed (platform admin)
+GET /api/v1/admin/audit/dashboard/integrity             # Chain integrity summary (platform admin)
+GET /api/v1/admin/audit/dashboard/anonymizations        # Anonymization log (platform admin)
+GET /api/v1/admin/audit/dashboard/stats                 # Event volume statistics (platform admin)
 ```
 
-### Statistics Response
+#### Platform Statistics Response
 
 ```json
 {
@@ -847,8 +889,7 @@ GET /api/v1/admin/audit/dashboard/stats                 # Event volume statistic
       "user": 89000,
       "bot": 34000,
       "system": 18000,
-      "cron": 4000,
-      "api_key": 230
+      "cron": 4000
     },
     "by_action_prefix": {
       "submission": 12000,
@@ -879,8 +920,8 @@ GET /api/v1/admin/audit/dashboard/stats                 # Event volume statistic
 | Archived events needed for investigation | Admin downloads archive from R2. Archive files include full event data (except anonymized PII) |
 | Archival cron fails mid-way | Verify-before-delete ensures no data loss. Partial archives are retried next month |
 | Event details contain PII from a different user | Anonymization scrubs known PII patterns (email regex, user ID format) from all details fields |
-| Super admin queries audit for a hackathon they don't organize | Allowed — super admins have platform-wide audit access regardless of hackathon role |
-| API key used to query audit trail | Requires `audit:read` scope. Actor logged as `api_key` type |
+| Non-organizer tries to access hackathon audit trail | Rejected — only organizer+ roles within the hackathon can access per-hackathon audit data |
+| Platform admin queries audit for any hackathon | Allowed — platform admins at `admin.devsage.org` have full cross-hackathon audit access |
 | Thousands of events in a single export | Chunked into background job with R2 output. Maximum 10,000 per inline response |
 | Clock skew between Workers instances | `created_at` may have minor ordering anomalies. `sequence` (auto-increment) is the canonical order |
 | Hash chain genesis event is anonymized | Genesis event retains its hash. Anonymization applies to content fields only, not integrity fields |
@@ -917,7 +958,7 @@ The core audit log table. Append-only.
 | `sequence` | INTEGER | NOT NULL, AUTO-INCREMENT | Per-hackathon sequence number (canonical order) |
 | `hackathon_id` | TEXT | FK → hackathons.id, NULL | Hackathon scope (null for platform events) |
 | `actor_id` | TEXT | FK → users.id, NULL | Who performed the action (null for system/bot/cron) |
-| `actor_type` | TEXT | NOT NULL, CHECK IN ('user','system','bot','cron','api_key') | Actor category |
+| `actor_type` | TEXT | NOT NULL, CHECK IN ('user','system','bot','cron') | Actor category |
 | `actor_ip` | TEXT | NULL | Request IP address |
 | `actor_user_agent` | TEXT | NULL | Request User-Agent (max 256 chars) |
 | `action` | TEXT | NOT NULL | Dot-notation action identifier |
@@ -944,9 +985,9 @@ The core audit log table. Append-only.
 
 ---
 
-### `audit_archives`
+### `audit_archives` — *Phase 2*
 
-Tracks archived audit data in R2 cold storage.
+Tracks archived audit data in R2 cold storage. Only needed when Phase 2 archival is implemented.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -968,9 +1009,9 @@ Tracks archived audit data in R2 cold storage.
 
 ---
 
-### `audit_anonymizations`
+### `audit_anonymizations` — *Phase 2*
 
-Tracks GDPR anonymization actions for compliance reporting.
+Tracks GDPR anonymization actions for compliance reporting. Only needed when Phase 2 anonymization is implemented.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -1000,5 +1041,4 @@ Tracks GDPR anonymization actions for compliance reporting.
 | 12-month hot retention | Events older than 12 months archived to R2 | 12 months covers most hackathon lifecycles plus dispute window. D1 storage is finite. R2 is cheap and durable | 6 months (too short for disputes); unlimited in D1 (storage cost); no archival (D1 growth unbounded) |
 | Daily integrity verification cron | Check all chains once per day at 03:00 UTC | Detects tampering within 24 hours. Daily is sufficient — real-time verification would add latency to every write | Per-write verification (latency); weekly (too slow to detect); no verification (defeats purpose of hash chain) |
 | Sequence number as canonical order | Auto-increment integer per hackathon | Timestamps can have clock skew across Workers instances. Sequence numbers are deterministic and gap-free within transactions | Timestamp only (clock skew); UUID ordering (random, no sequence); hybrid clock (complexity) |
-| Actor type includes api_key | Separate type from user | API key actions need distinct auditing — the key owner is logged as actor_id but the access pattern (programmatic vs. interactive) matters for security analysis | Treat as user (loses access pattern info); no actor attribution for keys (security gap) |
 | Export rate limit of 5/hour | Hard limit per user | Prevents abuse of expensive export queries. 5/hour is generous for legitimate use. Background jobs handle large exports | No limit (abuse risk); 1/day (too restrictive); per-hackathon limit (complex) |
