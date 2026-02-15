@@ -27,11 +27,6 @@ export default defineConfig(async () => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        // Explicit alias: nested copy of the web app contains gsap under
-        // `apps/web/node_modules/gsap`. Point the specifier to that folder
-        // so Vite can resolve the package even when the workspace layout
-        // has a nested app copy (temporary developer fix).
-        gsap: path.resolve(__dirname, './apps/web/node_modules/gsap'),
       },
     },
     server: {
