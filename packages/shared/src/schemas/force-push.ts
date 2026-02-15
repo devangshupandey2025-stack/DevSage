@@ -1,23 +1,28 @@
 import { z } from 'zod';
 
-export const ForcePushActionEnum = z.enum(['logged', 'warned', 'flagged']);
+export const ForcePushSeverityEnum = z.enum(['info', 'warning', 'critical']);
 
-export type ForcePushAction = z.infer<typeof ForcePushActionEnum>;
+export type ForcePushSeverity = z.infer<typeof ForcePushSeverityEnum>;
 
 export const ForcePushEventSchema = z.object({
   id: z.string(),
-  teamId: z.string(),
   hackathonId: z.string(),
+  teamId: z.string(),
+  deliveryId: z.string().nullable().optional(),
+  repoFullName: z.string(),
+  branch: z.string(),
   beforeSha: z.string(),
   afterSha: z.string(),
-  branch: z.string(),
-  commitsLostShas: z.string().nullable().optional(),
-  commitsLostCount: z.number().int().nullable().optional(),
-  detectedAt: z.string(),
-  notifiedOrganizer: z.number().int(),
-  actionTaken: ForcePushActionEnum.nullable().optional(),
-  submissionsInvalidated: z.string().nullable().optional(),
-  webhookDeliveryId: z.string().nullable().optional(),
+  estimatedLostCommits: z.number().int(),
+  severity: ForcePushSeverityEnum,
+  affectedSubmissionIds: z.string(),
+  resolved: z.number().int(),
+  resolvedBy: z.string().nullable().optional(),
+  resolvedAt: z.string().nullable().optional(),
+  resolutionNote: z.string().nullable().optional(),
+  provider: z.string(),
+  pusherLogin: z.string(),
+  createdAt: z.string(),
 });
 
 export type ForcePushEvent = z.infer<typeof ForcePushEventSchema>;

@@ -7,11 +7,13 @@ export const AiReviewSchema = z.object({
   provider: z.string(),
   model: z.string(),
   promptHash: z.string(),
+  promptTemplateVersion: z.string(),
   summary: z.string().nullable().optional(),
   strengths: z.string().nullable().optional(),
   concerns: z.string().nullable().optional(),
   rawResponse: z.string().nullable().optional(),
   tokensUsed: z.number().int().nullable().optional(),
+  latencyMs: z.number().int().nullable().optional(),
   createdAt: z.string(),
 });
 

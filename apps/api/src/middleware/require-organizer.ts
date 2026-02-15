@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient, platformAdmins, organizerInvites } from '@devsage/db';
+import { eq } from 'drizzle-orm';
+import { createDbClient, platformAdmins, workspaceMembers } from '@devsage/db';
 import { errorResponse } from '../lib/response.js';
 import type { AuthAppEnv } from '../types/auth.js';
 
@@ -12,26 +12,21 @@ export const requireOrganizer: MiddlewareHandler<AuthAppEnv> = async (c, next) =
 
   const db = createDbClient(c.env.DB);
 
-  const [admin, invite] = await Promise.all([
+  const [admin, membership] = await Promise.all([
     db
       .select({ id: platformAdmins.id })
       .from(platformAdmins)
       .where(eq(platformAdmins.user_id, user.sub))
       .get(),
     db
-      .select({ id: organizerInvites.id })
-      .from(organizerInvites)
-      .where(
-        and(
-          eq(organizerInvites.accepted_by, user.sub),
-          eq(organizerInvites.status, 'accepted'),
-        ),
-      )
+      .select({ id: workspaceMembers.id })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.user_id, user.sub))
       .get(),
   ]);
 
-  if (!admin && !invite) {
-    return errorResponse(c, 403, 'NOT_ORGANIZER', 'Organizer access required. You need an accepted invite from a platform admin.');
+  if (!admin && !membership) {
+    return errorResponse(c, 403, 'NOT_ORGANIZER', 'Organizer access required. You need workspace membership.');
   }
 
   await next();

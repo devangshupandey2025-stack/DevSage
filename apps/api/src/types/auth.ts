@@ -4,7 +4,7 @@ import type { JWTPayload } from '../lib/jwt.js';
 import type { Env } from './env.js';
 import type { Role } from '../middleware/role.js';
 
-export type AuthenticatedUser = Pick<JWTPayload, 'sub' | 'ghid' | 'ghu'>;
+export type AuthenticatedUser = Pick<JWTPayload, 'sub' | 'ghid' | 'ghu' | 'fam'>;
 
 export type HackathonRecord = InferSelectModel<typeof hackathons>;
 

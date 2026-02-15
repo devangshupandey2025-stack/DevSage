@@ -39,6 +39,7 @@ export async function upsertGitHubUser(
         display_name: profile.displayName,
         email: profile.email,
         avatar_url: profile.avatarUrl,
+        last_login_at: now,
         updated_at: now,
       })
       .where(eq(users.id, existing.id));
@@ -58,6 +59,7 @@ export async function upsertGitHubUser(
     display_name: profile.displayName,
     email: profile.email,
     avatar_url: profile.avatarUrl,
+    last_login_at: now,
     created_at: now,
     updated_at: now,
   });
@@ -98,6 +100,7 @@ export async function linkGoogleToUser(
       google_id: profile.googleId,
       display_name: profile.displayName,
       avatar_url: profile.avatarUrl ?? existing.avatar_url,
+      last_login_at: now,
       updated_at: now,
     })
     .where(eq(users.id, existing.id));

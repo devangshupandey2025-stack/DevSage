@@ -5,8 +5,10 @@ export const ScoreSchema = z.object({
   submissionId: z.string(),
   judgeId: z.string(),
   criteriaId: z.string(),
+  assignmentId: z.string(),
   score: z.number().int().min(0),
   comment: z.string().nullable().optional(),
+  round: z.number().int(),
   scoredAt: z.string(),
 });
 

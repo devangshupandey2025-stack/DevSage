@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq, ne, desc, count, and } from 'drizzle-orm';
+import { eq, ne, desc, count } from 'drizzle-orm';
 import { createDbClient, hackathons as hackathonsTable, organizerRoles } from '@devsage/db';
 import {
   CreateHackathonRequestSchema,
@@ -19,11 +20,14 @@ import { isRecord } from '../lib/utils.js';
 import { getStateMachineStub, fetchDO } from '../lib/do-client.js';
 import {
   DEFAULT_SUBMISSION_TAG_PATTERN,
-  DEFAULT_PRIMARY_COLOR,
   DEFAULT_MIN_TEAM_SIZE,
   DEFAULT_MAX_TEAM_SIZE,
   DO_PATHS,
 } from '../lib/constants.js';
+
+const CreateHackathonWithWorkspaceSchema = CreateHackathonRequestSchema.extend({
+  workspaceId: z.string(),
+});
 
 const hackathons = new Hono<AuthAppEnv>();
 
@@ -77,14 +81,13 @@ hackathons.get('/:slug', optionalAuth, async (c) => {
     return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
   }
 
-  // Draft hackathons are only visible to organizers (owner/admin/moderator)
   if (hackathon.status === 'draft') {
     const user = c.get('user');
     if (!user) {
       return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
     }
-    const role = await resolveRole(user.sub, hackathon.id, db);
-    if (!isRoleAtLeast(role, 'moderator')) {
+    const role = await resolveRole(user.sub, hackathon.id, db, hackathon.workspace_id);
+    if (!isRoleAtLeast(role, 'co_organizer')) {
       return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
     }
   }
@@ -96,7 +99,7 @@ hackathons.post(
   '/',
   authMiddleware,
   requireOrganizer,
-  zValidator('json', CreateHackathonRequestSchema),
+  zValidator('json', CreateHackathonWithWorkspaceSchema),
   async (c) => {
     const user = c.get('user');
     const body = c.req.valid('json');
@@ -118,23 +121,30 @@ hackathons.post(
 
     await db.insert(hackathonsTable).values({
       id,
+      workspace_id: body.workspaceId,
       slug,
       title: body.title,
+      tagline: body.tagline ?? null,
       description: body.description ?? null,
       rules_md: body.rulesMd ?? null,
-      registration_opens: body.registrationOpens,
-      registration_closes: body.registrationCloses,
-      submission_deadline: body.submissionDeadline,
+      status: 'draft',
+      starts_at: body.startsAt ?? null,
       judging_starts: body.judgingStarts ?? null,
       judging_ends: body.judgingEnds ?? null,
       min_team_size: body.minTeamSize ?? DEFAULT_MIN_TEAM_SIZE,
       max_team_size: body.maxTeamSize ?? DEFAULT_MAX_TEAM_SIZE,
       max_teams: body.maxTeams ?? null,
       submission_tag_pattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
-      max_submissions_per_team: body.maxSubmissionsPerTeam ?? null,
-      allow_late_submissions: body.allowLateSubmissions ?? 0,
-      primary_color: body.primaryColor ?? DEFAULT_PRIMARY_COLOR,
-      status: 'draft',
+      allow_resubmission: body.allowResubmission ?? 0,
+      allow_registration_during_active: body.allowRegistrationDuringActive ?? 0,
+      registration_mode: body.registrationMode ?? 'open',
+      allowed_email_domains: body.allowedEmailDomains ?? '[]',
+      require_repo: body.requireRepo ?? 1,
+      timezone: body.timezone ?? 'UTC',
+      template_id: body.templateId ?? null,
+      tracks: body.tracks ?? '[]',
+      prizes: body.prizes ?? '[]',
+      settings: body.settings ?? '{}',
       created_by: user.sub,
       created_at: now,
       updated_at: now,
@@ -144,7 +154,7 @@ hackathons.post(
       id: crypto.randomUUID(),
       hackathon_id: id,
       user_id: user.sub,
-      role: 'owner',
+      role: 'organizer',
       created_at: now,
     });
 
@@ -154,14 +164,10 @@ hackathons.post(
       body: {
         hackathonId: id,
         config: {
-          registrationOpens: body.registrationOpens,
-          registrationCloses: body.registrationCloses,
-          submissionDeadline: body.submissionDeadline,
+          startsAt: body.startsAt ?? null,
           judgingStarts: body.judgingStarts ?? null,
           judgingEnds: body.judgingEnds ?? null,
           maxTeams: body.maxTeams ?? null,
-          maxSubmissionsPerTeam: body.maxSubmissionsPerTeam ?? null,
-          allowLateSubmissions: body.allowLateSubmissions ?? 0,
           submissionTagPattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
         },
       },
@@ -183,7 +189,7 @@ hackathons.post(
       action: 'hackathon.create',
       entityType: 'hackathon',
       entityId: id,
-      details: { slug, title: body.title },
+      details: { slug, title: body.title, workspaceId: body.workspaceId },
     });
 
     const hackathon = await db
@@ -199,7 +205,7 @@ hackathons.post(
 hackathons.put(
   '/:slug',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   zValidator('json', UpdateHackathonRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -216,23 +222,27 @@ hackathons.put(
     };
 
     if (body.title !== undefined) updateData.title = body.title;
+    if (body.tagline !== undefined) updateData.tagline = body.tagline;
     if (body.description !== undefined) updateData.description = body.description;
     if (body.rulesMd !== undefined) updateData.rules_md = body.rulesMd;
-    if (body.registrationOpens !== undefined) updateData.registration_opens = body.registrationOpens;
-    if (body.registrationCloses !== undefined) updateData.registration_closes = body.registrationCloses;
-    if (body.submissionDeadline !== undefined) updateData.submission_deadline = body.submissionDeadline;
+    if (body.startsAt !== undefined) updateData.starts_at = body.startsAt;
     if (body.judgingStarts !== undefined) updateData.judging_starts = body.judgingStarts;
     if (body.judgingEnds !== undefined) updateData.judging_ends = body.judgingEnds;
     if (body.minTeamSize !== undefined) updateData.min_team_size = body.minTeamSize;
     if (body.maxTeamSize !== undefined) updateData.max_team_size = body.maxTeamSize;
     if (body.maxTeams !== undefined) updateData.max_teams = body.maxTeams;
     if (body.submissionTagPattern !== undefined) updateData.submission_tag_pattern = body.submissionTagPattern;
-    if (body.maxSubmissionsPerTeam !== undefined) updateData.max_submissions_per_team = body.maxSubmissionsPerTeam;
-    if (body.allowLateSubmissions !== undefined) updateData.allow_late_submissions = body.allowLateSubmissions;
-    if (body.primaryColor !== undefined) updateData.primary_color = body.primaryColor;
-    if (body.logoR2Key !== undefined) updateData.logo_r2_key = body.logoR2Key;
-    if (body.bannerR2Key !== undefined) updateData.banner_r2_key = body.bannerR2Key;
-    if (body.customSubdomain !== undefined) updateData.custom_subdomain = body.customSubdomain;
+    if (body.allowResubmission !== undefined) updateData.allow_resubmission = body.allowResubmission;
+    if (body.allowRegistrationDuringActive !== undefined) updateData.allow_registration_during_active = body.allowRegistrationDuringActive;
+    if (body.notifyAllOnDeadline !== undefined) updateData.notify_all_on_deadline = body.notifyAllOnDeadline;
+    if (body.showJudgeCommentsToParticipants !== undefined) updateData.show_judge_comments_to_participants = body.showJudgeCommentsToParticipants;
+    if (body.registrationMode !== undefined) updateData.registration_mode = body.registrationMode;
+    if (body.allowedEmailDomains !== undefined) updateData.allowed_email_domains = body.allowedEmailDomains;
+    if (body.requireRepo !== undefined) updateData.require_repo = body.requireRepo;
+    if (body.timezone !== undefined) updateData.timezone = body.timezone;
+    if (body.tracks !== undefined) updateData.tracks = body.tracks;
+    if (body.prizes !== undefined) updateData.prizes = body.prizes;
+    if (body.settings !== undefined) updateData.settings = body.settings;
 
     await db
       .update(hackathonsTable)
@@ -262,7 +272,7 @@ hackathons.put(
 hackathons.patch(
   '/:slug/status',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   zValidator('json', StatusTransitionRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -275,7 +285,7 @@ hackathons.patch(
     const smStub = getStateMachineStub(c.env, hackathon.id);
     const transitionResult = await fetchDO(smStub, DO_PATHS.TRANSITION, {
       method: 'POST',
-      body: { targetStatus, expectedVersion: body.expectedVersion },
+      body: { targetStatus },
     });
 
     if (!transitionResult.ok) {
@@ -318,7 +328,7 @@ hackathons.patch(
 hackathons.delete(
   '/:slug',
   authMiddleware,
-  requireRole('owner'),
+  requireRole('organizer'),
   async (c) => {
     const hackathon = c.get('hackathon');
     const user = c.get('user');

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const JudgeInviteStatusEnum = z.enum(['pending', 'accepted', 'declined']);
+export const JudgeInviteStatusEnum = z.enum(['pending', 'accepted', 'declined', 'removed']);
 
 export type JudgeInviteStatus = z.infer<typeof JudgeInviteStatusEnum>;
 
@@ -9,8 +9,10 @@ export const JudgeSchema = z.object({
   hackathonId: z.string(),
   userId: z.string(),
   inviteStatus: JudgeInviteStatusEnum,
+  trackId: z.string().nullable().optional(),
+  invitedBy: z.string(),
   invitedAt: z.string(),
-  acceptedAt: z.string().nullable().optional(),
+  respondedAt: z.string().nullable().optional(),
 });
 
 export type Judge = z.infer<typeof JudgeSchema>;

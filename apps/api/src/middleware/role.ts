@@ -1,49 +1,46 @@
 import type { MiddlewareHandler } from 'hono';
 import type { DbClient } from '@devsage/db';
-import { hackathons, organizerRoles, judges, teams, teamMembers } from '@devsage/db';
+import { hackathons, organizerRoles, judges, teams, teamMembers, workspaceMembers } from '@devsage/db';
 import { eq, and } from 'drizzle-orm';
 import { createDbClient } from '@devsage/db';
 import { errorResponse } from '../lib/response.js';
 import type { AuthAppEnv } from '../types/auth.js';
 
-/** Highest privilege first: owner > admin > moderator > judge > team_leader > participant > anonymous */
 export const ROLE_HIERARCHY = [
-  'owner',
-  'admin',
-  'moderator',
+  'organizer',
+  'co_organizer',
   'judge',
-  'team_leader',
-  'participant',
+  'team_lead',
+  'team_member',
   'anonymous',
 ] as const;
 
 export type Role = (typeof ROLE_HIERARCHY)[number];
 
 const ROLE_INDEX: Record<Role, number> = {
-  owner: 0,
-  admin: 1,
-  moderator: 2,
-  judge: 3,
-  team_leader: 4,
-  participant: 5,
-  anonymous: 6,
+  organizer: 0,
+  co_organizer: 1,
+  judge: 2,
+  team_lead: 3,
+  team_member: 4,
+  anonymous: 5,
 };
 
 export function isRoleAtLeast(actual: Role, minimum: Role): boolean {
   return ROLE_INDEX[actual] <= ROLE_INDEX[minimum];
 }
 
-/**
- * Resolution order (returns first match):
- * 1. organizer_roles → owner / admin / moderator
- * 2. judges (invite_status = 'accepted') → judge
- * 3. team_members JOIN teams → team_leader or participant
- * 4. Fallback → anonymous
- */
+const WORKSPACE_ROLE_DEFAULTS: Record<string, Role | null> = {
+  workspace_owner: 'organizer',
+  workspace_admin: 'co_organizer',
+  workspace_member: null,
+};
+
 export async function resolveRole(
   userId: string,
   hackathonId: string,
   db: DbClient,
+  workspaceId?: string | null,
 ): Promise<Role> {
   const orgRole = await db
     .select({ role: organizerRoles.role })
@@ -77,7 +74,7 @@ export async function resolveRole(
   }
 
   const membership = await db
-    .select({ is_leader: teamMembers.is_leader })
+    .select({ role: teamMembers.role })
     .from(teamMembers)
     .innerJoin(teams, eq(teamMembers.team_id, teams.id))
     .where(
@@ -89,15 +86,30 @@ export async function resolveRole(
     .get();
 
   if (membership) {
-    return membership.is_leader ? 'team_leader' : 'participant';
+    return membership.role === 'leader' ? 'team_lead' : 'team_member';
+  }
+
+  if (workspaceId) {
+    const wsMember = await db
+      .select({ role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspace_id, workspaceId),
+          eq(workspaceMembers.user_id, userId),
+        ),
+      )
+      .get();
+
+    if (wsMember) {
+      const defaultRole = WORKSPACE_ROLE_DEFAULTS[wsMember.role];
+      if (defaultRole) return defaultRole;
+    }
   }
 
   return 'anonymous';
 }
-/**
- * Middleware to require a minimum role for a hackathon route.
- * Usage: app.use('/api/v1/hackathons/:slug/...', requireRole('judge'))
- */
+
 export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
   return async (c, next) => {
     try {
@@ -129,7 +141,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
         return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
       }
 
-      const resolvedRole = await resolveRole(user.sub, hackathon.id, db);
+      const resolvedRole = await resolveRole(user.sub, hackathon.id, db, hackathon.workspace_id);
 
       c.set('role', resolvedRole);
       c.set('hackathon', hackathon);

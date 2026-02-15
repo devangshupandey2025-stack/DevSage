@@ -3,11 +3,12 @@ import { z } from 'zod';
 export const SubmissionStatusEnum = z.enum([
   'received',
   'validated',
-  'invalid',
+  'validation_failed',
   'locked',
   'under_review',
   'scored',
-  'invalidated',
+  'invalid',
+  'superseded',
 ]);
 
 export type SubmissionStatus = z.infer<typeof SubmissionStatusEnum>;
@@ -21,14 +22,17 @@ export const SubmissionSchema = z.object({
   commitMessage: z.string().nullable().optional(),
   commitAuthor: z.string().nullable().optional(),
   branch: z.string().nullable().optional(),
-  submittedAt: z.string(),
-  receivedAt: z.string(),
+  provider: z.string(),
+  repoFullName: z.string(),
+  roundId: z.string(),
+  status: SubmissionStatusEnum,
   isLate: z.number().int(),
   isFinal: z.number().int(),
-  version: z.number().int(),
-  status: SubmissionStatusEnum,
-  validationErrors: z.string().nullable().optional(),
+  validationResults: z.string().nullable().optional(),
   lockedAt: z.string().nullable().optional(),
+  finalizedAt: z.string().nullable().optional(),
+  submittedAt: z.string(),
+  receivedAt: z.string(),
   webhookDeliveryId: z.string().nullable().optional(),
 });
 

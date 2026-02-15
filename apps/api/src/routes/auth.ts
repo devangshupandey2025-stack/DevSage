@@ -1,8 +1,16 @@
 import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient, users, organizerRoles, platformAdmins, organizerInvites } from '@devsage/db';
+import { eq } from 'drizzle-orm';
+import { createDbClient, users, organizerRoles, platformAdmins, workspaceMembers, workspaceInvites } from '@devsage/db';
 import type { Env } from '../types/env.js';
-import { clearSessionCookie, getSessionCookie, setSessionCookie } from '../lib/cookies.js';
+import {
+  getAccessTokenCookie,
+  setAccessTokenCookie,
+  clearAccessTokenCookie,
+  getRefreshTokenCookie,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  clearLegacySessionCookie,
+} from '../lib/cookies.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
 import { errorResponse, successResponse } from '../lib/response.js';
 import { upsertGitHubUser, linkGoogleToUser, callbackUrl } from '../lib/user-service.js';
@@ -20,27 +28,13 @@ import {
 } from '../lib/oauth.js';
 import type { Context } from 'hono';
 import type { UserIdentity } from '../lib/user-service.js';
-
-// Helper: check if a table exists in the D1 database. Some local/dev DBs
-// may be missing optional tables (tests or minimal setups), so guard
-// queries that target those tables.
-async function tableExists(tableName: string, env: Env): Promise<boolean> {
-  try {
-    const res = await env.DB.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
-    ).bind(tableName).all();
-    // D1 `.all()` returns { results: [...] } shape in the worker-runtime
-    // but to be defensive check for results or length.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyRes: any = res;
-    if (anyRes && Array.isArray(anyRes.results)) return anyRes.results.length > 0;
-    if (Array.isArray(anyRes)) return anyRes.length > 0;
-    return false;
-  } catch (err) {
-    console.warn('Failed to check table existence for', tableName, err instanceof Error ? err.message : String(err));
-    return false;
-  }
-}
+import {
+  createRefreshToken,
+  rotateRefreshToken,
+  revokeTokenFamily,
+  revokeAllUserTokens,
+} from '../lib/refresh-token.js';
+import type { RotateResult } from '../lib/refresh-token.js';
 
 type AppOrigin = 'participant' | 'platform' | 'admin';
 
@@ -67,17 +61,12 @@ async function isPlatformAdmin(userId: string, env: Env): Promise<boolean> {
   return !!admin;
 }
 
-async function hasAcceptedOrganizerInvite(userId: string, env: Env): Promise<boolean> {
+async function hasAcceptedWorkspaceInvite(userId: string, env: Env): Promise<boolean> {
   const db = createDbClient(env.DB);
   const invite = await db
-    .select({ id: organizerInvites.id })
-    .from(organizerInvites)
-    .where(
-      and(
-        eq(organizerInvites.accepted_by, userId),
-        eq(organizerInvites.status, 'accepted'),
-      ),
-    )
+    .select({ id: workspaceInvites.id })
+    .from(workspaceInvites)
+    .where(eq(workspaceInvites.accepted_by, userId))
     .get();
   return !!invite;
 }
@@ -96,7 +85,7 @@ async function checkLoginAccess(
     return { allowed: false, reason: 'Platform admin access required' };
   }
 
-  const hasInvite = await hasAcceptedOrganizerInvite(userId, env);
+  const hasInvite = await hasAcceptedWorkspaceInvite(userId, env);
   if (hasInvite) return { allowed: true };
 
   return { allowed: false, reason: 'Organizer access required. You need an accepted invite.' };
@@ -118,16 +107,22 @@ async function handleOAuthSuccess(
     return c.redirect(loginUrl.toString(), 302);
   }
 
+  const db = createDbClient(c.env.DB);
+  const ipAddress = c.req.header('CF-Connecting-IP') ?? c.req.header('x-forwarded-for');
+  const userAgent = c.req.header('User-Agent');
+
+  const refreshResult = await createRefreshToken(db, user.id, undefined, ipAddress, userAgent);
+
   const token = await signJWT(
-    { sub: user.id, ghid: user.github_id, ghu: user.github_username },
+    { sub: user.id, ghid: user.github_id, ghu: user.github_username, fam: refreshResult.familyId },
     c.env.JWT_SECRET,
   );
 
-  // Each app has its own landing page after login
   const landingPath = appOrigin === 'admin' ? '/' : '/dashboard';
   const dashboardUrl = new URL(landingPath, frontendOrigin).toString();
 
-  setSessionCookie(c, token, frontendOrigin);
+  setAccessTokenCookie(c, token, frontendOrigin);
+  setRefreshTokenCookie(c, refreshResult.rawToken, frontendOrigin);
 
   return c.redirect(dashboardUrl, 302);
 }
@@ -238,7 +233,7 @@ auth.get('/callback/github', async (c) => {
 
 auth.get('/me', async (c) => {
   try {
-    const token = getSessionCookie(c);
+    const token = getAccessTokenCookie(c);
     if (!token) {
       return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
     }
@@ -260,47 +255,25 @@ auth.get('/me', async (c) => {
       return errorResponse(c, 404, 'USER_NOT_FOUND', 'User not found');
     }
 
-    // Guard optional tables: if a table is missing (e.g. platform_admins in
-    // a minimal local DB), skip the query instead of throwing.
-    const [platformAdminsExists, organizerInvitesExists] = await Promise.all([
-      tableExists('platform_admins', c.env),
-      tableExists('organizer_invites', c.env),
-    ]);
-
-    const rolesPromise = db
-      .select({
-        hackathon_id: organizerRoles.hackathon_id,
-        role: organizerRoles.role,
-      })
-      .from(organizerRoles)
-      .where(eq(organizerRoles.user_id, user.id))
-      .all();
-
-    const adminPromise = platformAdminsExists
-      ? db
-          .select({ id: platformAdmins.id })
-          .from(platformAdmins)
-          .where(eq(platformAdmins.user_id, user.id))
-          .get()
-      : Promise.resolve(null);
-
-    const invitePromise = organizerInvitesExists
-      ? db
-          .select({ id: organizerInvites.id })
-          .from(organizerInvites)
-          .where(
-            and(
-              eq(organizerInvites.accepted_by, user.id),
-              eq(organizerInvites.status, 'accepted'),
-            ),
-          )
-          .get()
-      : Promise.resolve(null);
-
-    const [roles, adminRecord, acceptedInvite] = await Promise.all([
-      rolesPromise,
-      adminPromise,
-      invitePromise,
+    const [roles, adminRecord, workspaceMembership] = await Promise.all([
+      db
+        .select({
+          hackathon_id: organizerRoles.hackathon_id,
+          role: organizerRoles.role,
+        })
+        .from(organizerRoles)
+        .where(eq(organizerRoles.user_id, user.id))
+        .all(),
+      db
+        .select({ id: platformAdmins.id })
+        .from(platformAdmins)
+        .where(eq(platformAdmins.user_id, user.id))
+        .get(),
+      db
+        .select({ id: workspaceMembers.id })
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.user_id, user.id))
+        .get(),
     ]);
 
     return successResponse(c, {
@@ -315,7 +288,7 @@ auth.get('/me', async (c) => {
       },
       roles,
       isPlatformAdmin: !!adminRecord,
-      isOrganizer: !!acceptedInvite || !!adminRecord,
+      isOrganizer: !!workspaceMembership || !!adminRecord,
     });
   } catch (err) {
     console.error('/me endpoint error:', err instanceof Error ? err.message : String(err));
@@ -323,11 +296,87 @@ auth.get('/me', async (c) => {
   }
 });
 
-auth.post('/logout', (c) => {
+auth.post('/refresh', async (c) => {
+  const rawToken = getRefreshTokenCookie(c);
+  if (!rawToken) {
+    return errorResponse(c, 401, 'NO_REFRESH_TOKEN', 'No refresh token provided');
+  }
+
+  const db = createDbClient(c.env.DB);
+  const ipAddress = c.req.header('CF-Connecting-IP') ?? c.req.header('x-forwarded-for');
+  const userAgent = c.req.header('User-Agent');
+
+  const result: RotateResult = await rotateRefreshToken(db, rawToken, ipAddress, userAgent);
+
+  if (!result.ok) {
+    const frontendUrl = resolveFrontendOrigin(c.req.header('Origin'), c.env);
+    clearAccessTokenCookie(c, frontendUrl);
+    clearRefreshTokenCookie(c, frontendUrl);
+    return errorResponse(c, 401, result.code, 'Refresh token invalid');
+  }
+
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, result.userId))
+    .get();
+
+  if (!user) {
+    return errorResponse(c, 401, 'USER_NOT_FOUND', 'User no longer exists');
+  }
+
+  const accessToken = await signJWT(
+    { sub: user.id, ghid: user.github_id, ghu: user.github_username, fam: result.familyId },
+    c.env.JWT_SECRET,
+  );
+
+  const frontendUrl = resolveFrontendOrigin(c.req.header('Origin'), c.env);
+  setAccessTokenCookie(c, accessToken, frontendUrl);
+  setRefreshTokenCookie(c, result.newToken.rawToken, frontendUrl);
+
+  return successResponse(c, { message: 'Token refreshed' });
+});
+
+auth.post('/logout', async (c) => {
   const origin = c.req.header('Origin');
   const frontendUrl = resolveFrontendOrigin(origin, c.env);
-  clearSessionCookie(c, frontendUrl);
+
+  const token = getAccessTokenCookie(c);
+  if (token) {
+    const payload = await verifyJWT(token, c.env.JWT_SECRET);
+    if (payload?.fam) {
+      const db = createDbClient(c.env.DB);
+      await revokeTokenFamily(db, payload.fam);
+    }
+  }
+
+  clearAccessTokenCookie(c, frontendUrl);
+  clearRefreshTokenCookie(c, frontendUrl);
+  clearLegacySessionCookie(c, frontendUrl);
+
   return successResponse(c, { message: 'Logged out' });
+});
+
+auth.post('/logout-all', async (c) => {
+  const token = getAccessTokenCookie(c);
+  if (!token) {
+    return errorResponse(c, 401, 'NO_TOKEN', 'Unauthorized');
+  }
+
+  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid or expired token');
+  }
+
+  const db = createDbClient(c.env.DB);
+  await revokeAllUserTokens(db, payload.sub);
+
+  const frontendUrl = resolveFrontendOrigin(c.req.header('Origin'), c.env);
+  clearAccessTokenCookie(c, frontendUrl);
+  clearRefreshTokenCookie(c, frontendUrl);
+  clearLegacySessionCookie(c, frontendUrl);
+
+  return successResponse(c, { message: 'All sessions revoked' });
 });
 
 export default auth;

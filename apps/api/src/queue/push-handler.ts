@@ -4,14 +4,14 @@ import type { NormalizedPushEvent } from '../lib/webhook-normalize.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import type { Env } from '../types/env.js';
 import { MAX_COMMITS_PER_PUSH } from '../lib/constants.js';
-import type { TeamRow } from '../types/db-rows.js';
+import type { TeamRepoRow } from '../types/db-rows.js';
 
 export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<void> {
-  const team = await env.DB.prepare(
-    'SELECT id, hackathon_id FROM teams WHERE repo_full_name = ? AND bot_active = 1'
-  ).bind(event.repoFullName).first<TeamRow>();
+  const teamRepo = await env.DB.prepare(
+    'SELECT id, team_id, hackathon_id, repo_full_name FROM team_repos WHERE repo_full_name = ? AND bot_active = 1'
+  ).bind(event.repoFullName).first<TeamRepoRow>();
 
-  if (!team) return;
+  if (!teamRepo) return;
 
   const existing = await env.DB.prepare(
     'SELECT id FROM commit_log WHERE webhook_delivery_id = ? LIMIT 1'
@@ -23,83 +23,77 @@ export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<
   const boundedCommits = event.commits.slice(0, MAX_COMMITS_PER_PUSH);
   const now = new Date().toISOString();
 
-  // Log commits — failures here should not block force-push detection
   try {
     for (const commit of boundedCommits) {
       await db.insert(commitLog).values({
         id: crypto.randomUUID(),
-        team_id: team.id,
-        hackathon_id: team.hackathon_id,
-        commit_sha: commit.sha,
-        message: commit.message?.substring(0, 500) ?? null,
-        author_username: commit.author?.substring(0, 100) ?? null,
+        team_id: teamRepo.team_id,
+        hackathon_id: teamRepo.hackathon_id,
+        sha: commit.sha,
+        message: commit.message?.substring(0, 500) ?? '',
+        author_name: commit.author?.substring(0, 100) ?? '',
+        author_email: '',
+        committed_at: commit.timestamp,
+        url: `https://github.com/${event.repoFullName}/commit/${commit.sha}`,
         branch: event.branch,
-        pushed_at: event.timestamp,
-        is_force_push: event.forced ? 1 : 0,
-        commits_in_push: event.commits.length,
-        webhook_delivery_id: event.deliveryId,
+        delivery_id: event.deliveryId,
+        provider: 'github',
         created_at: now,
       });
     }
   } catch (error) {
     console.error('push-handler: failed to log commits:', {
-      teamId: team.id,
+      teamId: teamRepo.team_id,
       deliveryId: event.deliveryId,
       error: error instanceof Error ? error.message : String(error),
     });
-    // Continue to force-push detection — logging failure is non-critical
   }
 
   if (event.forced) {
     const forcePushId = crypto.randomUUID();
     const estimatedLost = Math.max(0, (event.size ?? 0) - event.commits.length);
 
-    await db.insert(forcePushEvents).values({
-      id: forcePushId,
-      team_id: team.id,
-      hackathon_id: team.hackathon_id,
-      before_sha: event.beforeSha,
-      after_sha: event.headSha,
-      branch: event.branch,
-      commits_lost_count: estimatedLost,
-      detected_at: now,
-      webhook_delivery_id: event.deliveryId,
-    });
-
     const affectedSubmissions = await db
       .select({ id: submissions.id })
       .from(submissions)
       .where(
         and(
-          eq(submissions.team_id, team.id),
+          eq(submissions.team_id, teamRepo.team_id),
           inArray(submissions.status, ['received', 'validated', 'locked', 'under_review'])
         )
       );
 
-    if (affectedSubmissions.length > 0) {
-      await db
-        .update(forcePushEvents)
-        .set({
-          action_taken: 'flagged',
-          submissions_invalidated: JSON.stringify(affectedSubmissions.map((s) => s.id)),
-        })
-        .where(eq(forcePushEvents.id, forcePushId));
-    }
+    await db.insert(forcePushEvents).values({
+      id: forcePushId,
+      team_id: teamRepo.team_id,
+      hackathon_id: teamRepo.hackathon_id,
+      delivery_id: event.deliveryId,
+      repo_full_name: event.repoFullName,
+      branch: event.branch,
+      before_sha: event.beforeSha,
+      after_sha: event.headSha,
+      estimated_lost_commits: estimatedLost,
+      severity: affectedSubmissions.length > 0 ? 'critical' : 'warning',
+      affected_submission_ids: JSON.stringify(affectedSubmissions.map((s) => s.id)),
+      pusher_login: event.pusherName,
+      provider: 'github',
+      created_at: now,
+    });
 
     await env.NOTIFICATION_QUEUE.send({
       type: 'force_push_alert',
-      hackathonId: team.hackathon_id,
-      teamId: team.id,
+      hackathonId: teamRepo.hackathon_id,
+      teamId: teamRepo.team_id,
       forcePushId,
       affectedSubmissionCount: affectedSubmissions.length,
     });
 
     await insertAuditEvent(db, {
-      hackathonId: team.hackathon_id,
+      hackathonId: teamRepo.hackathon_id,
       actorType: 'bot',
       action: 'force_push.detected',
       entityType: 'team',
-      entityId: team.id,
+      entityId: teamRepo.team_id,
       details: { before: event.beforeSha, after: event.headSha, branch: event.branch },
     });
   }

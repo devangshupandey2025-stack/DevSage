@@ -2,6 +2,7 @@ export interface JWTPayload {
   sub: string;   // user UUID
   ghid: number;  // GitHub user ID
   ghu: string;   // GitHub username
+  fam: string;   // token family ID (links to refresh token family)
   iat: number;   // issued at
   exp: number;   // expiration
 }
@@ -103,6 +104,7 @@ export async function verifyJWT(token: string, secret: string): Promise<JWTPaylo
       typeof payload.sub !== 'string' ||
       typeof payload.ghid !== 'number' ||
       typeof payload.ghu !== 'string' ||
+      typeof payload.fam !== 'string' ||
       typeof payload.iat !== 'number' ||
       typeof payload.exp !== 'number'
     ) {

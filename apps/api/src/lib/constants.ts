@@ -15,8 +15,19 @@ export const SERVICE_TIMEOUT_MS = 10_000;
 
 // ─── JWT ─────────────────────────────────────────────────────
 
-/** JWT token expiry duration: 7 days in seconds. */
-export const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
+/** JWT access-token expiry: 15 minutes in seconds. */
+export const JWT_EXPIRY_SECONDS = 15 * 60;
+
+// ─── Refresh Tokens ──────────────────────────────────────────
+
+/** Refresh token expiry: 30 days in seconds. */
+export const REFRESH_TOKEN_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
+
+/** Cookie name for the refresh token. */
+export const REFRESH_TOKEN_COOKIE_NAME = 'refresh_token';
+
+/** Byte length for opaque refresh tokens. */
+export const REFRESH_TOKEN_BYTE_LENGTH = 32;
 
 // ─── Submissions ─────────────────────────────────────────────
 
@@ -46,9 +57,6 @@ export const MAX_RETRY_DELAY_SECONDS = 300;
 export const RETRY_BACKOFF_BASE_SECONDS = 30;
 
 // ─── Hackathon Defaults ──────────────────────────────────────
-
-/** Default primary colour for hackathon branding. */
-export const DEFAULT_PRIMARY_COLOR = '#6366f1';
 
 /** Default minimum team size. */
 export const DEFAULT_MIN_TEAM_SIZE = 1;

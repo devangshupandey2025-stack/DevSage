@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const OrganizerRoleEnum = z.enum(['owner', 'admin', 'moderator']);
+export const OrganizerRoleEnum = z.enum(['organizer', 'co_organizer']);
 
 export type OrganizerRoleType = z.infer<typeof OrganizerRoleEnum>;
 

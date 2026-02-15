@@ -12,14 +12,10 @@ import { buildJudgeAssignments, validateScoreSubmission, getLeaderboard } from '
 
 const judging = new Hono<AuthAppEnv>();
 
-/**
- * POST /:slug/judges — invite a judge
- * Requires: admin+ role
- */
 judging.post(
   '/:slug/judges',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   zValidator('json', InviteJudgeRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -50,8 +46,8 @@ judging.post(
       hackathon_id: hackathon.id,
       user_id: body.userId,
       invite_status: 'pending',
+      invited_by: user.sub,
       invited_at: now,
-      accepted_at: null,
     });
 
     await insertAuditEvent(db, {
@@ -73,14 +69,10 @@ judging.post(
   },
 );
 
-/**
- * GET /:slug/judges — list all judges with user details
- * Requires: admin+ role
- */
 judging.get(
   '/:slug/judges',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   async (c) => {
     const hackathon = c.get('hackathon');
     const db = createDbClient(c.env.DB);
@@ -91,8 +83,9 @@ judging.get(
         hackathon_id: judges.hackathon_id,
         user_id: judges.user_id,
         invite_status: judges.invite_status,
+        invited_by: judges.invited_by,
         invited_at: judges.invited_at,
-        accepted_at: judges.accepted_at,
+        responded_at: judges.responded_at,
         user: {
           id: users.id,
           email: users.email,
@@ -109,10 +102,6 @@ judging.get(
   },
 );
 
-/**
- * POST /:slug/judges/:judgeId/respond — judge accepts or declines invite
- * Requires: authenticated user, must be the invited judge
- */
 judging.post(
   '/:slug/judges/:judgeId/respond',
   authMiddleware,
@@ -146,13 +135,12 @@ judging.post(
 
     const now = new Date().toISOString();
     const newStatus = body.accept ? 'accepted' : 'declined';
-    const acceptedAt = body.accept ? now : null;
 
     await db
       .update(judges)
       .set({
         invite_status: newStatus,
-        accepted_at: acceptedAt,
+        responded_at: now,
       })
       .where(eq(judges.id, judgeRecordId));
 
@@ -175,10 +163,6 @@ judging.post(
   },
 );
 
-/**
- * GET /:slug/rubric — retrieve all rubric criteria for a hackathon, ordered by sort_order
- * Requires: anonymous (open to all)
- */
 judging.get(
   '/:slug/rubric',
   optionalAuth,
@@ -198,15 +182,10 @@ judging.get(
   },
 );
 
-/**
- * POST /:slug/rubric — bulk upsert rubric criteria (delete all, insert new)
- * Requires: admin+ role
- * Status constraint: only 'draft' or 'registration_open'
- */
 judging.post(
   '/:slug/rubric',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   zValidator('json', BulkRubricRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -214,22 +193,24 @@ judging.post(
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
 
-    if (hackathon.status !== 'draft' && hackathon.status !== 'registration_open') {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only update rubric when hackathon is draft or registration_open');
+    if (hackathon.status !== 'draft') {
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only update rubric when hackathon is in draft');
     }
 
     await db
       .delete(rubricCriteria)
       .where(eq(rubricCriteria.hackathon_id, hackathon.id));
 
+    const now = new Date().toISOString();
     const newCriteria = body.criteria.map((_c) => ({
       id: crypto.randomUUID(),
       hackathon_id: hackathon.id,
       name: _c.name,
-      description: _c.description || null,
+      description: _c.description || '',
       max_score: _c.maxScore,
       weight: _c.weight,
       sort_order: _c.sortOrder,
+      created_at: now,
     }));
 
     if (newCriteria.length > 0) {
@@ -257,14 +238,10 @@ judging.post(
   },
 );
 
-/**
- * POST /:slug/judges/assign — auto-assign judges to teams with submissions (round-robin)
- * Requires: admin+ role
- */
 judging.post(
   '/:slug/judges/assign',
   authMiddleware,
-  requireRole('admin'),
+  requireRole('co_organizer'),
   async (c) => {
     const hackathon = c.get('hackathon');
     const user = c.get('user');
@@ -315,11 +292,6 @@ judging.post(
   },
 );
 
-/**
- * POST /:slug/scores — judge submits a score for a submission+criteria pair
- * Requires: authenticated judge, must be assigned to the team that owns the submission
- * Write-once: UNIQUE(submission_id, judge_id, criteria_id) → 409 on duplicate
- */
 judging.post(
   '/:slug/scores',
   authMiddleware,
@@ -337,6 +309,22 @@ judging.post(
       return errorResponse(c, validation.status, validation.code, validation.message);
     }
 
+    const assignment = await db
+      .select({ id: judgeAssignments.id })
+      .from(judgeAssignments)
+      .where(
+        and(
+          eq(judgeAssignments.judge_id, validation.judgeRecordId),
+          eq(judgeAssignments.team_id, validation.submissionTeamId),
+          eq(judgeAssignments.hackathon_id, hackathon.id),
+        ),
+      )
+      .get();
+
+    if (!assignment) {
+      return errorResponse(c, 403, 'NO_ASSIGNMENT', 'No assignment found for this judge and team');
+    }
+
     const scoreId = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -345,6 +333,7 @@ judging.post(
       submission_id: body.submissionId,
       judge_id: validation.judgeRecordId,
       criteria_id: body.criteriaId,
+      assignment_id: assignment.id,
       score: body.score,
       comment: body.comment || null,
       scored_at: now,
@@ -374,10 +363,6 @@ judging.post(
   },
 );
 
-/**
- * GET /:slug/leaderboard — aggregated weighted scoring results
- * Requires: anonymous (open to all after judging complete, admin+ anytime)
- */
 judging.get(
   '/:slug/leaderboard',
   optionalAuth,
@@ -387,7 +372,7 @@ judging.get(
     const role = c.get('role');
     const db = createDbClient(c.env.DB);
 
-    const isOrganizer = ['owner', 'admin', 'moderator'].includes(role);
+    const isOrganizer = ['organizer', 'co_organizer'].includes(role);
     const isAfterJudging = ['completed', 'archived'].includes(hackathon.status);
 
     if (!isOrganizer && !isAfterJudging) {

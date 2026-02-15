@@ -62,10 +62,11 @@ export type NotificationMessage =
       hoursRemaining: number;
     }
   | {
-      type: 'organizer_invited';
+      type: 'workspace_invited';
       inviteId: string;
       email: string;
       inviteCode: string;
+      workspaceName: string;
     };
 
 /**

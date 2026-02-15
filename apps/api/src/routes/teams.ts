@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, sql } from 'drizzle-orm';
 import { createDbClient, teams, teamMembers, users } from '@devsage/db';
-import { CreateTeamRequestSchema, JoinTeamRequestSchema, ConnectTeamRepoRequestSchema, PaginationQuerySchema } from '@devsage/shared';
+import { CreateTeamRequestSchema, JoinTeamRequestSchema, PaginationQuerySchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonMiddleware } from '../middleware/hackathon.js';
@@ -18,23 +18,25 @@ teamsRouter.use('/:slug/*', hackathonMiddleware);
 
 /**
  * POST /:slug/teams — create a new team
- * Requires: participant+ role, hackathon must be registration_open
+ * Requires: authenticated user, hackathon must be active
  */
 teamsRouter.post(
   '/:slug/teams',
-  requireRole('participant'),
+  requireRole('anonymous'),
   zValidator('json', CreateTeamRequestSchema),
   async (c) => {
     const user = c.get('user');
+    if (!user) {
+      return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+    }
     const hackathon = c.get('hackathon');
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
 
-    if (hackathon.status !== 'registration_open') {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Team creation only allowed during registration');
+    if (hackathon.status !== 'active') {
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Team creation only allowed when hackathon is active');
     }
 
-    // Check if user is already on a team for this hackathon
     const existingMembership = await db
       .select({ teamId: teamMembers.team_id })
       .from(teamMembers)
@@ -56,8 +58,11 @@ teamsRouter.post(
         id: teamId,
         hackathon_id: hackathon.id,
         name: body.name,
+        description: body.description ?? '',
+        track_id: body.trackId ?? null,
         invite_code: inviteCode,
         created_at: now,
+        updated_at: now,
       }),
       db.insert(teamMembers).values({
         id: memberId,
@@ -125,7 +130,7 @@ teamsRouter.get('/:slug/teams', async (c) => {
  * GET /:slug/teams/:teamId — get team detail with members
  * Requires: participant+ role
  */
-teamsRouter.get('/:slug/teams/:teamId', requireRole('participant'), async (c) => {
+teamsRouter.get('/:slug/teams/:teamId', requireRole('anonymous'), async (c) => {
   const teamId = c.req.param('teamId');
   const hackathon = c.get('hackathon');
   const db = createDbClient(c.env.DB);
@@ -143,6 +148,7 @@ teamsRouter.get('/:slug/teams/:teamId', requireRole('participant'), async (c) =>
   const members = await db
     .select({
       user_id: teamMembers.user_id,
+      role: teamMembers.role,
       joined_at: teamMembers.joined_at,
       display_name: users.display_name,
     })
@@ -160,11 +166,14 @@ teamsRouter.get('/:slug/teams/:teamId', requireRole('participant'), async (c) =>
  */
 teamsRouter.post(
   '/:slug/teams/:teamId/join',
-  requireRole('participant'),
+  requireRole('anonymous'),
   zValidator('json', JoinTeamRequestSchema),
   async (c) => {
     const teamId = c.req.param('teamId');
     const user = c.get('user');
+    if (!user) {
+      return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+    }
     const hackathon = c.get('hackathon');
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
@@ -238,11 +247,14 @@ teamsRouter.post(
  */
 teamsRouter.delete(
   '/:slug/teams/:teamId/members/:userId',
-  requireRole('participant'),
+  requireRole('anonymous'),
   async (c) => {
     const teamId = c.req.param('teamId');
     const targetUserId = c.req.param('userId');
     const user = c.get('user');
+    if (!user) {
+      return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+    }
     const hackathon = c.get('hackathon');
     const role = c.get('role');
     const db = createDbClient(c.env.DB);
@@ -258,12 +270,12 @@ teamsRouter.delete(
     }
 
     const isSelfRemoval = targetUserId === user.sub;
-    const isAdmin = isRoleAtLeast(role, 'admin');
+    const isAdmin = isRoleAtLeast(role, 'co_organizer');
 
     if (!isSelfRemoval && !isAdmin) {
-      const isLeader = isRoleAtLeast(role, 'team_leader');
+      const isLeader = isRoleAtLeast(role, 'team_lead');
       if (!isLeader) {
-        return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader or admin can remove other members');
+        return errorResponse(c, 403, 'FORBIDDEN', 'Only team leader or co-organizer can remove other members');
       }
     }
 
@@ -293,61 +305,6 @@ teamsRouter.delete(
 
      return successResponse(c, { removed: true });
    },
-);
-
-teamsRouter.post(
-  '/:slug/teams/:teamId/repo',
-  requireRole('team_leader'),
-  zValidator('json', ConnectTeamRepoRequestSchema),
-  async (c) => {
-    const teamId = c.req.param('teamId');
-    const user = c.get('user');
-    const hackathon = c.get('hackathon');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
-
-    const team = await db
-      .select()
-      .from(teams)
-      .where(and(eq(teams.id, teamId), eq(teams.hackathon_id, hackathon.id)))
-      .get();
-
-    if (!team) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Team not found');
-    }
-
-    const existingRepo = await db
-      .select({ id: teams.id })
-      .from(teams)
-      .where(and(eq(teams.hackathon_id, hackathon.id), eq(teams.repo_full_name, body.repoFullName)))
-      .get();
-
-    if (existingRepo) {
-      return errorResponse(c, 409, 'REPO_ALREADY_CONNECTED', 'Repository already connected to another team in this hackathon');
-    }
-
-    await db
-      .update(teams)
-      .set({ repo_full_name: body.repoFullName })
-      .where(eq(teams.id, teamId));
-
-    const kvKey = `repo:${body.repoFullName}`;
-    await c.env.KV.put(kvKey, JSON.stringify({ hackathonId: hackathon.id, teamId }));
-
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      action: 'repo.connect',
-      entityType: 'team',
-      entityId: teamId,
-      details: { repoFullName: body.repoFullName },
-    });
-
-    const updated = await db.select().from(teams).where(eq(teams.id, teamId)).get();
-
-    return successResponse(c, updated);
-  },
 );
 
 export default teamsRouter;

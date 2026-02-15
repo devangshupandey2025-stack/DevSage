@@ -7,18 +7,18 @@ import type { Env } from '../types/env.js';
 import { isRecord } from '../lib/utils.js';
 import { getStateMachineStub, fetchDO } from '../lib/do-client.js';
 import { DO_PATHS } from '../lib/constants.js';
-import type { TeamRow, HackathonRow } from '../types/db-rows.js';
+import type { TeamRepoRow, HackathonRow, RoundRow } from '../types/db-rows.js';
 
 export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env): Promise<void> {
-  const team = await env.DB.prepare(
-    'SELECT id, hackathon_id FROM teams WHERE repo_full_name = ? AND bot_active = 1'
-  ).bind(event.repoFullName).first<TeamRow>();
+  const teamRepo = await env.DB.prepare(
+    'SELECT id, team_id, hackathon_id, repo_full_name FROM team_repos WHERE repo_full_name = ? AND bot_active = 1'
+  ).bind(event.repoFullName).first<TeamRepoRow>();
 
-  if (!team) return;
+  if (!teamRepo) return;
 
   const hackathon = await env.DB.prepare(
-    'SELECT submission_tag_pattern, submission_deadline FROM hackathons WHERE id = ?'
-  ).bind(team.hackathon_id).first<HackathonRow>();
+    'SELECT submission_tag_pattern FROM hackathons WHERE id = ?'
+  ).bind(teamRepo.hackathon_id).first<HackathonRow>();
 
   if (!hackathon) return;
 
@@ -35,14 +35,14 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   const submissionId = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const doStub = getStateMachineStub(env, team.hackathon_id);
+  const doStub = getStateMachineStub(env, teamRepo.hackathon_id);
 
   let doResult: Awaited<ReturnType<typeof fetchDO>>;
   try {
     doResult = await fetchDO(doStub, DO_PATHS.ACCEPT_SUBMISSION, {
       method: 'POST',
       body: {
-        teamId: team.id,
+        teamId: teamRepo.team_id,
         submissionId,
         tagName: event.tagName,
         commitSha: event.sha,
@@ -52,12 +52,12 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
     });
   } catch (error) {
     console.error('tag-create: DO fetch failed:', {
-      hackathonId: team.hackathon_id,
-      teamId: team.id,
+      hackathonId: teamRepo.hackathon_id,
+      teamId: teamRepo.team_id,
       tag: event.tagName,
       error: error instanceof Error ? error.message : String(error),
     });
-    throw error; // re-throw so queue retries
+    throw error;
   }
 
   if (!isRecord(doResult.data)) return;
@@ -66,7 +66,7 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   const accepted = doData.accepted === true;
   if (!accepted) {
     await insertAuditEvent(db, {
-      hackathonId: team.hackathon_id,
+      hackathonId: teamRepo.hackathon_id,
       actorType: 'bot',
       action: 'submission.rejected',
       entityType: 'submission',
@@ -83,54 +83,67 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
     return;
   }
 
-  const deadlineMs = Date.parse(hackathon.submission_deadline);
-  const submittedMs = Date.parse(event.timestamp);
-  const isLate = Number.isFinite(deadlineMs) && Number.isFinite(submittedMs) && submittedMs > deadlineMs ? 1 : 0;
+  const activeRound = await env.DB.prepare(
+    `SELECT id, hackathon_id, round_number, status, submission_deadline FROM hackathon_rounds
+     WHERE hackathon_id = ? AND status = 'active'
+     ORDER BY round_number DESC LIMIT 1`
+  ).bind(teamRepo.hackathon_id).first<RoundRow>();
+
+  let isLate = 0;
+  if (activeRound?.submission_deadline) {
+    const deadlineMs = Date.parse(activeRound.submission_deadline);
+    const submittedMs = Date.parse(event.timestamp);
+    isLate = Number.isFinite(deadlineMs) && Number.isFinite(submittedMs) && submittedMs > deadlineMs ? 1 : 0;
+  }
+
+  const roundId = activeRound?.id ?? '';
 
   await db.insert(submissions).values({
     id: submissionId,
-    team_id: team.id,
-    hackathon_id: team.hackathon_id,
+    team_id: teamRepo.team_id,
+    hackathon_id: teamRepo.hackathon_id,
     tag_name: event.tagName,
     commit_sha: event.sha,
     commit_author: event.senderLogin?.substring(0, 100) ?? null,
+    repo_full_name: event.repoFullName,
+    round_id: roundId,
+    provider: 'github',
     submitted_at: event.timestamp,
     received_at: now,
     is_late: isLate,
     is_final: 0,
-    version: tagMatch.version ?? 1,
     status: 'received',
     webhook_delivery_id: event.deliveryId,
   });
 
   await env.NOTIFICATION_QUEUE.send({
     type: 'submission_received',
-    teamId: team.id,
-    hackathonId: team.hackathon_id,
+    teamId: teamRepo.team_id,
+    hackathonId: teamRepo.hackathon_id,
     tagName: event.tagName,
     commitSha: event.sha,
   });
 
-   await insertAuditEvent(db, {
-     hackathonId: team.hackathon_id,
-     actorType: 'bot',
-     action: 'submission.received',
-     entityType: 'submission',
-     entityId: submissionId,
-     details: {
-       tagName: event.tagName,
-       commitSha: event.sha,
-       teamId: team.id,
-       version: tagMatch.version,
-       isLate: isLate === 1,
-     },
-   });
+  await insertAuditEvent(db, {
+    hackathonId: teamRepo.hackathon_id,
+    actorType: 'bot',
+    action: 'submission.received',
+    entityType: 'submission',
+    entityId: submissionId,
+    details: {
+      tagName: event.tagName,
+      commitSha: event.sha,
+      teamId: teamRepo.team_id,
+      version: tagMatch.version,
+      isLate: isLate === 1,
+    },
+  });
 
-   await postCommitStatus(env, {
-     repoFullName: event.repoFullName,
-     sha: event.sha,
-     state: 'success',
-     description: `Submission ${event.tagName} received by DevSage`,
-     context: 'devsage/submission',
-   });
+  await postCommitStatus(env, {
+    repoFullName: event.repoFullName,
+    sha: event.sha,
+    state: 'success',
+    description: `Submission ${event.tagName} received by DevSage`,
+    context: 'devsage/submission',
+  });
 }

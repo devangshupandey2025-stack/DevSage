@@ -9,14 +9,10 @@ import { DO_PATHS } from '../lib/constants.js';
 
 const submissions = new Hono<AuthAppEnv>();
 
-/**
- * GET /:slug/submissions — list all submissions for a hackathon.
- * Delegates to the HackathonStateMachine Durable Object.
- */
 submissions.get(
   '/:slug/submissions',
   authMiddleware,
-  requireRole('participant'),
+  requireRole('team_member'),
   async (c) => {
     const hackathon = c.get('hackathon');
     const stub = getStateMachineStub(c.env, hackathon.id);
@@ -36,14 +32,10 @@ submissions.get(
   },
 );
 
-/**
- * GET /:slug/submissions/:teamId — get submission detail for a team.
- * Delegates to the HackathonStateMachine Durable Object.
- */
 submissions.get(
   '/:slug/submissions/:teamId',
   authMiddleware,
-  requireRole('participant'),
+  requireRole('team_member'),
   async (c) => {
     const hackathon = c.get('hackathon');
     const teamId = c.req.param('teamId');

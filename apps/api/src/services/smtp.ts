@@ -41,7 +41,7 @@ export async function sendEmail(env: Env, params: SendEmailParams): Promise<Send
 
   try {
     // Prepare Basic Auth header
-    const credentials = Buffer.from(`${env.SMTP_USERNAME}:${env.SMTP_PASSWORD}`).toString('base64');
+    const credentials = btoa(`${env.SMTP_USERNAME}:${env.SMTP_PASSWORD}`);
 
     const response = await fetch(env.SMTP_URL, {
       method: 'POST',

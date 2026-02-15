@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
-import { createDbClient, organizerInvites } from '@devsage/db';
+import { createDbClient, workspaceInvites, workspaceMembers } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { successResponse, errorResponse } from '../lib/response.js';
@@ -14,13 +14,14 @@ invites.get('/:code', async (c) => {
 
   const invite = await db
     .select({
-      id: organizerInvites.id,
-      email: organizerInvites.email,
-      status: organizerInvites.status,
-      expires_at: organizerInvites.expires_at,
+      id: workspaceInvites.id,
+      email: workspaceInvites.email,
+      workspace_id: workspaceInvites.workspace_id,
+      status: workspaceInvites.status,
+      expires_at: workspaceInvites.expires_at,
     })
-    .from(organizerInvites)
-    .where(eq(organizerInvites.invite_code, code))
+    .from(workspaceInvites)
+    .where(eq(workspaceInvites.code, code))
     .get();
 
   if (!invite) {
@@ -33,6 +34,7 @@ invites.get('/:code', async (c) => {
   return successResponse(c, {
     id: invite.id,
     email: invite.email,
+    workspace_id: invite.workspace_id,
     status: expired && invite.status === 'pending' ? 'expired' : invite.status,
     expires_at: invite.expires_at,
   });
@@ -45,11 +47,11 @@ invites.post('/:code/accept', authMiddleware, async (c) => {
 
   const invite = await db
     .select()
-    .from(organizerInvites)
+    .from(workspaceInvites)
     .where(
       and(
-        eq(organizerInvites.invite_code, code),
-        eq(organizerInvites.status, 'pending'),
+        eq(workspaceInvites.code, code),
+        eq(workspaceInvites.status, 'pending'),
       ),
     )
     .get();
@@ -61,31 +63,41 @@ invites.post('/:code/accept', authMiddleware, async (c) => {
   const now = new Date();
   if (new Date(invite.expires_at) < now) {
     await db
-      .update(organizerInvites)
+      .update(workspaceInvites)
       .set({ status: 'expired' })
-      .where(eq(organizerInvites.id, invite.id));
+      .where(eq(workspaceInvites.id, invite.id));
     return errorResponse(c, 410, 'INVITE_EXPIRED', 'This invite has expired');
   }
 
   await db
-    .update(organizerInvites)
+    .update(workspaceInvites)
     .set({
       status: 'accepted',
       accepted_by: user.sub,
       accepted_at: now.toISOString(),
     })
-    .where(eq(organizerInvites.id, invite.id));
+    .where(eq(workspaceInvites.id, invite.id));
+
+  await db.insert(workspaceMembers).values({
+    id: crypto.randomUUID(),
+    workspace_id: invite.workspace_id,
+    user_id: user.sub,
+    role: 'workspace_member',
+    invited_by: invite.created_by,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+  });
 
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'organizer_invite.accept',
-    entityType: 'organizer_invite',
+    action: 'workspace.invite_accepted',
+    entityType: 'workspace_invite',
     entityId: invite.id,
-    details: { email: invite.email, invite_code: code },
+    details: { email: invite.email, workspace_id: invite.workspace_id, invite_code: code },
   });
 
-  return successResponse(c, { message: 'Invite accepted. You now have organizer access.' });
+  return successResponse(c, { message: 'Invite accepted. You are now a workspace member.' });
 });
 
 export default invites;

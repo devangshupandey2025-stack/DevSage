@@ -6,15 +6,14 @@ import { isRecord } from '../lib/utils.js';
 // ─── Interfaces ──────────────────────────────────────────────
 
 interface HackathonConfig {
-  registrationOpens: string;
-  registrationCloses: string;
-  submissionDeadline: string;
+  startsAt: string | null;
   judgingStarts: string | null;
   judgingEnds: string | null;
   maxTeams: number | null;
   maxSubmissionsPerTeam: number | null;
-  allowLateSubmissions: number; // SQLite integer boolean (0/1)
+  allowResubmission: number; // SQLite 0/1
   submissionTagPattern: string;
+  allowRegistrationDuringActive: number; // SQLite 0/1
 }
 
 interface HackathonState {
@@ -67,43 +66,40 @@ function parseInitializeRequest(value: unknown): InitializeRequest | null {
   if (typeof hackathonId !== 'string' || !isRecord(config)) return null;
 
   const {
-    registrationOpens,
-    registrationCloses,
-    submissionDeadline,
+    startsAt,
     judgingStarts,
     judgingEnds,
     maxTeams,
     maxSubmissionsPerTeam,
-    allowLateSubmissions,
+    allowResubmission,
     submissionTagPattern,
+    allowRegistrationDuringActive,
   } = config;
 
-  if (
-    typeof registrationOpens !== 'string' || !isValidDateString(registrationOpens) ||
-    typeof registrationCloses !== 'string' || !isValidDateString(registrationCloses) ||
-    typeof submissionDeadline !== 'string' || !isValidDateString(submissionDeadline)
-  ) return null;
-
+  // Nullable date fields: must be valid date string or null/undefined
+  if (startsAt !== null && startsAt !== undefined && (typeof startsAt !== 'string' || !isValidDateString(startsAt))) return null;
   if (judgingStarts !== null && judgingStarts !== undefined && (typeof judgingStarts !== 'string' || !isValidDateString(judgingStarts))) return null;
   if (judgingEnds !== null && judgingEnds !== undefined && (typeof judgingEnds !== 'string' || !isValidDateString(judgingEnds))) return null;
+
+  // Nullable number fields
   if (maxTeams !== null && maxTeams !== undefined && (typeof maxTeams !== 'number' || !Number.isInteger(maxTeams))) return null;
   if (maxSubmissionsPerTeam !== null && maxSubmissionsPerTeam !== undefined && (typeof maxSubmissionsPerTeam !== 'number' || !Number.isInteger(maxSubmissionsPerTeam))) return null;
 
-  const parsedAllowLate = typeof allowLateSubmissions === 'number' ? allowLateSubmissions : (allowLateSubmissions ? 1 : 0);
+  const parsedAllowResubmission = typeof allowResubmission === 'number' ? allowResubmission : (allowResubmission ? 1 : 0);
   const parsedTagPattern = typeof submissionTagPattern === 'string' ? submissionTagPattern : 'submission_v%';
+  const parsedAllowRegistrationDuringActive = typeof allowRegistrationDuringActive === 'number' ? allowRegistrationDuringActive : (allowRegistrationDuringActive ? 1 : 0);
 
   return {
     hackathonId,
     config: {
-      registrationOpens,
-      registrationCloses,
-      submissionDeadline,
+      startsAt: (typeof startsAt === 'string' ? startsAt : null),
       judgingStarts: (typeof judgingStarts === 'string' ? judgingStarts : null),
       judgingEnds: (typeof judgingEnds === 'string' ? judgingEnds : null),
       maxTeams: (typeof maxTeams === 'number' ? maxTeams : null),
       maxSubmissionsPerTeam: (typeof maxSubmissionsPerTeam === 'number' ? maxSubmissionsPerTeam : null),
-      allowLateSubmissions: parsedAllowLate,
+      allowResubmission: parsedAllowResubmission,
       submissionTagPattern: parsedTagPattern,
+      allowRegistrationDuringActive: parsedAllowRegistrationDuringActive,
     },
   };
 }
@@ -112,7 +108,7 @@ function parseTransitionRequest(value: unknown): TransitionRequest | null {
   if (!isRecord(value)) return null;
   const { targetStatus, expectedVersion } = value;
   if (typeof targetStatus !== 'string' || !isHackathonStatus(targetStatus)) return null;
-  if (expectedVersion !== undefined && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion <= 0)) return null;
+  if (expectedVersion !== undefined && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
   return { targetStatus, expectedVersion: expectedVersion as number | undefined };
 }
 
@@ -142,7 +138,7 @@ export class HackathonStateMachine extends DurableObject<Env> {
           hackathon_id TEXT PRIMARY KEY,
           status TEXT NOT NULL,
           config TEXT NOT NULL,
-          version INTEGER NOT NULL DEFAULT 1,
+          version INTEGER NOT NULL DEFAULT 0,
           transitioned_at TEXT NOT NULL
         )
       `);
@@ -179,6 +175,10 @@ export class HackathonStateMachine extends DurableObject<Env> {
       return this.handleTransition(request);
     }
 
+    if (request.method === 'POST' && url.pathname === '/update-config') {
+      return this.handleUpdateConfig(request);
+    }
+
     if (request.method === 'GET' && url.pathname === '/state') {
       const state = this.getState();
       if (!state) {
@@ -208,37 +208,13 @@ export class HackathonStateMachine extends DurableObject<Env> {
     const state = this.getState();
     if (!state) return;
 
-    const now = Date.now();
-
-    // Check if registration should close
-    if (state.status === 'registration_open') {
-      const closesAt = Date.parse(state.config.registrationCloses);
-      if (Number.isFinite(closesAt) && now >= closesAt) {
-        this.performTransition(state, 'registration_closed');
-        const updated = this.getState();
-        if (updated) await this.scheduleNextAlarm(updated);
-        return;
-      }
-    }
-
-    // Check if submissions should close (active → judging)
-    if (state.status === 'active') {
-      const deadline = Date.parse(state.config.submissionDeadline);
-      if (Number.isFinite(deadline) && now >= deadline) {
-        this.performTransition(state, 'judging');
-        const updated = this.getState();
-        if (updated) await this.scheduleNextAlarm(updated);
-        return;
-      }
-    }
-
-    // Check if judging should end
+    // In judging state with judgingEnds set: notify but do NOT auto-transition
     if (state.status === 'judging' && state.config.judgingEnds) {
       const judgingEnds = Date.parse(state.config.judgingEnds);
-      if (Number.isFinite(judgingEnds) && now >= judgingEnds) {
-        this.performTransition(state, 'completed');
-        const updated = this.getState();
-        if (updated) await this.scheduleNextAlarm(updated);
+      if (Number.isFinite(judgingEnds) && Date.now() >= judgingEnds) {
+        console.warn(
+          `[HackathonStateMachine] Judging window ended for hackathon ${state.hackathonId}. Manual transition to completed required.`,
+        );
         return;
       }
     }
@@ -313,27 +289,17 @@ export class HackathonStateMachine extends DurableObject<Env> {
 
   private async scheduleNextAlarm(state: HackathonState): Promise<void> {
     const now = Date.now();
-    const deadlines: number[] = [];
 
-    if (state.status === 'registration_open') {
-      const t = Date.parse(state.config.registrationCloses);
-      if (Number.isFinite(t) && t > now) deadlines.push(t);
-    }
-    if (state.status === 'registration_closed' || state.status === 'active') {
-      const t = Date.parse(state.config.submissionDeadline);
-      if (Number.isFinite(t) && t > now) deadlines.push(t);
-    }
+    // Only schedule alarm for judgingEnds when in active or judging state
     if ((state.status === 'active' || state.status === 'judging') && state.config.judgingEnds) {
       const t = Date.parse(state.config.judgingEnds);
-      if (Number.isFinite(t) && t > now) deadlines.push(t);
+      if (Number.isFinite(t) && t > now) {
+        await this.ctx.storage.setAlarm(t);
+        return;
+      }
     }
 
-    if (deadlines.length > 0) {
-      deadlines.sort((a, b) => a - b);
-      await this.ctx.storage.setAlarm(deadlines[0]);
-    } else {
-      await this.ctx.storage.deleteAlarm();
-    }
+    await this.ctx.storage.deleteAlarm();
   }
 
   // ─── Private: HTTP Handlers ────────────────────────────────
@@ -349,7 +315,7 @@ export class HackathonStateMachine extends DurableObject<Env> {
     const payload = parseInitializeRequest(body);
     if (!payload) {
       return Response.json(
-        { error: 'Expected { hackathonId, config: { registrationOpens, registrationCloses, submissionDeadline, ... } }', code: 'INVALID_BODY' },
+        { error: 'Expected { hackathonId, config: { startsAt, judgingStarts, judgingEnds, ... } }', code: 'INVALID_BODY' },
         { status: 400 },
       );
     }
@@ -376,7 +342,7 @@ export class HackathonStateMachine extends DurableObject<Env> {
     const configJson = JSON.stringify(payload.config);
 
     this.ctx.storage.sql.exec(
-      `INSERT INTO lifecycle_state (hackathon_id, status, config, version, transitioned_at) VALUES (?, ?, ?, 1, ?)`,
+      `INSERT INTO lifecycle_state (hackathon_id, status, config, version, transitioned_at) VALUES (?, ?, ?, 0, ?)`,
       payload.hackathonId,
       'draft',
       configJson,
@@ -387,7 +353,7 @@ export class HackathonStateMachine extends DurableObject<Env> {
       hackathonId: payload.hackathonId,
       status: 'draft',
       config: payload.config,
-      version: 1,
+      version: 0,
       transitionedAt: now,
     });
 
@@ -477,6 +443,124 @@ export class HackathonStateMachine extends DurableObject<Env> {
     });
   }
 
+  private async handleUpdateConfig(request: Request): Promise<Response> {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
+    if (!isRecord(body)) {
+      return Response.json({ error: 'Expected { config, expectedVersion? }', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
+    const { config: partialConfig, expectedVersion } = body;
+    if (!isRecord(partialConfig)) {
+      return Response.json({ error: 'Expected config object', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
+    if (expectedVersion !== undefined && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) {
+      return Response.json({ error: 'Invalid expectedVersion', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
+    const state = this.getState();
+    if (!state) {
+      return Response.json({ error: 'State machine not initialized', code: 'NOT_INITIALIZED' }, { status: 404 });
+    }
+
+    // Check optimistic concurrency
+    if (typeof expectedVersion === 'number' && state.version !== expectedVersion) {
+      return Response.json(
+        {
+          error: 'Version mismatch',
+          code: 'VERSION_MISMATCH',
+          currentVersion: state.version,
+          expectedVersion,
+        },
+        { status: 409 },
+      );
+    }
+
+    // Merge new config with existing (only override provided fields)
+    const merged: HackathonConfig = { ...state.config };
+
+    if ('startsAt' in partialConfig) {
+      if (partialConfig.startsAt !== null && (typeof partialConfig.startsAt !== 'string' || !isValidDateString(partialConfig.startsAt))) {
+        return Response.json({ error: 'Invalid startsAt', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.startsAt = typeof partialConfig.startsAt === 'string' ? partialConfig.startsAt : null;
+    }
+
+    if ('judgingStarts' in partialConfig) {
+      if (partialConfig.judgingStarts !== null && (typeof partialConfig.judgingStarts !== 'string' || !isValidDateString(partialConfig.judgingStarts))) {
+        return Response.json({ error: 'Invalid judgingStarts', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.judgingStarts = typeof partialConfig.judgingStarts === 'string' ? partialConfig.judgingStarts : null;
+    }
+
+    if ('judgingEnds' in partialConfig) {
+      if (partialConfig.judgingEnds !== null && (typeof partialConfig.judgingEnds !== 'string' || !isValidDateString(partialConfig.judgingEnds))) {
+        return Response.json({ error: 'Invalid judgingEnds', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.judgingEnds = typeof partialConfig.judgingEnds === 'string' ? partialConfig.judgingEnds : null;
+    }
+
+    if ('maxTeams' in partialConfig) {
+      if (partialConfig.maxTeams !== null && (typeof partialConfig.maxTeams !== 'number' || !Number.isInteger(partialConfig.maxTeams))) {
+        return Response.json({ error: 'Invalid maxTeams', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.maxTeams = typeof partialConfig.maxTeams === 'number' ? partialConfig.maxTeams : null;
+    }
+
+    if ('maxSubmissionsPerTeam' in partialConfig) {
+      if (partialConfig.maxSubmissionsPerTeam !== null && (typeof partialConfig.maxSubmissionsPerTeam !== 'number' || !Number.isInteger(partialConfig.maxSubmissionsPerTeam))) {
+        return Response.json({ error: 'Invalid maxSubmissionsPerTeam', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.maxSubmissionsPerTeam = typeof partialConfig.maxSubmissionsPerTeam === 'number' ? partialConfig.maxSubmissionsPerTeam : null;
+    }
+
+    if ('allowResubmission' in partialConfig) {
+      merged.allowResubmission = partialConfig.allowResubmission ? 1 : 0;
+    }
+
+    if ('submissionTagPattern' in partialConfig) {
+      if (typeof partialConfig.submissionTagPattern !== 'string') {
+        return Response.json({ error: 'Invalid submissionTagPattern', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.submissionTagPattern = partialConfig.submissionTagPattern;
+    }
+
+    if ('allowRegistrationDuringActive' in partialConfig) {
+      merged.allowRegistrationDuringActive = partialConfig.allowRegistrationDuringActive ? 1 : 0;
+    }
+
+    const configJson = JSON.stringify(merged);
+    const now = new Date().toISOString();
+
+    this.ctx.storage.sql.exec(
+      `UPDATE lifecycle_state SET config = ?, version = version + 1, transitioned_at = ? WHERE hackathon_id = ?`,
+      configJson,
+      now,
+      state.hackathonId,
+    );
+
+    const updated = this.getState();
+    if (!updated) {
+      return Response.json({ error: 'State missing after config update', code: 'STATE_MISSING' }, { status: 500 });
+    }
+
+    await this.scheduleNextAlarm(updated);
+
+    return Response.json({
+      hackathonId: updated.hackathonId,
+      status: updated.status,
+      config: updated.config,
+      version: updated.version,
+      transitionedAt: updated.transitionedAt,
+    });
+  }
+
   private async handleAcceptSubmission(request: Request): Promise<Response> {
     let body: unknown;
     try {
@@ -518,15 +602,16 @@ export class HackathonStateMachine extends DurableObject<Env> {
       return Response.json(result, { status: 400 });
     }
 
-    // Check deadline
-    const deadline = Date.parse(state.config.submissionDeadline);
-    const submissionTime = Date.parse(payload.timestamp);
-    if (Number.isFinite(deadline) && Number.isFinite(submissionTime) && submissionTime > deadline) {
-      if (!state.config.allowLateSubmissions) {
-        const result: SubmissionResult = { accepted: false, reason: 'Submission deadline has passed' };
+    // Check resubmission policy
+    if (!state.config.allowResubmission) {
+      const existingSubmission = this.ctx.storage.sql
+        .exec(`SELECT submission_count FROM team_submissions WHERE team_id = ? LIMIT 1`, payload.teamId)
+        .toArray()[0];
+
+      if (isRecord(existingSubmission) && typeof existingSubmission.submission_count === 'number' && existingSubmission.submission_count > 0) {
+        const result: SubmissionResult = { accepted: false, reason: 'Resubmission is not allowed for this hackathon' };
         return Response.json(result, { status: 400 });
       }
-      // Late submission allowed — continue
     }
 
     // Check max submissions per team
@@ -590,17 +675,6 @@ export class HackathonStateMachine extends DurableObject<Env> {
       return Response.json({ allowed: false, reason: `Hackathon is in '${state.status}' status` });
     }
 
-    const now = Date.now();
-    const deadline = Date.parse(state.config.submissionDeadline);
-
-    if (Number.isFinite(deadline) && now > deadline) {
-      if (state.config.allowLateSubmissions) {
-        return Response.json({ allowed: true, reason: 'Past deadline but late submissions allowed', deadlineRemaining: 0 });
-      }
-      return Response.json({ allowed: false, reason: 'Submission deadline has passed' });
-    }
-
-    const remaining = Number.isFinite(deadline) ? deadline - now : null;
-    return Response.json({ allowed: true, deadlineRemaining: remaining });
+    return Response.json({ allowed: true });
   }
 }

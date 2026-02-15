@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, unique, index } from 'drizzle-orm/sqlite-core';
 import { teams } from './teams.js';
 import { hackathons } from './hackathons.js';
+import { hackathonRounds } from './hackathon-rounds.js';
 
 export const submissions = sqliteTable('submissions', {
   id: text('id').primaryKey(),
@@ -11,21 +12,24 @@ export const submissions = sqliteTable('submissions', {
   commit_message: text('commit_message'),
   commit_author: text('commit_author'),
   branch: text('branch').default('main'),
-  submitted_at: text('submitted_at').notNull(),
-  received_at: text('received_at').notNull(),
+  provider: text('provider').notNull().default('github'),
+  repo_full_name: text('repo_full_name').notNull(),
+  round_id: text('round_id').notNull().references(() => hackathonRounds.id),
+  status: text('status', {
+    enum: ['received', 'validated', 'validation_failed', 'locked', 'under_review', 'scored', 'invalid', 'superseded']
+  }).notNull().default('received'),
   is_late: integer('is_late').notNull().default(0),
   is_final: integer('is_final').notNull().default(0),
-  version: integer('version').notNull(),
-  status: text('status', {
-    enum: ['received', 'validated', 'invalid', 'locked', 'under_review', 'scored', 'invalidated']
-  }).notNull().default('received'),
-  validation_errors: text('validation_errors'),
+  validation_results: text('validation_results'),
   locked_at: text('locked_at'),
+  finalized_at: text('finalized_at'),
+  submitted_at: text('submitted_at').notNull(),
+  received_at: text('received_at').notNull(),
   webhook_delivery_id: text('webhook_delivery_id').unique(),
 }, (table) => ({
   uniqueTeamTag: unique().on(table.team_id, table.tag_name),
+  idxSubmissionsHackathonStatus: index('idx_submissions_hackathon_status').on(table.hackathon_id, table.status),
   idxSubmissionsTeam: index('idx_submissions_team').on(table.team_id),
-  idxSubmissionsHackathon: index('idx_submissions_hackathon').on(table.hackathon_id),
-  idxSubmissionsStatus: index('idx_submissions_status').on(table.hackathon_id, table.status),
-  idxSubmissionsWebhook: index('idx_submissions_webhook').on(table.webhook_delivery_id),
+  idxSubmissionsHackathonFinal: index('idx_submissions_hackathon_final').on(table.hackathon_id, table.is_final),
+  idxSubmissionsRoundTeam: index('idx_submissions_round_team').on(table.round_id, table.team_id),
 }));

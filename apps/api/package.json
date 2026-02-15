@@ -16,7 +16,8 @@
     "@hono/zod-validator": "^0.4.1",
     "@devsage/shared": "workspace:*",
     "@devsage/db": "workspace:*",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.36.4",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@devsage/config": "workspace:*",

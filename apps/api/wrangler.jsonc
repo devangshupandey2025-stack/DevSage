@@ -19,6 +19,12 @@
       "id": "716fbff3dd3d4374b11c69540a18dcf0"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "devsage-assets"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -47,6 +53,10 @@
       {
         "queue": "devsage-notifications",
         "binding": "NOTIFICATION_QUEUE"
+      },
+      {
+        "queue": "devsage-events",
+        "binding": "EVENT_QUEUE"
       }
     ],
     "consumers": [
@@ -57,6 +67,11 @@
       },
       {
         "queue": "devsage-notifications",
+        "max_batch_size": 10,
+        "max_retries": 3
+      },
+      {
+        "queue": "devsage-events",
         "max_batch_size": 10,
         "max_retries": 3
       }
@@ -94,6 +109,10 @@
            {
              "queue": "devsage-notifications-dev",
              "binding": "NOTIFICATION_QUEUE"
+           },
+           {
+             "queue": "devsage-events-dev",
+             "binding": "EVENT_QUEUE"
            }
          ],
          "consumers": [
@@ -104,6 +123,11 @@
            },
            {
              "queue": "devsage-notifications-dev",
+             "max_batch_size": 10,
+             "max_retries": 3
+           },
+           {
+             "queue": "devsage-events-dev",
              "max_batch_size": 10,
              "max_retries": 3
            }

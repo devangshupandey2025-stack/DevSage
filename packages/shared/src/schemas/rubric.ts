@@ -3,11 +3,14 @@ import { z } from 'zod';
 export const RubricCriteriaSchema = z.object({
   id: z.string(),
   hackathonId: z.string(),
+  trackId: z.string().nullable().optional(),
+  round: z.number().int(),
   name: z.string(),
-  description: z.string().nullable().optional(),
+  description: z.string(),
   maxScore: z.number().int(),
   weight: z.number(),
   sortOrder: z.number().int(),
+  createdAt: z.string(),
 });
 
 export type RubricCriteria = z.infer<typeof RubricCriteriaSchema>;
@@ -20,6 +23,8 @@ export const BulkRubricRequestSchema = z.object({
       maxScore: z.number().int().positive('Max score must be positive'),
       weight: z.number().min(0).max(1, 'Weight must be between 0 and 1'),
       sortOrder: z.number().int().nonnegative('Sort order must be nonnegative'),
+      trackId: z.string().optional(),
+      round: z.number().int().optional(),
     }),
   ),
 });

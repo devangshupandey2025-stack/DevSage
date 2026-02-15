@@ -12,9 +12,9 @@ describe('shared schemas', () => {
       slug: 'global-hackathon-2026',
       title: 'Global Hackathon 2026',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationOpens: '2026-01-01T00:00:00.000Z',
-      registrationCloses: '2026-01-09T00:00:00.000Z',
-      submissionDeadline: '2026-01-20T00:00:00.000Z',
+      startsAt: '2026-01-01T00:00:00.000Z',
+      judgingStarts: '2026-01-15T00:00:00.000Z',
+      judgingEnds: '2026-01-20T00:00:00.000Z',
       maxTeamSize: 4,
     });
 
@@ -26,23 +26,19 @@ describe('shared schemas', () => {
       slug: 'global-hackathon-2026',
       title: 'Hi',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationOpens: '2026-01-01T00:00:00.000Z',
-      registrationCloses: '2026-01-09T00:00:00.000Z',
-      submissionDeadline: '2026-01-20T00:00:00.000Z',
+      startsAt: '2026-01-01T00:00:00.000Z',
       maxTeamSize: 4,
     });
 
-    const missingField = CreateHackathonRequestSchema.safeParse({
-      slug: 'global-hackathon-2026',
+    const shortSlug = CreateHackathonRequestSchema.safeParse({
+      slug: 'ab',
       title: 'Global Hackathon 2026',
       description: 'Build practical AI tools for engineering teams worldwide.',
-      registrationOpens: '2026-01-01T00:00:00.000Z',
-      registrationCloses: '2026-01-09T00:00:00.000Z',
       maxTeamSize: 4,
     });
 
     expect(shortTitle.success).toBe(false);
-    expect(missingField.success).toBe(false);
+    expect(shortSlug.success).toBe(false);
   });
 
   it('UserSchema validates correctly', () => {
@@ -96,10 +92,8 @@ describe('shared schemas', () => {
     expect(invalid.success).toBe(false);
   });
 
-  it('HACKATHON_STATUS_TRANSITIONS has correct transitions', () => {
-    expect(HACKATHON_STATUS_TRANSITIONS.draft).toEqual(['registration_open']);
-    expect(HACKATHON_STATUS_TRANSITIONS.registration_open).toEqual(['registration_closed']);
-    expect(HACKATHON_STATUS_TRANSITIONS.registration_closed).toEqual(['active']);
+  it('HACKATHON_STATUS_TRANSITIONS has correct transitions (v3 5-state)', () => {
+    expect(HACKATHON_STATUS_TRANSITIONS.draft).toEqual(['active']);
     expect(HACKATHON_STATUS_TRANSITIONS.active).toEqual(['judging']);
     expect(HACKATHON_STATUS_TRANSITIONS.judging).toEqual(['completed']);
     expect(HACKATHON_STATUS_TRANSITIONS.completed).toEqual(['archived']);

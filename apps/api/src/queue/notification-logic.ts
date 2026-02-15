@@ -6,7 +6,7 @@
  * `notification-handler.ts`.
  */
 
-import { createDbClient, teamMembers, organizerRoles, judges, teams, hackathons, users } from '@devsage/db';
+import { createDbClient, teamMembers, organizerRoles, judges, teams, hackathons, users, workspaceMembers } from '@devsage/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { DbClient } from '@devsage/db';
 import type { Env } from '../types/env.js';
@@ -115,7 +115,7 @@ export async function resolveRecipients(
         .where(
           and(
             eq(organizerRoles.hackathon_id, message.hackathonId),
-            inArray(organizerRoles.role, ['owner', 'admin', 'moderator']),
+            inArray(organizerRoles.role, ['organizer', 'co_organizer']),
           ),
         );
       return toRecipients(organizers);
@@ -158,7 +158,7 @@ export async function resolveRecipients(
       return toRecipients(leadersWithoutFinal.results || []);
     }
 
-    case 'organizer_invited':
+    case 'workspace_invited':
       return [{ email: message.email, name: message.email }];
 
     default:
@@ -179,13 +179,13 @@ export async function renderEmailTemplate(
   message: NotificationMessage,
   env: Env,
 ): Promise<EmailTemplate> {
-  if (message.type === 'organizer_invited') {
+  if (message.type === 'workspace_invited') {
     const acceptUrl = `${env.PLATFORM_URL}/invite/${message.inviteCode}`;
     return {
-      subject: `[DevSage] Organizer Invitation`,
+      subject: `[DevSage] Workspace Invitation — ${message.workspaceName}`,
       body: `Hi,
 
-You've been invited to become an organizer on DevSage.
+You've been invited to join the "${message.workspaceName}" workspace on DevSage.
 
 Accept your invitation and set up your account: ${acceptUrl}
 

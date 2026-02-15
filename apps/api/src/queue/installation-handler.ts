@@ -1,4 +1,4 @@
-import { createDbClient, teams } from '@devsage/db';
+import { createDbClient, teamRepos } from '@devsage/db';
 import { eq } from 'drizzle-orm';
 import type { NormalizedInstallationEvent } from '../lib/webhook-normalize.js';
 import { insertAuditEvent } from '../lib/audit.js';
@@ -11,9 +11,9 @@ export async function handleInstallation(event: NormalizedInstallationEvent, env
 
   for (const repo of event.repositories) {
     await db
-      .update(teams)
+      .update(teamRepos)
       .set({ bot_active: botActive })
-      .where(eq(teams.repo_full_name, repo.fullName));
+      .where(eq(teamRepos.repo_full_name, repo.fullName));
   }
 
   await insertAuditEvent(db, {
