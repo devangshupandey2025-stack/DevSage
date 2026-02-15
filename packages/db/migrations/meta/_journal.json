@@ -15,6 +15,13 @@
       "when": 1770969072178,
       "tag": "0001_harsh_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771157717305,
+      "tag": "0002_v3_clean_reset",
+      "breakpoints": true
     }
   ]
 }

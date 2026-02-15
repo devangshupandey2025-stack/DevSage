@@ -19,12 +19,13 @@
       "id": "716fbff3dd3d4374b11c69540a18dcf0"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "R2",
-      "bucket_name": "devsage-assets"
-    }
-  ],
+  // TODO: Enable after R2 is activated in Cloudflare Dashboard
+  // "r2_buckets": [
+  //   {
+  //     "binding": "R2",
+  //     "bucket_name": "devsage-assets"
+  //   }
+  // ],
   "durable_objects": {
     "bindings": [
       {
@@ -53,11 +54,9 @@
       {
         "queue": "devsage-notifications",
         "binding": "NOTIFICATION_QUEUE"
-      },
-      {
-        "queue": "devsage-events",
-        "binding": "EVENT_QUEUE"
       }
+      // TODO: Enable after creating queue: wrangler queues create devsage-events
+      // { "queue": "devsage-events", "binding": "EVENT_QUEUE" }
     ],
     "consumers": [
       {
@@ -69,12 +68,9 @@
         "queue": "devsage-notifications",
         "max_batch_size": 10,
         "max_retries": 3
-      },
-      {
-        "queue": "devsage-events",
-        "max_batch_size": 10,
-        "max_retries": 3
       }
+      // TODO: Enable after creating queue: wrangler queues create devsage-events
+      // { "queue": "devsage-events", "max_batch_size": 10, "max_retries": 3 }
     ]
   },
   "triggers": {
