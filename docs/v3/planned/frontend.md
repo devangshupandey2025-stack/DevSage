@@ -1,6 +1,6 @@
 # 13 — Frontend Architecture
 
-> React SPA with component-driven design, real-time data flow, accessibility-first development, and strict performance budgets — all running on Cloudflare Pages at the edge. Phase 1 uses invite-only participation (no public registration), GitHub as the sole VCS provider, 5-state hackathon lifecycle with rounds-based elimination, and email + in-app as the only notification channels.
+> React SPA with component-driven design, real-time data flow, accessibility-first development, and strict performance budgets — all running on Cloudflare Workers Sites at the edge. Phase 1 uses invite-only participation (no public registration), GitHub as the sole VCS provider, 5-state hackathon lifecycle with rounds-based elimination, and email + in-app as the only notification channels.
 
 ---
 
@@ -58,7 +58,7 @@
 | Icons | Lucide React | Latest | Consistent icon set, tree-shakeable |
 | Date/time | date-fns | Latest | Lightweight, tree-shakeable date formatting |
 | Charts | Recharts | Latest | SVG-based, accessible chart components |
-| Hosting | Cloudflare Pages | — | Edge-deployed, global CDN |
+| Hosting | Cloudflare Workers Sites | — | Edge-deployed, global CDN |
 
 ### Shared Package Dependency
 
@@ -884,7 +884,7 @@ interface LiveRegionConfig {
 | Font loading | `font-display: swap`, preload critical fonts |
 | CSS | Tailwind v4 JIT — only ships used utilities |
 | Tree shaking | ESM imports, sideEffects: false in package.json |
-| Compression | Brotli (Cloudflare Pages automatic) |
+| Compression | Brotli (Cloudflare Workers Sites automatic) |
 | Caching | Immutable hashed assets (1yr cache), HTML no-cache |
 | Skeleton screens | Content-shaped placeholders during loading |
 | Virtual scrolling | `@tanstack/react-virtual` for long lists (teams, submissions, activity) |
@@ -1032,7 +1032,7 @@ flowchart LR
     E --> F[Bundle Analysis]
     F --> G{Budget exceeded?}
     G -->|Yes| H[Fail CI]
-    G -->|No| I[Deploy to Cloudflare Pages]
+    G -->|No| I[Deploy to Workers Site]
     
     I --> J[Preview Deploy on PR]
     I --> K[Production Deploy on main]
@@ -1063,7 +1063,7 @@ interface BuildConfig {
 
 | Environment | URL | Deploy Trigger | Purpose |
 |-------------|-----|---------------|---------|
-| Preview | `{branch}.devsage.pages.dev` | Every PR push | Review changes in isolation |
+| Preview | `{branch}.devsage.workers.dev` | Every PR push | Review changes in isolation |
 | Staging | `staging.devsage.org` | Merge to `staging` branch | Pre-production validation |
 | Production | `devsage.org` | Merge to `main` branch | Live traffic |
 
@@ -1156,7 +1156,7 @@ When a lazy-loaded chunk fails (common after deployment when hashes change):
 | Real-time approach | WebSocket + SSE fallback | WebSocket for bidirectional (presence), SSE as graceful degradation | Long polling (wasteful), WebSocket only (no fallback), Firebase (vendor lock) |
 | Form handling | React Hook Form + Zod | Uncontrolled by default (performance), Zod resolver shares schemas with API | Formik (heavier, controlled), native forms (no validation DX) |
 | Build tool | Vite | Fastest HMR, ESBuild for dev, Rollup for production, ecosystem standard | Webpack (slower), Turbopack (too new), Parcel (less configurable) |
-| Hosting | Cloudflare Pages | Same vendor as API (Workers), global CDN, preview deploys per PR, generous free tier | Vercel (different vendor), Netlify (different vendor), S3+CloudFront (more complex) |
+| Hosting | Cloudflare Workers Sites | Same vendor and runtime as API (Workers), global CDN, preview deploys per PR, generous free tier | Cloudflare Pages (separate build system), Vercel (different vendor), Netlify (different vendor), S3+CloudFront (more complex) |
 | Charts | Recharts | SVG-based (accessible), React-native API, tree-shakeable, lightweight | Chart.js (canvas-based, less accessible), D3 (too low-level), Nivo (heavier) |
 | Virtual scrolling | @tanstack/react-virtual | Same ecosystem as TanStack Query, lightweight, supports variable-height items | react-window (less maintained), react-virtualized (heavier) |
 | Error monitoring | Sentry | Industry standard, React integration, source map upload, performance tracing | LogRocket (expensive), Bugsnag (less React support), custom (maintenance burden) |
