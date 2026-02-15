@@ -34,7 +34,7 @@
 | Zero duplicate notifications | Idempotency at every layer — event bus, queue, handler, DB constraints |
 | Template-driven rendering | Each channel has its own template. Content adapts to channel capabilities (rich HTML email vs. structured in-app card) |
 | Fail-open delivery | SMTP failures never block queue processing. Failed deliveries are logged and retryable |
-| Rounds-aware reminders | Deadline reminders are per-round, targeting team leads of non-eliminated teams without submissions for the active round |
+| Rounds-aware reminders | Deadline reminders are per-round, targeting team leads (always) and optionally all team members (`notify_all_on_deadline` config) of non-eliminated teams without submissions for the active round |
 | Auditable | Every notification sent, failed, or suppressed produces an audit record |
 | Scalable | Queue-based processing handles bursts (state transitions → thousands of notifications) without blocking the API |
 
@@ -145,7 +145,7 @@ Both channels are dispatched for every notification. In Phase 1 there are no use
 | `scoring.completed` | All judges scored a submission | in-app | Low |
 | `results.published` | Final results announced | email, in-app | High |
 | `announcement.posted` | Organizer posts announcement | email, in-app | Normal |
-| `organizer.invited` | Admin sends organizer invite | email | Normal |
+| `workspace.invite_received` | Platform admin invites user to workspace (as organiser/co-organiser) | email | Normal |
 | `hackathon.starting_soon` | Cron: hackathon starts in 1h | email, in-app | High |
 | `system.webhook_failure` | Webhook dead-lettered | email, in-app | High |
 
@@ -200,7 +200,7 @@ flowchart TD
 
     B -->|"submission.rejected"| D["Team lead only<br/>(team_members WHERE<br/>role = 'team_lead')"]
 
-    B -->|"force_push.detected<br/>system.webhook_failure"| E["All organizer+ roles<br/>(organizer_roles WHERE role IN<br/>'admin_owner','organizer','co_organizer')"]
+    B -->|"force_push.detected<br/>system.webhook_failure"| E["Organiser + Co-organiser<br/>(hackathon_roles WHERE role IN<br/>'organizer','co_organizer')"]
 
     B -->|"state.changed<br/>announcement.posted<br/>round.started<br/>round.completed"| F["All hackathon participants<br/>(all team members +<br/>all judges + all organizers)"]
 
@@ -210,12 +210,14 @@ flowchart TD
 
     B -->|"team.invite_received"| I["Single invited user"]
 
-    B -->|"round.deadline_24h<br/>round.deadline_1h"| J["Team leads of<br/>non-eliminated teams<br/>without submission<br/>for this round"]
+    B -->|"round.deadline_24h<br/>round.deadline_1h"| J["Team leads of<br/>non-eliminated teams<br/>without submission<br/>for this round<br/>(+ all members if<br/>notify_all_on_deadline = true)"]
 
-    B -->|"organizer.invited"| K["Direct email address<br/>(from invite record)"]
+    B -->|"workspace.invite_received"| K["Direct email address<br/>(from workspace invite record)"]
 ```
 
 ### Recipient Resolution Query — Round Deadline Reminders
+
+Team leads always receive deadline reminders. If the hackathon's `notify_all_on_deadline` flag is enabled (configurable by organiser), all team members receive them.
 
 ```sql
 SELECT u.id, u.email, u.display_name, t.id AS team_id, t.name AS team_name
@@ -223,11 +225,15 @@ FROM team_members tm
   JOIN teams t ON tm.team_id = t.id
   JOIN users u ON tm.user_id = u.id
 WHERE t.hackathon_id = :hackathonId
-  AND tm.role = 'team_lead'
+  AND (
+    tm.role = 'team_lead'
+    OR :notifyAllOnDeadline = true   -- hackathon config flag
+  )
   AND t.id NOT IN (
     -- Teams that already submitted for this round
     SELECT team_id FROM submissions
     WHERE round_id = :roundId
+      AND status != 'superseded'     -- ignore superseded submissions
   )
   AND t.id NOT IN (
     -- Teams eliminated in previous rounds
@@ -319,6 +325,8 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click
 ```
 
 The unsubscribe token is a signed JWT containing `userId` and `notificationType`. Clicking it disables that notification type's email channel for the user.
+
+**Critical notifications cannot be unsubscribed.** If a user attempts to unsubscribe from a critical notification type (e.g., `round.deadline_1h`), the request is rejected with an explanation that critical notifications are mandatory. Only High, Normal, and Low priority types support email unsubscription.
 
 ---
 
@@ -520,7 +528,7 @@ After exhausting retries:
 1. `notification_deliveries` row updated: `status = 'dead_lettered'`.
 2. Audit event: `notification.dead_lettered`.
 3. If the failed channel is email → attempt in-app delivery as fallback.
-4. Dead-lettered deliveries are queryable by admin_owner for debugging.
+4. Dead-lettered deliveries are queryable by platform admins (all hackathons) and organisers/co-organisers (their own hackathon) for debugging.
 
 ---
 
@@ -573,12 +581,12 @@ PUT    /api/v1/notifications/read-all/:hackathonSlug              # Mark all for
 DELETE /api/v1/notifications/:id                                  # Dismiss notification
 ```
 
-### Hackathon Notification Management (organizer+)
+### Hackathon Notification Management (organiser / co-organiser)
 
 ```
-POST   /api/v1/hackathons/:slug/notifications/broadcast            # Send custom announcement (organizer+)
-GET    /api/v1/hackathons/:slug/notifications/deliveries           # List delivery history (organizer+)
-GET    /api/v1/hackathons/:slug/notifications/stats                # Delivery statistics (organizer+)
+POST   /api/v1/hackathons/:slug/notifications/broadcast            # Send custom announcement (organiser/co-organiser)
+GET    /api/v1/hackathons/:slug/notifications/deliveries           # List delivery history (organiser/co-organiser)
+GET    /api/v1/hackathons/:slug/notifications/stats                # Delivery statistics (organiser/co-organiser)
 ```
 
 ### Unsubscribe
@@ -604,7 +612,7 @@ POST   /api/v1/notifications/unsubscribe                           # POST-based 
 | Email bounces (permanent delivery failure) | Recipient's email marked as `bounced` in users table. Future emails to this address are suppressed until user updates email |
 | Team eliminated but round.completed notification fires | Eliminated team members receive the notification (they can see results) but with appropriate messaging |
 | Round deadline reminder for single-round hackathon | Works identically — still uses `hackathon_rounds` table even for single-round hackathons |
-| Organizer sends broadcast during active round | Broadcast sent to all hackathon participants (team members + judges + organizers) |
+| Organiser/co-organiser sends broadcast during active round | Broadcast sent to all hackathon participants (team members + judges + organisers/co-organisers) |
 
 ---
 

@@ -298,7 +298,7 @@ After `max_retries` failures:
 2. `webhook_deliveries` row updated: `status = 'dead_lettered'`, `error_message` captured.
 3. Audit event logged: `webhook.dead_lettered` with delivery ID and error context.
 4. Internal event emitted: `system.webhook_dead_lettered` — triggers organizer notification.
-5. Dead-lettered webhooks are queryable via API for debugging.
+5. Dead-lettered webhooks are queryable via API by organisers/co-organisers for debugging.
 
 ---
 
@@ -353,19 +353,21 @@ flowchart TD
     B --> C{"Team found?"}
     C -->|No| D["Ack + skip"]
     C -->|Yes| E["Get hackathon config<br/>(submission_tag_pattern)"]
-    E --> F{"Tag matches pattern?<br/>(regex: e.g., ^submission_v\\d+$)"}
+    E --> F{"Tag matches pattern?<br/>(organiser-configured regex)"}
     F -->|No| G["Ack + skip<br/>(not a submission tag)"]
-    F -->|Yes| H["Extract version from tag name<br/>(version = round number)"]
-    H --> I["Look up round:<br/>SELECT FROM hackathon_rounds<br/>WHERE round_number = :version<br/>AND hackathon_id = :hackathonId"]
-    I --> J{"Round exists<br/>and status = 'active'?"}
-    J -->|No| K["Reject: round not active<br/>or does not exist"]
+    F -->|Yes| H["Find current active round:<br/>SELECT FROM hackathon_rounds<br/>WHERE hackathon_id = :hackathonId<br/>AND status = 'active'<br/>ORDER BY round_number LIMIT 1"]
+    H --> J{"Active round found?"}
+    J -->|No| K["Reject: no active round"]
     J -->|Yes| L["Check team not eliminated<br/>in previous round"]
     L --> M{"Team eliminated?"}
     M -->|Yes| N["Reject: team eliminated<br/>in previous round"]
     M -->|No| O["Idempotency check<br/>(delivery_id)"]
-    O --> P["Call HackathonStateMachine DO<br/>POST /accept-submission<br/>(includes round_id)"]
+    O --> O2{"allow_resubmission<br/>AND existing submission<br/>for this team+round?"}
+    O2 -->|Yes| O3["UPDATE existing submission<br/>SET status = 'superseded'"]
+    O2 -->|No existing / not allowed| P["Call HackathonStateMachine DO<br/>POST /accept-submission<br/>(includes round_id)"]
+    O3 --> P
     P --> Q{"DO response?"}
-    Q -->|accepted| R["INSERT submission<br/>(status: 'received',<br/>round_id, version = round_number)"]
+    Q -->|accepted| R["INSERT submission<br/>(status: 'received',<br/>round_id)"]
     R --> S["Post commit status (success)<br/>to GitHub"]
     S --> T["Emit: submission.received"]
     Q -->|rejected| U["INSERT submission<br/>(status: 'invalid',<br/>rejection_reason)"]
@@ -381,11 +383,10 @@ flowchart TD
 
 ### Round Resolution
 
-1. **Extract version** from the tag name using the hackathon's `submission_tag_pattern` regex (capture group).
-2. **Map version → round**: `version` = `round_number` in the `hackathon_rounds` table.
-3. **Validate round status**: Round must be in `active` status to accept submissions.
-4. **Check elimination**: If the team was eliminated in a prior round (via `round_results` table), reject the submission.
-5. **One submission per team per round**: Enforced by `UNIQUE(team_id, round_id)` on the `submissions` table.
+1. **Match tag** against the hackathon's organiser-configured `submission_tag_pattern` regex.
+2. **Find current active round**: Query `hackathon_rounds` for the round with `status = 'active'` (ordered by `round_number`, limit 1). If no active round exists, reject.
+3. **Check elimination**: If the team was eliminated in a prior round (via `round_results` table), reject the submission.
+4. **Check resubmission**: If `allow_resubmission` is enabled and the team already has a submission for this round, the existing submission is marked `superseded` and a new one is created. If `allow_resubmission` is disabled and a submission already exists, reject with "already submitted for this round".
 
 ### Tag Delete Flow
 
@@ -617,7 +618,7 @@ interface InternalEvent {
 | Queue consumer | `delivery_id` in `webhook_deliveries` | Pre-check query before processing |
 | Submission creation | `UNIQUE(webhook_delivery_id)` on submissions | DB constraint prevents duplicates |
 | DO submission lock | `UNIQUE(webhook_delivery_id)` in DO SQLite | DO-level constraint |
-| Tag + round uniqueness | `UNIQUE(team_id, round_id)` on submissions | One submission per team per round |
+| Tag + round uniqueness | Conditional: if `allow_resubmission` is off, reject duplicate `(team_id, round_id)` at application level. If on, existing submission marked `superseded` before insert | One active submission per team per round (old ones superseded if resubmission allowed) |
 
 ### Delivery Tracking
 
@@ -659,33 +660,33 @@ interface WebhookDelivery {
 POST /webhooks/github              # GitHub App webhook receiver
 ```
 
-### Webhook Delivery History (organizer+)
+### Webhook Delivery History (organiser / co-organiser)
 
 ```
-GET  /api/v1/hackathons/:slug/webhook-deliveries                  # List deliveries (organizer+)
-GET  /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId      # Get delivery details (organizer+)
-POST /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId/retry  # Retry dead-lettered (organizer+)
+GET  /api/v1/hackathons/:slug/webhook-deliveries                  # List deliveries (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId      # Get delivery details (organiser/co-organiser)
+POST /api/v1/hackathons/:slug/webhook-deliveries/:deliveryId/retry  # Retry dead-lettered (organiser/co-organiser)
 ```
 
 ### Commit Log
 
 ```
-GET  /api/v1/hackathons/:slug/teams/:teamId/commits     # List team's commit log (own team or organizer+)
-GET  /api/v1/hackathons/:slug/commits                   # List all commits (organizer+)
+GET  /api/v1/hackathons/:slug/teams/:teamId/commits     # List team's commit log (own team members, or organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/commits                   # List all commits across teams (organiser/co-organiser)
 ```
 
-### Force Push Events (organizer+)
+### Force Push Events (organiser / co-organiser)
 
 ```
-GET  /api/v1/hackathons/:slug/force-pushes              # List force push events (organizer+)
-PUT  /api/v1/hackathons/:slug/force-pushes/:id/resolve  # Mark as reviewed (organizer+)
+GET  /api/v1/hackathons/:slug/force-pushes              # List force push events (organiser/co-organiser)
+PUT  /api/v1/hackathons/:slug/force-pushes/:id/resolve  # Mark as reviewed (organiser/co-organiser)
 ```
 
 ### Bot Status
 
 ```
-GET  /api/v1/hackathons/:slug/teams/:teamId/bot-status  # Check bot activation (team_lead for own team, organizer+)
-POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health check (team_lead for own team, organizer+)
+GET  /api/v1/hackathons/:slug/teams/:teamId/bot-status  # Check bot activation (team_lead for own team, organiser/co-organiser)
+POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health check (team_lead for own team, organiser/co-organiser)
 ```
 
 ---
@@ -695,7 +696,7 @@ POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health che
 | Scenario | Behavior |
 |----------|----------|
 | Webhook arrives for repo not linked to any team | Logged in `webhook_deliveries` with `team_id = null`, processing skipped |
-| Same tag pushed to two repos linked to the same team | Each produces a separate submission attempt. Second is rejected by `UNIQUE(team_id, round_id)` |
+| Same tag pushed to two repos linked to the same team | Each produces a separate submission attempt. If `allow_resubmission` is off, second is rejected. If on, first is superseded |
 | GitHub App uninstalled after submission received | Submission is preserved. Commit status posting will fail (logged, fail-open). Bot marked inactive |
 | Force push on a branch that had a submission tag | Submission is preserved (tags are separate refs). Flagged as `warning` severity for review |
 | Tag deleted after submission | Submission is NOT deleted (immutable). Audit event logged. Organizer warned |
@@ -705,10 +706,12 @@ POST /api/v1/hackathons/:slug/teams/:teamId/bot/check   # Trigger bot health che
 | Team changes linked repo | Old repo's bot_active set to false. New repo checked for pending installations |
 | Webhook secret rotated | Old secret continues to work for 24 hours (dual-accept window). New secret takes priority |
 | GitHub rate limit (5000 req/hr) hit during status posting | Queued for retry with exponential backoff. Submission processing is unaffected |
-| Tag submitted for non-existent round | Rejected with "round not found" reason. Commit status posted as failure |
-| Tag submitted for completed/pending round | Rejected with "round not active" reason. Only rounds with `status = 'active'` accept submissions |
+| Submission tag when no round is active | Rejected with "no active round" reason. Commit status posted as failure |
+| All rounds completed or pending | Rejected with "no active round" reason. Only rounds with `status = 'active'` accept submissions |
+| Team resubmits when `allow_resubmission` is off | Rejected with "already submitted for this round" reason |
+| Team resubmits when `allow_resubmission` is on | Old submission marked `superseded`, new submission created |
 | Tag submitted by eliminated team | Rejected with "team eliminated" reason. Team was eliminated in a previous round |
-| Team lead installs GitHub App before creating team | Installation stored in `pending_installations`. Auto-linked when team is created and repo is connected |
+| Team lead installs GitHub App before team is linked to repo | Installation stored in `pending_installations`. Auto-linked when team links that repo |
 
 ---
 
@@ -843,4 +846,5 @@ Stores GitHub App installations for repos not yet linked to teams.
 | No integration marketplace | GitHub is the sole integration. No plugin/marketplace system | Plugin/marketplace adds operational complexity and security surface. GitHub covers the core VCS need. Keep scope tight for Phase 1 | Marketplace with manifests (over-engineering); built-in Slack/Discord (scope creep) |
 | Webhook secret dual-accept on rotation | Old secret valid for 24 hours after rotation | Prevents webhook delivery failures during rotation. GitHub may have in-flight deliveries signed with the old secret | Immediate cutover (missed webhooks); no rotation support (security risk) |
 | Max 20 commits stored per push | Truncate to most recent 20 | Large merges can contain hundreds of commits. Storing all would blow up D1 storage. 20 covers typical development velocity per push | Store all (storage concern); store only count (lose commit detail) |
-| Rounds-aware tag handler | Tag version maps to round_number in hackathon_rounds | Submissions are per-round. The tag handler must know which round a submission belongs to, validate the round is active, and check team elimination status | Round-agnostic handler (doesn't support multi-round hackathons); require round ID in tag name (rigid) |
+| Rounds-aware tag handler | Auto-assign submission to current active round (no version encoding in tag) | Simpler UX: participants just tag to submit, system figures out the round. Avoids confusion about version→round mapping. Only one round can be `active` at a time anyway | Encode round number in tag name (rigid, error-prone); round-agnostic handler (doesn't support multi-round hackathons) |
+| Configurable resubmission | `allow_resubmission` hackathon flag controls whether teams can submit again within a round | Some hackathons want iterative submissions (hackathon-style), others want a single final submission (competition-style). Organiser decides | Always allow (some hackathons need finality); never allow (some want iteration) |
