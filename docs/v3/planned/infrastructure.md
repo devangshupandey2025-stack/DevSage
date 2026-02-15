@@ -578,7 +578,7 @@ wrangler deploy --env production
 | Environment | API URL | Web URL | D1 Database | Purpose |
 |------------|---------|---------|-------------|---------|
 | Development | `http://localhost:8787` | `http://localhost:5173` | Local miniflare | Developer machine |
-| Preview | `https://preview-{sha}.api.devsage.org` | `https://preview-{sha}.devsage.org` | Preview D1 | PR review |
+| Preview | `https://api.devsage-org.workers.dev` | `https://platform.devsage-org.workers.dev` | Preview D1 | PR review |
 | Staging | `https://staging-api.devsage.org` | `https://staging.devsage.org` | Staging D1 | Pre-production validation |
 | Production | `https://api.devsage.org` | `https://devsage.org` | Production D1 | Live users |
 
