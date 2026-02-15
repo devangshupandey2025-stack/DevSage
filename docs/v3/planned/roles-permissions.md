@@ -55,29 +55,27 @@ flowchart TD
     end
 
     subgraph "Layer 3: Hackathon (per-hackathon, {slug}.devsage.org)"
-        HAO["admin_owner (index 0)"]
-        HOR["organizer (index 1)"]
-        HCO["co_organizer (index 2)"]
-        HJ["judge (index 3)"]
-        HTL["team_lead (index 4)"]
-        HTM["team_member (index 5)"]
-        HAN["anonymous (index 6)"]
+        HOR["organizer (index 0)"]
+        HCO["co_organizer (index 1)"]
+        HJ["judge (index 2)"]
+        HTL["team_lead (index 3)"]
+        HTM["team_member (index 4)"]
+        HAN["anonymous (index 5)"]
     end
 
     SU --> PA
-    PA -.->|"can invite organizers"| WO
+    PA -.->|"can invite organizers<br/>+ override any hackathon"| WO
 
     WO --> WA --> WM
-    WO -.->|"inherits hackathon admin_owner<br/>unless overridden"| HAO
+    WO -.->|"inherits hackathon organizer<br/>unless overridden"| HOR
 
-    HAO --> HOR --> HCO --> HJ --> HTL --> HTM --> HAN
+    HOR --> HCO --> HJ --> HTL --> HTM --> HAN
 
     style SU fill:#dc2626,color:#fff
     style PA fill:#7c3aed,color:#fff
     style WO fill:#6366f1,color:#fff
     style WA fill:#3b82f6,color:#fff
     style WM fill:#0ea5e9,color:#fff
-    style HAO fill:#7c3aed,color:#fff
     style HOR fill:#6366f1,color:#fff
     style HCO fill:#3b82f6,color:#fff
     style HJ fill:#f59e0b,color:#fff
@@ -92,32 +90,34 @@ flowchart TD
 
 ## 2. Built-in Hackathon Roles
 
-Seven built-in roles form a strict hierarchy. Each role inherits all permissions of every role below it.
+Six built-in hackathon roles form a strict hierarchy. Each role inherits all permissions of every role below it. Platform admins (shikdd team) have a separate override mechanism — they are NOT a hackathon role.
 
 | Index | Role | Source | Description |
 |-------|------|--------|-------------|
-| 0 | `admin_owner` | `organizer_roles` table | Created the hackathon. Full control including deletion and ownership transfer. Same as platform admin for this hackathon. |
-| 1 | `organizer` | `organizer_roles` table | Invited organizer with full management access except deletion. Can invite co-organizers, judges, and team leads. |
-| 2 | `co_organizer` | `organizer_roles` table | Invited by organizer. Can view all teams, manage content, invite judges and team leads. |
-| 3 | `judge` | `judges` table | Invited by organizer/co-organizer with `invite_status = 'accepted'`. Can score assigned submissions. |
-| 4 | `team_lead` | `team_members` table | Invited by organizer/co-organizer. Creates and names team, invites members, connects repo, finalizes submissions. |
-| 5 | `team_member` | `team_members` table | Invited by team lead. Can view own team and submissions. |
-| 6 | `anonymous` | (fallback) | Authenticated user with no relationship to this hackathon. Can only view public hackathon landing page. |
+| 0 | `organizer` | `organizer_roles` table | Workspace owner. Highest customer-facing role. Full hackathon control including deletion and ownership transfer. Can invite co-organizers, judges, and team leads. |
+| 1 | `co_organizer` | `organizer_roles` table | Invited by organizer. Can create hackathons, edit config, view all teams, manage content, invite judges and team leads. |
+| 2 | `judge` | `judges` table | Invited by organizer/co-organizer with `invite_status = 'accepted'`. Can score assigned submissions. Scoped to inviting workspace. |
+| 3 | `team_lead` | `team_members` table | Designated by organizer/co-organizer (via Excel upload). Creates and names team, invites members, connects repo, finalizes submissions. |
+| 4 | `team_member` | `team_members` table | Invited by team lead. Can view own team and submissions. |
+| 5 | `anonymous` | (fallback) | Authenticated user with no relationship to this hackathon. Can only view public hackathon landing page. |
 
-**`anonymous` means authenticated but unrelated** — unauthenticated users are blocked by the auth middleware before role resolution ever runs. In the invite-only model, most pages beyond the landing page require at least `team_member` role.
+**`anonymous` means authenticated but unrelated** — unauthenticated users are blocked by the auth middleware before role resolution ever runs.
+
+**Platform Admin Override:** Platform admins (shikdd team at `shikdd.devsage.org`) can access any hackathon with `organizer`-level permissions via the `requirePlatformAdmin` middleware. This is a platform-level override, NOT a hackathon role assignment. Platform admins do not appear in the `organizer_roles` table for hackathons.
 
 ### Role Hierarchy Invariant
 
 ```
-admin_owner > organizer > co_organizer > judge > team_lead > team_member > anonymous
+organizer > co_organizer > judge > team_lead > team_member > anonymous
+(Platform admins override: equivalent to organizer for any hackathon)
 ```
 
-A `requireRole('co_organizer')` check passes for `co_organizer`, `organizer`, and `admin_owner`. It rejects `judge`, `team_lead`, `team_member`, and `anonymous`.
+A `requireRole('co_organizer')` check passes for `co_organizer` and `organizer`. It rejects `judge`, `team_lead`, `team_member`, and `anonymous`.
 
 ```typescript
 interface RoleHierarchy {
-  readonly ROLES: readonly ['admin_owner', 'organizer', 'co_organizer', 'judge', 'team_lead', 'team_member', 'anonymous'];
-  readonly ROLE_INDEX: Record<Role, number>;  // admin_owner=0, organizer=1, ..., anonymous=6
+  readonly ROLES: readonly ['organizer', 'co_organizer', 'judge', 'team_lead', 'team_member', 'anonymous'];
+  readonly ROLE_INDEX: Record<Role, number>;  // organizer=0, co_organizer=1, ..., anonymous=5
 
   isRoleAtLeast(userRole: Role, requiredRole: Role): boolean;
   // Returns true if ROLE_INDEX[userRole] <= ROLE_INDEX[requiredRole]
@@ -140,7 +140,7 @@ flowchart TD
 
     F --> G["Query organizer_roles<br/>WHERE hackathon_id = :hackathonId<br/>AND user_id = :userId"]
     G --> H{"Found?"}
-    H -->|Yes| I["Return role from<br/>organizer_roles.role<br/>(admin_owner | organizer | co_organizer)"]
+    H -->|Yes| I["Return role from<br/>organizer_roles.role<br/>(organizer | co_organizer)"]
 
     H -->|No| J["Query judges<br/>WHERE hackathon_id = :hackathonId<br/>AND user_id = :userId<br/>AND invite_status = 'accepted'"]
     J --> K{"Found?"}
@@ -164,7 +164,7 @@ flowchart TD
 
 ### Resolution Order (Strict Priority)
 
-1. **`organizer_roles`** — Checked first. Returns `admin_owner`, `organizer`, or `co_organizer`.
+1. **`organizer_roles`** — Checked first. Returns `organizer` or `co_organizer`.
 2. **`judges`** — Only if `invite_status = 'accepted'`. Pending/declined judges are treated as anonymous.
 3. **`team_members`** — Joined through `teams` table. Returns `team_lead` or `team_member` based on `team_members.role`.
 4. **Fallback** — `anonymous`.
@@ -222,7 +222,7 @@ flowchart TD
 
 | Workspace Role | Default Hackathon Role | Override Allowed? |
 |----------------|----------------------|-------------------|
-| `workspace_owner` | `organizer` | Yes — can be set to `admin_owner` per hackathon |
+| `workspace_owner` | `organizer` | No — workspace owner is always the organizer |
 | `workspace_admin` | `co_organizer` | Yes — can be elevated to `organizer` per hackathon |
 | `workspace_member` | `anonymous` (no auto-access) | Yes — can be assigned any role per hackathon |
 
@@ -381,76 +381,78 @@ Complete permission matrix for all 7 built-in hackathon roles.
 
 ### Hackathon Management
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| View public hackathon info | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| View hackathon settings | – | – | – | – | – | ✓ | ✓ |
-| Edit hackathon config | – | – | – | – | – | ✓ | ✓ |
-| Transition phase | – | – | – | – | – | ✓ | ✓ |
-| Delete hackathon | – | – | – | – | – | – | ✓ |
-| Transfer ownership | – | – | – | – | – | – | ✓ |
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| View public hackathon info | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View hackathon settings | – | – | – | – | ✓ | ✓ |
+| Edit hackathon config | – | – | – | – | ✓ | ✓ |
+| Transition phase | – | – | – | – | ✓ | ✓ |
+| Delete hackathon | – | – | – | – | – | ✓ |
+| Transfer ownership | – | – | – | – | – | ✓ |
 
-### Teams (Invite-Only)
+> **Platform admins (shikdd)** have organizer-level access to all hackathons via platform override. They can also force-delete hackathons and access the full audit trail via `shikdd.devsage.org`.
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| Accept team lead invite | – | – | ✓ | – | – | – | – |
-| Create/name team (after invite) | – | – | ✓ | – | – | ✓ | ✓ |
-| Invite team members | – | – | ✓ | – | – | ✓ | ✓ |
-| Accept team member invite | – | ✓ | – | – | – | – | – |
-| View own team | – | ✓ | ✓ | – | – | ✓ | ✓ |
-| View all teams | – | – | – | – | ✓ | ✓ | ✓ |
-| Manage own team | – | – | ✓ | – | – | ✓ | ✓ |
-| Manage all teams | – | – | – | – | – | ✓ | ✓ |
-| Install GitHub bot | – | – | ✓ | – | – | ✓ | ✓ |
-| Invite team leads | – | – | – | – | ✓ | ✓ | ✓ |
+### Teams
+
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| Accept team lead designation | – | – | ✓ | – | – | – |
+| Create/name team (after designation) | – | – | ✓ | – | – | – |
+| Invite team members | – | – | ✓ | – | – | – |
+| Accept team member invite | – | ✓ | – | – | – | – |
+| View own team | – | ✓ | ✓ | – | – | ✓ |
+| View all teams | – | – | – | – | ✓ | ✓ |
+| Manage own team | – | – | ✓ | – | – | ✓ |
+| Manage all teams | – | – | – | – | ✓ | ✓ |
+| Install GitHub bot | – | – | ✓ | – | – | – |
+| Designate team leads (Excel upload) | – | – | – | – | ✓ | ✓ |
 
 ### Submissions
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| View own submissions | – | ✓ | ✓ | – | – | ✓ | ✓ |
-| View all submissions | – | – | – | assigned | ✓ | ✓ | ✓ |
-| Finalize submission | – | – | ✓ | – | – | ✓ | ✓ |
-| Attach artifacts (demo URL) | – | – | ✓ | – | – | ✓ | ✓ |
-| View own commit log | – | ✓ | ✓ | – | – | ✓ | ✓ |
-| View all commit logs | – | – | – | assigned | ✓ | ✓ | ✓ |
-| View force pushes | – | – | – | – | ✓ | ✓ | ✓ |
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| View own submissions | – | ✓ | ✓ | – | – | ✓ |
+| View all submissions | – | – | – | assigned | ✓ | ✓ |
+| Finalize submission | – | – | ✓ | – | – | ✓ |
+| Attach artifacts (demo URL) | – | – | ✓ | – | – | ✓ |
+| View own commit log | – | ✓ | ✓ | – | – | ✓ |
+| View all commit logs | – | – | – | assigned | ✓ | ✓ |
+| View force pushes | – | – | – | – | ✓ | ✓ |
 
 ### Judging
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| Score submissions | – | – | – | ✓ | – | – | – |
-| View own scores | – | – | – | ✓ | – | – | – |
-| View all scores | – | – | – | – | – | ✓ | ✓ |
-| Invite judges | – | – | – | – | ✓ | ✓ | ✓ |
-| Manage judges | – | – | – | – | – | ✓ | ✓ |
-| Set rubric | – | – | – | – | – | ✓ | ✓ |
-| View leaderboard | ★ | ★ | ★ | ★ | ✓ | ✓ | ✓ |
-| Publish results | – | – | – | – | – | ✓ | ✓ |
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| Score submissions | – | – | – | ✓ | – | – |
+| View own scores | – | – | – | ✓ | – | – |
+| View all scores | – | – | – | – | ✓ | ✓ |
+| Invite judges | – | – | – | – | ✓ | ✓ |
+| Manage judges | – | – | – | – | ✓ | ✓ |
+| Set rubric | – | – | – | – | ✓ | ✓ |
+| View leaderboard | ★ | ★ | ★ | ★ | ✓ | ✓ |
+| Publish results | – | – | – | – | ✓ | ✓ |
 
 ★ Leaderboard visibility for non-co-organizer roles depends on hackathon phase (visible to all after `completed`).
 
 ### Roles & Settings
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| View own role | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Manage organizer roles | – | – | – | – | – | – | ✓ |
-| Invite co-organizers | – | – | – | – | – | ✓ | ✓ |
-| View audit trail | – | – | – | – | – | ✓ | ✓ |
-| Manage webhooks | – | – | – | – | – | ✓ | ✓ |
-| View analytics | – | – | – | – | ✓ | ✓ | ✓ |
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| View own role | – | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Manage organizer roles | – | – | – | – | – | ✓ |
+| Invite co-organizers | – | – | – | – | – | ✓ |
+| View audit trail | – | – | – | – | ✓ | ✓ |
+| Manage webhooks | – | – | – | – | ✓ | ✓ |
+| View analytics | – | – | – | – | ✓ | ✓ |
 
 ### Content & Communication
 
-| Action | anon | team_member | team_lead | judge | co_org | organizer | admin_owner |
-|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|:-----------:|
-| View announcements | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Create announcements | – | – | – | – | ✓ | ✓ | ✓ |
-| Manage announcements | – | – | – | – | – | ✓ | ✓ |
-| Send notifications | – | – | – | – | ✓ | ✓ | ✓ |
+| Action | anon | team_member | team_lead | judge | co_org | organizer |
+|--------|:----:|:-----------:|:---------:|:-----:|:------:|:---------:|
+| View announcements | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Create announcements | – | – | – | – | ✓ | ✓ |
+| Manage announcements | – | – | – | – | ✓ | ✓ |
+| Send notifications | – | – | – | – | ✓ | ✓ |
 
 ---
 
@@ -505,8 +507,8 @@ app.get('/hackathons/:slug/teams', authMiddleware, requireRole('co_organizer'), 
 // Organizer+
 app.put('/hackathons/:slug', authMiddleware, requireRole('organizer'), handler);
 
-// Admin/Owner only
-app.delete('/hackathons/:slug', authMiddleware, requireRole('admin_owner'), handler);
+// Organizer only (highest hackathon role)
+app.delete('/hackathons/:slug', authMiddleware, requireRole('organizer'), handler);
 
 // Platform admin (shikdd.devsage.org)
 app.get('/admin/users', authMiddleware, requirePlatformAdmin, handler);
@@ -608,13 +610,13 @@ sequenceDiagram
     participant DB as Database
 
     O->>API: POST /hackathons/:slug/transfer-ownership<br/>{ new_owner_id: "user_xyz" }
-    API->>API: Validate: caller is admin_owner
+    API->>API: Validate: caller is organizer
     API->>DB: SELECT FROM organizer_roles<br/>WHERE hackathon_id AND user_id = new_owner_id
-    DB-->>API: Must exist and role = 'organizer'
+    DB-->>API: Must exist and role = 'co_organizer'
 
     API->>DB: BEGIN TRANSACTION
-    DB-->>DB: UPDATE organizer_roles<br/>SET role='organizer' WHERE user_id = old_owner
-    DB-->>DB: UPDATE organizer_roles<br/>SET role='admin_owner' WHERE user_id = new_owner
+    DB-->>DB: UPDATE organizer_roles<br/>SET role='co_organizer' WHERE user_id = old_owner
+    DB-->>DB: UPDATE organizer_roles<br/>SET role='organizer' WHERE user_id = new_owner
     API->>DB: COMMIT
 
     API->>API: Insert audit event<br/>(ownership_transferred)
@@ -622,9 +624,9 @@ sequenceDiagram
 ```
 
 **Transfer Rules:**
-- New owner must already be an `organizer` of the hackathon.
-- Old owner is demoted to `organizer` (not removed).
-- Exactly one `admin_owner` per hackathon at all times (transactional swap).
+- New owner must already be a `co_organizer` of the hackathon.
+- Old owner is demoted to `co_organizer` (not removed).
+- Exactly one `organizer` per hackathon at all times (transactional swap).
 - Transfer produces an audit event with both user IDs.
 
 ---
@@ -638,7 +640,7 @@ sequenceDiagram
 | User's organizer role is removed mid-session | Next request resolves fresh — they immediately lose access |
 | Two teams in same hackathon (should be impossible) | Resolution returns first match. Prevented at team invite time by unique constraint |
 | Hackathon slug changes | Role resolution uses `hackathon_id` (UUID) internally, not slug. Slug is only for lookup |
-| Platform admin accesses hackathon | Gets their hackathon-level role (could be `anonymous`). Platform admin ≠ hackathon admin_owner |
+| Platform admin accesses hackathon | Gets organizer-level access via platform override. Platform admin access is separate from hackathon role assignments |
 | Suspended user attempts role resolution | `authMiddleware` checks suspension status BEFORE role resolution. Suspended = 403 |
 | Workspace owner leaves workspace | Cannot leave while owner. Must transfer ownership first |
 | Workspace deleted with active hackathons | All hackathons under the workspace become "unowned workspace" — still functional but no workspace cascade |
@@ -655,8 +657,8 @@ sequenceDiagram
 | `FORBIDDEN` | 403 | User's role is below the required minimum |
 | `NOT_PLATFORM_ADMIN` | 403 | User is not in `platform_admins` table |
 | `NOT_ORGANIZER` | 403 | User is neither platform admin nor accepted organizer |
-| `CANNOT_REMOVE_OWNER` | 400 | Cannot remove or demote the hackathon admin_owner (must transfer first) |
-| `TRANSFER_TARGET_NOT_ORGANIZER` | 400 | Ownership transfer target must be an existing organizer |
+| `CANNOT_REMOVE_OWNER` | 400 | Cannot remove or demote the hackathon organizer (must transfer first) |
+| `TRANSFER_TARGET_NOT_CO_ORGANIZER` | 400 | Ownership transfer target must be an existing co_organizer |
 | `INVITE_NOT_FOUND` | 404 | Invite code does not exist |
 | `INVITE_EXPIRED` | 410 | Invite code has expired |
 | `INVITE_ALREADY_ACCEPTED` | 409 | Invite has already been used |
@@ -680,7 +682,7 @@ Stores per-hackathon organizer assignments (owner, admin, moderator).
 | `id` | TEXT | PK, UUID | Unique row identifier |
 | `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Which hackathon |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Which user |
-| `role` | TEXT | NOT NULL, CHECK IN ('admin_owner','organizer','co_organizer') | Organizer role |
+| `role` | TEXT | NOT NULL, CHECK IN ('organizer','co_organizer') | Organizer role |
 | `assigned_by` | TEXT | FK → users.id, NULL | Who assigned this role (null for creator) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |

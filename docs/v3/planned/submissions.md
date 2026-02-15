@@ -36,7 +36,7 @@
 |------|-------------|
 | **Git-native workflow** | Teams submit by pushing a git tag. No forms, no file uploads, no manual intervention. The repo IS the submission. |
 | **Exactly-once acceptance** | A Durable Object guarantees that concurrent webhook deliveries for the same tag result in exactly one accepted submission. No duplicates, no races. |
-| **Rounds-based versioning** | Organizers define rounds (elimination or normal). Each round is a submission window — teams push one tag per round. |
+| **Rounds-based versioning** | Organizers choose the number of rounds and type of each round (normal or elimination). A simple hackathon has just 1 round. Each round is a submission window. Whether teams can re-submit within a round is configurable. |
 | **Multi-artifact (Phase 2)** | Beyond the tagged code, teams can attach a demo URL, a presentation deck (uploaded to R2), and screenshots. Demo URL is available in Phase 1; deck/screenshot uploads are deferred to Phase 2. |
 | **Automated validation** | Each submission runs through configurable validation checks: README exists, demo URL reachable, repo not empty, tag points to a real commit. |
 | **Force push detection** | If a team force-pushes to rewrite history after submitting, the system detects it and flags the submission for organizer review. |
@@ -105,7 +105,7 @@ sequenceDiagram
     TC->>DO: POST /accept-submission<br/>{ team_id, tag_name, submission_id, commit_sha, webhook_delivery_id }
 
     DO->>DO: Single-threaded validation:
-    Note over DO: 1. Is hackathon in 'active' phase?<br/>2. Is current round active?<br/>3. Is current time before round's submission_deadline?<br/>   (or is allow_late_submissions = true?)<br/>4. Has team already submitted for this round?<br/>5. Is team eliminated from a previous round?<br/>6. Is webhook_delivery_id already locked?<br/>7. Does tag match pattern? (redundant safety check)
+    Note over DO: 1. Is hackathon in 'active' phase?<br/>2. Is current round active?<br/>3. Is current time before round's submission_deadline?<br/>   (or is allow_late_submissions = true?)<br/>4. Has team already submitted for this round?<br/>   (if yes, is allow_resubmission = true? → replace previous)<br/>5. Is team eliminated from a previous round?<br/>6. Is webhook_delivery_id already locked?<br/>7. Does tag match pattern? (redundant safety check)
 
     alt All checks pass
         DO->>DO: INSERT into submission_locks (single-writer, no race)
@@ -152,7 +152,10 @@ flowchart TD
     F2A -->|Yes| F3
 
     F2 -->|Yes| F3{"Team already submitted<br/>for this round?"}
-    F3 -->|Yes| R3["Reject: ALREADY_SUBMITTED_THIS_ROUND"]
+    F3 -->|Yes| F3A{"allow_resubmission?"}
+    F3A -->|No| R3["Reject: ALREADY_SUBMITTED_THIS_ROUND"]
+    F3A -->|Yes| F3B["Replace previous submission<br/>(mark old as superseded)"]
+    F3B --> F4
     F3 -->|No| F4{"webhook_delivery_id<br/>already in submission_locks?"}
     F4 -->|Yes| R4["Idempotent: return previous result"]
     F4 -->|No| ACC["ACCEPT: Insert into submission_locks"]
@@ -278,7 +281,7 @@ flowchart LR
 **Rules:**
 - Each matching tag creates a new submission record with `round_id` set
 - Version numbers correspond to round numbers (version 1 = Round 1, etc.)
-- One submission per team per round (enforced by DO)
+- Whether teams can re-submit within a round is configurable via `allow_resubmission` (default: false). If enabled, the latest accepted tag replaces the previous submission for that round. If disabled, only the first accepted tag counts — subsequent tags are rejected with `ALREADY_SUBMITTED_THIS_ROUND`.
 - The submission for the current active round is auto-finalized when the round transitions to `judging`
 - Only finalized submissions enter the judging pipeline for that round
 - Teams eliminated in a previous round cannot submit in subsequent rounds
@@ -432,6 +435,7 @@ stateDiagram-v2
 | `under_review` | At least one judge has been assigned. | No |
 | `scored` | All assigned judges have submitted scores. | No |
 | `invalidated` | Force push detected after acceptance — submission integrity compromised. | No — terminal |
+| `superseded` | Replaced by a newer submission in the same round (when `allow_resubmission` is enabled). | No — terminal |
 
 ---
 
@@ -641,7 +645,7 @@ Multiple layers prevent duplicate submission processing. GitHub uses at-least-on
 | Durable Object | `UNIQUE(webhook_delivery_id)` in `submission_locks` SQLite table | `webhook_delivery_id` |
 | D1 submissions table | `UNIQUE(webhook_delivery_id)` constraint | `webhook_delivery_id` |
 | D1 submissions table | `UNIQUE(team_id, hackathon_id, tag_name)` constraint | Team + tag combo |
-| D1 submissions table | `UNIQUE(team_id, round_id)` constraint | One submission per team per round |
+| D1 submissions table | `UNIQUE(team_id, round_id)` constraint (when `allow_resubmission = false`) | One submission per team per round. When resubmission is enabled, old submission is marked `superseded` and constraint is on active submissions only. |
 
 If any layer detects a duplicate, the operation is a no-op — no error is returned, no new record is created.
 

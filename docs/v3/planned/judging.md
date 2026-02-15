@@ -619,10 +619,12 @@ interface LeaderboardEntry {
 
 | Viewer Role | During `judging` | After `completed` |
 |-------------|------------------|--------------------|
-| Participant | Own team's scores and rank only | Full leaderboard |
+| Participant | Own team's scores and rank only | Full leaderboard + own scores. Judge comments visible if `show_judge_comments_to_participants = true`. |
 | Judge | Own submitted scores only (no other judges' scores) | Full leaderboard |
-| Organizer/Co-organizer | Full leaderboard (real-time) | Full leaderboard |
-| Public (on `{slug}.devsage.org`) | Nothing | Full leaderboard |
+| Organizer/Co-organizer | Full leaderboard (real-time) | Full leaderboard + all judge comments |
+| Public (on `{slug}.devsage.org`) | Nothing | Full leaderboard (scores only, no judge comments) |
+
+**Judge comment visibility:** The `show_judge_comments_to_participants` hackathon config (default: `true`) controls whether participants can see judge comments on their submission after results are published. Regardless of this setting, organizers always see all comments.
 
 **Why hide the leaderboard from judges during judging?** Prevents anchoring bias. If a judge sees that a team is ranked #1, they may unconsciously inflate their score. Judges should evaluate each submission independently.
 
@@ -636,13 +638,13 @@ When the organizer transitions to `completed`, results become public.
 
 ```mermaid
 flowchart TD
-    A["Admin clicks 'Publish Results'<br/>(transition to 'completed')"] --> B["Leaderboard computed and frozen"]
+    A["Organiser/Co-Organiser clicks 'Publish Results'<br/>(transition to 'completed')"] --> B["Leaderboard computed and frozen"]
     B --> C["Per-track rankings generated"]
     C --> D["Overall ranking generated"]
     D --> E["Awards assigned (if configured)"]
     E --> F["Results page goes live"]
 
-    F --> G["Participants see:<br/>- Final rank<br/>- Per-criterion scores<br/>- Judge comments<br/>- AI review (if any)"]
+    F --> G["Participants see:<br/>- Final rank<br/>- Per-criterion scores<br/>- Judge comments (if organiser enabled)<br/>- AI review (if any)"]
     F --> H["Public ({slug}.devsage.org) sees:<br/>- Leaderboard<br/>- Top submissions<br/>- Winning team profiles"]
 ```
 
@@ -670,7 +672,7 @@ Awards are auto-assigned based on leaderboard positions when results are publish
 GET /api/v1/hackathons/:slug/results/export?format=csv
 GET /api/v1/hackathons/:slug/results/export?format=json
 → Downloads full results: teams, scores, rankings, criteria breakdowns, judge comments
-→ Requires: admin+
+→ Requires: organizer or co-organizer
 ```
 
 ---
