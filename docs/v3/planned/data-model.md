@@ -1,6 +1,6 @@
 # Data Model & Schema
 
-> Complete relational schema for the DevSage platform — ~31 tables across 9 domains in Cloudflare D1 (SQLite) via Drizzle ORM, with UUID primary keys, ISO-8601 timestamps, full ERD, indexing strategy, storage projections, migration approach, and partitioning plan for multi-tenant scale.
+> Complete relational schema for the DevSage platform — ~31 core tables across 10 domains in Cloudflare D1 (SQLite) via Drizzle ORM, with UUID primary keys, ISO-8601 timestamps, full ERD, indexing strategy, storage projections, migration approach, and partitioning plan for multi-tenant scale.
 
 ---
 
@@ -45,7 +45,7 @@
 
 ## 1. Schema Overview
 
-~37 tables organized into 10 domains:
+~31 core tables organized into 10 domains:
 
 | Domain | Tables | Purpose |
 |--------|--------|---------|
@@ -213,7 +213,7 @@ Global platform administrators (separate from per-hackathon roles).
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique row ID |
 | `user_id` | TEXT | FK → users.id, UNIQUE, NOT NULL | Which user |
-| `role` | TEXT | NOT NULL, DEFAULT 'platform_admin' | Platform role (single level) |
+| `role` | TEXT | NOT NULL, DEFAULT 'platform_admin', CHECK IN ('super_admin','platform_admin') | Platform role (two levels: super_admin, platform_admin) |
 | `created_by` | TEXT | FK → users.id, NULL | Who added (null for seed) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
@@ -572,8 +572,8 @@ Judge invitations and acceptance status.
 | `id` | TEXT | PK, UUID | Unique judge record ID |
 | `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL, ON DELETE CASCADE | Which hackathon |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Invited user |
-| `invite_status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, declined |
-| `track_id` | TEXT | | Track specialization (null = all tracks) |
+| `invite_status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, declined, removed |
+| `track_id` | TEXT | | DEPRECATED — use `judge_tracks` junction table for multi-track support (see judging.md). Kept for backward compatibility; null = all tracks |
 | `invited_by` | TEXT | FK → users.id, NOT NULL | Who invited |
 | `invited_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `responded_at` | TEXT | | When accepted/declined |
