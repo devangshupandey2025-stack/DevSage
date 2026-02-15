@@ -41,6 +41,7 @@ import deeptanshuImg from '@/photos/deeptanshu.png';
 import ibhanImg from '@/photos/ibhan.jpeg';
 import devangshuImg from '@/photos/devangshu.png';
 import srijanImg from '@/photos/srijan.png';
+import logo from '@/photos/logo.jpeg';
 
 /* ─────────────────────────────────────────────
    NAVBAR
@@ -60,8 +61,8 @@ const Navbar = () => {
   const navLinks = [
     { label: 'Platform', id: 'platform' },
     { label: 'Solutions', id: 'solutions' },
-    { label: 'Developers', id: 'developers' },
-    { label: 'Enterprise', id: 'enterprise' },
+    { label: 'Developers', id: 'credits' },
+    { label: 'Hackathons', id: 'developers' },
     { label: 'Pricing', id: 'pricing' },
   ];
 
@@ -93,11 +94,22 @@ const Navbar = () => {
         }`}
       >
         <div className="max-w-[1440px] mx-auto px-6 md:px-12 h-18 md:h-20 flex items-center justify-between">
-          <motion.div className="relative z-10 cursor-pointer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
-            <span className="text-2xl md:text-3xl font-black tracking-tighter text-white">
-              DEV<span className="text-[#CCFF00]">SAGE</span>
-            </span>
-          </motion.div>
+          <motion.div
+              className="relative z-10 cursor-pointer flex items-center gap-3"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.97 }}
+>
+  <img
+    src={logo}
+    alt="DevSage Logo"
+    className="w-8 h-8 md:w-10 md:h-10 object-contain"
+  />
+
+  <span className="text-2xl md:text-3xl font-black tracking-tighter text-white">
+    DEV<span className="text-[#CCFF00]">SAGE</span>
+  </span>
+</motion.div>
+
 
           <div className="hidden lg:flex items-center gap-10">
             {navLinks.map((link, i) => (
@@ -504,9 +516,6 @@ const BentoGrid = () => {
                       {card.description}
                     </p>
                   </div>
-                  <span className="text-[#CCFF00] text-xs font-semibold uppercase tracking-wider mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-1.5">
-                    Learn more <ArrowRight className="w-3 h-3" />
-                  </span>
                 </div>
               </motion.div>
             );
@@ -820,7 +829,7 @@ const PartnersSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-80px' });
 
   return (
-    <section id="enterprise" ref={ref} className="py-20 bg-black border-y border-white/[0.04]">
+    <section id="hackathons" ref={ref} className="py-20 bg-black border-y border-white/[0.04]">
       <div className="max-w-[1440px] mx-auto px-6 md:px-12">
         <motion.p
           initial={{ opacity: 0 }}
@@ -972,6 +981,7 @@ const TeamSection = () => {
 
   return (
     <section
+      id="credits"
       ref={ref}
       className="py-24 md:py-32 relative overflow-hidden"
       style={{
@@ -1017,31 +1027,36 @@ const TeamSection = () => {
                 transition={{ delay: 0.08 * i, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                 className="group flex flex-col items-center gap-3 cursor-pointer"
               >
-                {/* Circular avatar */}
-                <div
-                  className="relative w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-white/30 transition-all duration-500 group-hover:scale-105"
-                  style={{
-                    boxShadow: `0 8px 30px ${member.accent}25`,
-                  }}
-                >
-                  {member.image ? (
-                    <img
-                      src={member.image}
-                      alt={member.name}
-                      className="w-full h-full object-cover object-center"
-                    />
-                  ) : (
-                    /* Placeholder — replace with actual photos */
-                    <div
-                      className="w-full h-full flex items-center justify-center text-3xl md:text-4xl font-black"
-                      style={{
-                        background: `linear-gradient(135deg, ${member.accent}40 0%, ${member.accent}15 100%)`,
-                        color: `${member.accent}CC`,
-                      }}
-                    >
-                      {initials}
-                    </div>
-                  )}
+                {/* Circular avatar with LinkedIn badge */}
+                <div className="relative">
+                  <div
+                    className="relative w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-white/30 transition-all duration-500 group-hover:scale-105"
+                    style={{
+                      boxShadow: `0 8px 30px ${member.accent}25`,
+                    }}
+                  >
+                    {member.image ? (
+                      <img
+                        src={member.image}
+                        alt={member.name}
+                        className="w-full h-full object-cover object-center"
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-3xl md:text-4xl font-black"
+                        style={{
+                          background: `linear-gradient(135deg, ${member.accent}40 0%, ${member.accent}15 100%)`,
+                          color: `${member.accent}CC`,
+                        }}
+                      >
+                        {initials}
+                      </div>
+                    )}
+                  </div>
+                  {/* LinkedIn badge */}
+                  <div className="absolute -top-1 -right-1 md:top-0 md:right-0 z-10 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-[#0A66C2] flex items-center justify-center shadow-lg shadow-[#0A66C2]/30 group-hover:scale-110 transition-transform duration-300">
+                    <Linkedin className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" fill="white" strokeWidth={0} />
+                  </div>
                 </div>
 
                 {/* Name label */}
@@ -1114,7 +1129,7 @@ const CTASection = () => {
    FOOTER
    ───────────────────────────────────────────── */
 const Footer = () => {
-  const socialLinks: { icon: LucideIcon; href: string }[] = [
+  const socialLinks: { icon: LucideIcon; href: string; isEmail?: boolean }[] = [
     { icon: Mail, href: 'https://mail.google.com/mail/?view=cm&fs=1&to=admin@devsage.org&su=Project%20Inquiry' },
     { icon: Twitter, href: '#' },
     { icon: Linkedin, href: '#' },
@@ -1137,15 +1152,7 @@ const Footer = () => {
             <div className="flex items-center gap-3 mt-6">
               {socialLinks.map((social) => {
                 const Icon = social.icon;
-                return social.href.startsWith('mailto:') ? (
-                  <a
-                    key={Icon.displayName ?? Icon.name}
-                    href={social.href}
-                    className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/[0.06] hover:border-[#CCFF00]/30"
-                  >
-                    <Icon className="w-4 h-4 text-white/35 group-hover:text-[#CCFF00] transition-colors" />
-                  </a>
-                ) : (
+                return (
                   <a
                     key={Icon.displayName ?? Icon.name}
                     href={social.href}
@@ -1168,20 +1175,16 @@ const Footer = () => {
             &copy; {new Date().getFullYear()}
           </p>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            {[
-              'L Kevin Daniel',
-              'Srijan Guchhait',
-              'Devangshu Pandey',
-              'Ibhan Mukherjee',
-              'Deeptanshu Samanta',
-              'Harsh',
-            ].map((name) => (
-              <span
-                key={name}
+            {teamMembers.map((member) => (
+              <a
+                key={member.name}
+                href={member.linkedin}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-xs text-white/25 hover:text-[#CCFF00] transition-colors duration-200 cursor-pointer"
               >
-                {name}
-              </span>
+                {member.name}
+              </a>
             ))}
           </div>
         </div>
