@@ -25,13 +25,13 @@
 
 | Goal | Description |
 |------|-------------|
-| **Zero-infrastructure hackathons** | Platform admins invite organizers, who then create hackathons, set dates, invite participants and judges, and everything else — team formation, submission capture, judging — happens automatically. All access is invite-only; there is no public self-registration |
-| **GitHub-native workflow** | Primary submissions are git tags captured via webhooks — participants stay in their git workflow for code. The web UI provides team info, deadlines, and scores, and allows supplementary uploads (pitch decks, demo videos, design files) alongside the code submission |
+| **Zero-infrastructure hackathons** | DevSage admins (shikdd) create workspaces and invite organizers. Organizers then create hackathons within their workspace, set dates, invite judges, and configure everything — team formation, submission capture, judging — happens automatically. Each hackathon has a unique registration link; participants sign up via that link on `{slug}.devsage.org`. There is no public discovery or open self-registration — you need the hackathon link |
+| **GitHub-native workflow** | Primary submissions are git tags captured via webhooks — participants stay in their git workflow for code. Participants link their own GitHub repos after signing up. The web UI provides team info, deadlines, and scores, and allows supplementary uploads (pitch decks, demo videos, design files) alongside the code submission |
 | **Edge-first performance** | Every request served from the nearest Cloudflare PoP. Sub-50ms p95 latency for reads. No cold-start penalty for API requests |
 | **Deterministic state management** | All lifecycle mutations go through Durable Objects — single-writer concurrency, no race conditions, exactly-once semantics |
 | **Multi-tenant by default** | A single deployment serves unlimited organizations and hackathons. Tenant isolation is enforced at the data layer and role resolution, not infrastructure |
 | **Progressive complexity** | Simple hackathons require zero configuration beyond dates. Advanced features (multi-track, custom rubrics, sponsor portals, mentorship) are opt-in |
-| **Collaborative workspaces** | Organizers can create shared workspaces to collaborate on events together. Each event has a single owning organizer, but workspace members can co-plan, co-manage, and co-host events within the workspace |
+| **Collaborative workspaces** | DevSage admins create workspaces (typically one per club/organization) and invite organizers into them. Co-organizers manage hackathons within the workspace. Multiple workspaces can form "joined workspaces" to co-host events across clubs |
 
 
 ---
@@ -57,12 +57,16 @@
 ```mermaid
 graph TD
     subgraph Clients
-        WEB["devsage.org<br/>React SPA<br/>(Vite + Tailwind v4 + shadcn/ui)"]
+        ADMIN["shikdd.devsage.org<br/>Admin Panel<br/>(React + Vite)"]
+        PLATFORM["platform.devsage.org<br/>Organizer Dashboard<br/>(React + Vite + Tailwind v4 + shadcn/ui)"]
+        PARTICIPANT["{slug}.devsage.org<br/>Participant Sites<br/>(separate repos)"]
         SDK["Client SDK<br/>(TypeScript)"]
 
     end
 
-    WEB -->|"HTTPS REST + SSE"| API
+    ADMIN -->|"HTTPS REST"| API
+    PLATFORM -->|"HTTPS REST + SSE"| API
+    PARTICIPANT -->|"HTTPS REST + SSE"| API
     SDK -->|"HTTPS REST"| API
 
 
@@ -156,7 +160,7 @@ sequenceDiagram
     RL-->>MW: Allowed / 429
     MW->>MW: requireRole(minRole) → resolveRole()
     MW->>DB: Query organizer_roles / judges / team_members
-    DB-->>MW: Role resolved (anonymous | team_member | team_lead | judge | co_organizer | organizer | admin)
+    DB-->>MW: Role resolved (anonymous | team_member | team_lead | judge | co_organizer | organizer | admin/internal)
     MW->>R: Authorized request with context
 
     alt Read Operation
@@ -219,8 +223,10 @@ mindmap
           Judge
           Co-Organizer
           Organizer
-          Admin/Owner
-        Invite Chain: Admin → Organizer → Co-orgs/Judges/Team Leads → Team Members
+          Admin (internal DevSage/shikdd team)
+        Admin creates workspaces, invites Organizers
+        Organizer invites Co-Orgs, Judges
+        Participants sign up via hackathon link
         Bulk Invite via Excel Upload
         API Key Scopes
     **Core Platform**
@@ -230,11 +236,11 @@ mindmap
         Templates
         Custom Phases
       Team Management
-        Invite-Only Onboarding
+        Link-Based Registration per Hackathon
         Team Lead invites Team Members
         Bulk Invite via Excel
         Team Chat
-        Repo Linking
+        Participant links own GitHub Repo
       Submissions
         Tag-Based Capture
         Multi-Artifact (code + uploads)
@@ -275,10 +281,11 @@ mindmap
         CSV / JSON Export
     **Platform Extensibility**
       Workspaces
-        Multi-Organizer Collaboration
-        Shared Event Planning
-        Workspace Roles & Permissions
-        Co-Hosted Events
+        One Workspace per Club/Organization
+        Admin Creates Workspaces, Invites Organizers
+        Organizer Manages Subscription & Billing
+        Co-Organizers Manage Hackathons
+        Joined Workspaces for Co-Hosted Events
     **Observability**
       Audit Trail
         Append-Only Log
@@ -372,17 +379,19 @@ DevSage/
 │   │   │   └── types/          # Worker binding types (Env)
 │   │   ├── wrangler.jsonc      # Worker config, bindings, DO declarations
 │   │   └── vitest.config.ts    # Cloudflare Workers test pool
-│   └── web/                    # React SPA — Vite + React Router v7 + Tailwind v4
+│   ├── admin/                  # shikdd.devsage.org — Admin panel (React + Vite)
+│   │   └── src/                # Workspace management, organizer invites, platform config
+│   └── web/                    # platform.devsage.org — Organizer dashboard (React + Vite + Tailwind v4)
 │       ├── src/
 │       │   ├── pages/          # Route-level page components
 │       │   ├── components/     # Shared + shadcn/ui components
 │       │   │   ├── ui/         # shadcn/ui primitives
-
 │       │   ├── contexts/       # React contexts (auth, theme, real-time)
 │       │   ├── hooks/          # Custom hooks (useWebSocket, useAuth, useApi)
 │       │   ├── lib/            # API client, utilities
 │       │   └── types/          # Frontend-specific types
 │       └── vite.config.ts      # Dev proxy, build config
+│   # NOTE: Participant sites ({slug}.devsage.org) live in separate repos
 ├── packages/
 │   ├── config/                 # Shared tsconfig variants + ESLint flat config
 │   ├── db/                     # Drizzle ORM schemas (28+ tables) + D1 migrations
@@ -416,9 +425,11 @@ graph LR
 **Dependency rules:**
 - `apps/api` may import from `packages/shared`, `packages/db`, and `packages/config`
 - `apps/web` may import from `packages/shared` only (never from `db` or `api`)
+- `apps/admin` may import from `packages/shared` only (never from `db` or `api`)
 - `packages/shared` has zero internal dependencies (only `zod`)
 - `packages/db` may import from `packages/config` (for tsconfig)
 - No circular dependencies. No cross-app imports
+- Participant sites (`{slug}.devsage.org`) are maintained in separate repositories
 
 ---
 
@@ -613,4 +624,4 @@ flowchart LR
 | D10 | Queue architecture | Single Worker as producer + consumer | Simpler deployment, shared code, Cloudflare Queues require same-Worker binding | Separate consumer Worker (deployment complexity), external queue (Kafka/RabbitMQ — not edge-native) |
 | D11 | Multi-tenancy model | Shared database with hackathon_id scoping | Simpler operations, lower cost, per-request role resolution provides isolation | Database-per-tenant (operational overhead at scale), schema-per-tenant (D1 doesn't support), row-level security (D1 doesn't support natively) |
 
-| D13 | Workspace collaboration | Shared workspace model with role-based access | Simple multi-organizer collaboration, single event ownership with co-management | Full federation protocol (over-engineered for this use case), org-level merging (complex permissions), public discovery (contradicts invite-only model) |
+| D13 | Workspace collaboration | Admin-created workspaces (one per club), joined workspaces for co-hosting | Admin creates workspaces and invites organizers. Organizers own subscription/billing. Co-organizers manage hackathons. Joined workspaces enable cross-club co-hosted events | Full federation protocol (over-engineered), org-level merging (complex permissions), self-service workspace creation (contradicts admin-controlled model) |

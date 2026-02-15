@@ -33,10 +33,10 @@
 | Goal | Description |
 |------|-------------|
 | **One team per user per hackathon** | A participant cannot be on multiple teams in the same hackathon. Prevents gaming and simplifies submission attribution. |
-| **Invite-only membership** | Team leads are invited by organizers. Team leads invite members via shareable invite links or by email address. No public team discovery or self-service joining. |
+| **Organizer-designated Team Leads** | Organizers upload an Excel file with team lead names and emails. DevSage sends invite emails to designated team leads. Team leads then invite members via shareable invite links or by email address. Regular participants cannot create teams — only designated team leads can. |
 | **Repo = identity** | Each team links exactly one GitHub repo. The repo is the team's submission artifact. One repo per team per hackathon — no sharing. |
 | **Graceful leadership** | If a leader leaves or is removed, leadership transfers automatically. Teams are never leaderless. |
-| **Phase-aware operations** | Team mutations are gated by hackathon phase. Invites can be accepted during `draft` and `active`. No leaving after submissions lock. |
+| **Phase-aware operations** | All team mutations (create, join, leave, remove, dissolve) are allowed during `draft` only. Once the hackathon moves to `active`, teams are locked — no membership changes. |
 
 ---
 
@@ -44,7 +44,8 @@
 
 ```mermaid
 flowchart TD
-    A["Organizer invites Team Lead<br/>(via email/link)"] --> B["Team Lead accepts invite<br/>logs in to {slug}.devsage.org"]
+    A["Organizer uploads Excel with<br/>Team Lead names + emails"] --> A1["DevSage sends invite email<br/>to each Team Lead"]
+    A1 --> B["Team Lead clicks link,<br/>registers on {slug}.devsage.org"]
     B --> C["Team Lead creates team:<br/>- names it<br/>- selects track (if applicable)<br/>- random invite_code generated"]
     C --> D["Team Lead invites members<br/>(via invite link or email)"]
     D --> E["Members accept invite, log in"]
@@ -62,7 +63,7 @@ flowchart TD
 
 ## Creating a Team
 
-Only invited team leads can create teams. The team lead must have accepted their organizer invite and logged in to `{slug}.devsage.org`.
+Only organizer-designated team leads can create teams. The organizer uploads an Excel file with team lead names and emails. DevSage sends invite emails. The team lead must have accepted their invite and registered on `{slug}.devsage.org`.
 
 ```mermaid
 sequenceDiagram
@@ -72,7 +73,7 @@ sequenceDiagram
 
     U->>W: POST /api/v1/hackathons/:slug/teams<br/>{ name, track_id? }
     W->>W: Verify: user is authenticated and has team_lead invite for this hackathon
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
     W->>W: Verify: user not already leading a team in this hackathon
     W->>W: Verify: max_teams not reached (hackathon-level)
     W->>W: Verify: track max_teams not reached (if track specified)
@@ -109,7 +110,7 @@ sequenceDiagram
     participant D1 as D1 Database
 
     U->>W: GET {slug}.devsage.org/join/{invite_code}
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
     W->>D1: SELECT team WHERE invite_code = ? AND hackathon_id = ?
     
     alt Team not found or hackathon ended
@@ -144,7 +145,7 @@ sequenceDiagram
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/invite<br/>{ email: "member@example.com" }
     W->>W: Verify: requester is team_leader
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
     W->>W: Verify: team not full
     W->>D1: INSERT INTO team_invites (team_id, email, token_hash, status='pending')
     W->>Q: Enqueue invite email with unique link
@@ -211,7 +212,7 @@ sequenceDiagram
 
     L->>W: POST /api/v1/hackathons/:slug/teams/:id/repo<br/>{ repo_full_name: "owner/repo" }
     W->>W: Verify: user is team_leader
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
     W->>D1: Check repo not linked to another team in this hackathon
 
     alt Repo already linked to another team
@@ -347,12 +348,12 @@ sequenceDiagram
     participant Q as NOTIFICATION_QUEUE
 
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id/members/:userId
-    W->>W: Verify: requester is team_leader OR hackathon admin+
+    W->>W: Verify: requester is team_leader OR hackathon organizer/co-organizer
     W->>W: Verify: target is not the team_leader (leader must transfer first or leave)
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
 
-    alt Hackathon is in judging or later
-        W-->>L: 400 TEAM_LOCKED — cannot remove members after submissions lock
+    alt Hackathon is active or later
+        W-->>L: 400 TEAM_LOCKED — cannot remove members after hackathon starts
     end
 
     W->>D1: DELETE FROM team_members WHERE team_id = ? AND user_id = ?
@@ -362,7 +363,7 @@ sequenceDiagram
     W-->>L: 200 { ok: true }
 ```
 
-**Why no removal during active phase?** Removing a member during an active hackathon punishes the removed member (they lose their work) and creates attribution confusion (their commits are still in the repo). If there's a genuine issue, the organizer can use moderation tools instead.
+**Why no removal after draft?** Once the hackathon goes active, teams are locked. Removing a member during an active hackathon punishes the removed member (they lose their work) and creates attribution confusion (their commits are still in the repo). All team composition changes must be finalized during draft. If there's a genuine issue during active, the organizer can use moderation tools instead.
 
 ---
 
@@ -376,7 +377,7 @@ sequenceDiagram
 
     U->>W: POST /api/v1/hackathons/:slug/teams/:id/leave
     W->>W: Verify: user is a member of this team
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: hackathon status = draft
 
     alt User is the leader
         W->>W: Auto-transfer leadership to next member
@@ -394,9 +395,8 @@ sequenceDiagram
 ```
 
 **Phase restrictions:**
-- `draft`: Can leave freely. Can join another team via new invite.
-- `active`: Can leave, but finding a new team requires a new invite from another team lead.
-- `judging` or later: Cannot leave. Team is locked for the duration.
+- `draft`: Can leave freely. Can join another team via new invite. Full flexibility — one account cannot be on two teams simultaneously.
+- `active` or later: Cannot leave. Team is locked for the duration.
 
 ---
 
@@ -412,8 +412,8 @@ sequenceDiagram
     participant Q as NOTIFICATION_QUEUE
 
     L->>W: DELETE /api/v1/hackathons/:slug/teams/:id
-    W->>W: Verify: requester is team_leader OR hackathon admin+
-    W->>W: Verify: hackathon status in [draft, active]
+    W->>W: Verify: requester is team_leader OR hackathon organizer/co-organizer
+    W->>W: Verify: hackathon status = draft
 
     W->>D1: DELETE FROM team_invites WHERE team_id = ?
     W->>D1: DELETE FROM team_members WHERE team_id = ?
@@ -425,7 +425,7 @@ sequenceDiagram
 
 All ex-members are now free to create or join another team (if registration is still open).
 
-**Why not after active?** Teams in `active` or later may have submissions, commits, and audit history. Deleting the team would orphan all that data. Teams in `active`+ can only be archived by an organizer (soft delete — data preserved).
+**Why only during draft?** Once the hackathon goes active, teams may have submissions, commits, and audit history. Deleting the team would orphan all that data. Teams in `active`+ can only be archived by an organizer (soft delete — data preserved). All team composition must be finalized before the hackathon starts.
 
 ---
 
@@ -521,16 +521,16 @@ GET /api/v1/hackathons/:slug/teams/:id/readiness
 | Team name: 2-50 characters | Creation, rename | Zod schema validation |
 | Team name: unique per hackathon | Creation, rename | DB UNIQUE constraint on `(hackathon_id, name)` |
 | One team per user per hackathon | Create, join | DB query check before insert |
-| Team creation only during `draft` or `active` | Create | Hackathon status check |
-| Team join only during `draft` or `active` | Join (via invite) | Hackathon status check |
+| Team creation only during `draft` | Create | Hackathon status check |
+| Team join only during `draft` | Join (via invite) | Hackathon status check |
 | Team size <= `max_team_size` | Join | Count check before insert |
 | `max_teams` not exceeded | Create | Count check before insert |
 | Track `max_teams` not exceeded | Create (if track specified) | Count check before insert |
 | Repo unique per hackathon | Link repo | DB UNIQUE constraint on `(hackathon_id, repo_full_name)` |
-| Repo cannot change after `active` | Unlink/relink | Hackathon status check |
-| Members cannot be removed after `active` | Remove | Hackathon status check |
-| Members cannot leave after `active` | Leave | Hackathon status check |
-| Team cannot be dissolved after `active` | Dissolve | Hackathon status check |
+| Repo cannot change after `draft` | Unlink/relink | Hackathon status check |
+| Members cannot be removed after `draft` | Remove | Hackathon status check |
+| Members cannot leave after `draft` | Leave | Hackathon status check |
+| Team cannot be dissolved after `draft` | Dissolve | Hackathon status check |
 | Invite code: 8 chars, alphanumeric, globally unique | Generation | `crypto.getRandomValues()` + DB UNIQUE constraint |
 
 | Chat message: max 2000 chars, Markdown | Send message | Zod schema validation |
@@ -559,7 +559,7 @@ When a leader leaves and leadership auto-transfers:
 
 ### Team Created in Wrong Track
 
-If `track_assignment_mode = team_choice`, the team lead can change tracks during `draft` or `active` (before `judging`). The organizer can override/reassign a team's track at any time before `judging`.
+If `track_assignment_mode = team_choice`, the team lead can change tracks during `draft` only. The organizer can override/reassign a team's track during `draft` only.
 
 ```
 PATCH /api/v1/hackathons/:slug/teams/:id
@@ -596,17 +596,17 @@ When a user's account is deleted (see authentication doc), the account deletion 
 | `ALREADY_ON_TEAM` | 400 | User is already a member of a team in this hackathon |
 | `NOT_ON_TEAM` | 400 | User is not a member of this team (for leave/transfer) |
 | `INVALID_INVITE_CODE` | 404 | Invite code does not match any team in this hackathon |
-| `HACKATHON_NOT_ACCEPTING` | 400 | Attempting team mutation when hackathon is not in `draft` or `active` |
-| `TEAM_LOCKED` | 400 | Attempting to remove member, leave, or dissolve during `active` or later |
+| `HACKATHON_NOT_ACCEPTING` | 400 | Attempting team mutation when hackathon is not in `draft` |
+| `TEAM_LOCKED` | 400 | Attempting to remove member, leave, or dissolve after `draft` phase (hackathon is active or later) |
 | `REPO_ALREADY_LINKED` | 409 | Repo is already linked to another team in this hackathon |
-| `REPO_LOCKED` | 400 | Attempting to change repo after hackathon entered `active` |
+| `REPO_LOCKED` | 400 | Attempting to change repo after hackathon left `draft` |
 | `TRACK_REQUIRED` | 400 | Multi-track hackathon requires a track selection |
 | `TRACK_NOT_FOUND` | 404 | Specified track does not exist in this hackathon |
 | `LEADER_CANNOT_BE_REMOVED` | 400 | Attempting to remove the leader (must transfer leadership first) |
 | `INVITE_EXPIRED` | 400 | Email invite token has expired or hackathon is past active phase |
 | `INVITE_ALREADY_ACCEPTED` | 400 | This invite has already been used |
 | `NOT_LEADER` | 403 | Action requires team_leader role |
-| `TEAM_DISSOLUTION_BLOCKED` | 400 | Cannot dissolve team after `active` phase |
+| `TEAM_DISSOLUTION_BLOCKED` | 400 | Cannot dissolve team after `draft` phase |
 
 ---
 

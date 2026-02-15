@@ -52,18 +52,22 @@ DevSage operates as three separate applications, each with its own domain, login
 |--------|-----|-------|----------------|-------|
 | `shikdd.devsage.org` | Admin Panel | Platform admins | Google OAuth only | Internal admin dashboard. Admins invite organizers (clubs or individuals) |
 | `platform.devsage.org` | Organizer/Judge Portal | Organizers (clubs + individuals) + Judges | Google OAuth only | Organizers create/manage hackathons. Judges access judging interfaces. Routes: `/clubs/{slug}` for club hackathons, `/{slug}` for individual hackathons |
-| `{slug}.devsage.org` | Participant Site | Team Leads + Team Members | GitHub OAuth (primary) + Google OAuth (option) | Per-hackathon site. Participants must have a linked GitHub account for code submissions. Invite-only access |
+| `{slug}.devsage.org` | Participant Site | Team Leads + Team Members | GitHub OAuth (primary) + Google OAuth (option) | Per-hackathon site. GitHub account always required. Registration mode is configurable per hackathon (see below) |
 
 ### Invite Chain
 
+All invites are sent as emails by DevSage on behalf of the inviting party. Recipients receive an email with a link to their respective platform.
+
 ```
 Admin (shikdd.devsage.org)
-  └─ Invites → Organizer (club or individual) → platform.devsage.org
-       ├─ Invites → Judge → platform.devsage.org
-       ├─ Invites → Co-organizer → platform.devsage.org
-       └─ Invites → Team Lead → {slug}.devsage.org
-            └─ Invites → Team Member → {slug}.devsage.org
+  └─ Invites → Organizer (club or individual) → email with platform.devsage.org link
+       ├─ Invites → Judge → email with platform.devsage.org link (scoped to inviting workspace)
+       ├─ Invites → Co-organizer → email with platform.devsage.org link
+       └─ Invites → Team Lead → email with {slug}.devsage.org link
+            └─ Invites → Team Member → email with {slug}.devsage.org link
 ```
+
+**Judge workspace scoping:** A judge invited by a workspace can only judge hackathons within that workspace. To judge across workspaces, they must be invited separately by each workspace's organizer.
 
 ### Organizer Types
 
@@ -71,6 +75,18 @@ Admin (shikdd.devsage.org)
 |------|-------------|-------------|---------------|
 | **Club** | `platform.devsage.org/clubs/{slug}` | Subscription-based (recurring) | Can collaborate with other clubs on events |
 | **Individual** | `platform.devsage.org/{slug}` | One-time payment per hackathon | No collaboration features |
+
+### Participant Registration Modes
+
+Organizers can configure how participants register for each hackathon. DevSage sends all invite emails on behalf of the organizer.
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Open Link** | Anyone with the `{slug}.devsage.org` registration link can sign up | Public hackathons, wide reach |
+| **Domain-Restricted** | Only users with emails from allowed domains (e.g., `@university.edu`) can register | University-internal or organization-scoped hackathons |
+| **Approval-Based** | Anyone can register via the link, but the organizer must approve each registration before the participant gains access | Curated hackathons, limited capacity events |
+
+The registration mode is set per hackathon by the organizer during hackathon configuration. Regardless of mode, all participants must link a GitHub account to use hackathon features.
 
 ---
 
@@ -441,7 +457,7 @@ The middleware sets the authenticated user on the request context. Downstream ha
 
 ### `optionalAuth` (lenient)
 
-Used on routes that may serve both authenticated and unauthenticated contexts (e.g., invite acceptance landing pages, pre-login hackathon info pages). Since the platform is invite-only, unauthenticated access is limited to invite link landing pages and the login page itself.
+Used on routes that may serve both authenticated and unauthenticated contexts (e.g., hackathon registration landing pages, pre-login hackathon info pages). Unauthenticated access is limited to registration/invite link landing pages and the login page itself.
 
 ```mermaid
 flowchart LR
@@ -453,7 +469,7 @@ flowchart LR
     E --> F["next()"]
 ```
 
-No error is returned for missing or invalid tokens — the request proceeds unauthenticated. This is only used on invite acceptance and login routes, NOT for general public browsing (there are no public pages).
+No error is returned for missing or invalid tokens — the request proceeds unauthenticated. This is only used on registration/invite acceptance and login routes, NOT for general public browsing (there are no public pages).
 
 ---
 
