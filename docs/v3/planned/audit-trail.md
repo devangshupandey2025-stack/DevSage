@@ -282,9 +282,9 @@ flowchart TD
 
 | Action | Actor | Entity Type | Details |
 |--------|-------|-------------|---------|
-| `submission.received` | bot | submission | `{ tag_name, sha, version, provider, repo }` |
+| `submission.received` | bot | submission | `{ tag_name, sha, round_id, provider, repo }` |
 | `submission.rejected` | bot | submission | `{ tag_name, reason, provider }` |
-| `submission.finalized` | user | submission | `{ tag_name, version, sha }` |
+| `submission.finalized` | user | submission | `{ tag_name, round_id, sha }` |
 | `submission.validated` | system | submission | `{ checks_passed, checks_failed, details }` |
 | `submission.tag_deleted` | bot | submission | `{ tag_name, repo, sender_login }` |
 
@@ -313,14 +313,9 @@ flowchart TD
 
 | Action | Actor | Entity Type | Details |
 |--------|-------|-------------|---------|
-| `organizer.added` | user | organizer_role | `{ user_id, role }` |
-| `organizer.removed` | user | organizer_role | `{ user_id, role }` |
-| `organizer.role_changed` | user | organizer_role | `{ user_id, from_role, to_role }` |
-| `custom_role.created` | user | custom_role | `{ slug, permissions }` |
-| `custom_role.updated` | user | custom_role | `{ slug, changes: ChangeSet }` |
-| `custom_role.deleted` | user | custom_role | `{ slug, affected_users_count }` |
-| `custom_role.assigned` | user | custom_role_assignment | `{ user_id, role_slug }` |
-| `custom_role.unassigned` | user | custom_role_assignment | `{ user_id, role_slug }` |
+| `role.assigned` | user | hackathon_role | `{ user_id, role, hackathon_id }` |
+| `role.removed` | user | hackathon_role | `{ user_id, role, hackathon_id }` |
+| `role.changed` | user | hackathon_role | `{ user_id, from_role, to_role }` |
 
 ### Authentication Events
 
@@ -330,9 +325,6 @@ flowchart TD
 | `auth.logout` | user | user | `{ session_id }` |
 | `auth.token_refreshed` | user | user | `{ session_id }` |
 | `auth.failed_login` | system | user | `{ provider, reason, ip }` |
-| `auth.passkey_registered` | user | user | `{ credential_id }` |
-| `auth.mfa_enabled` | user | user | `{ method: 'totp' \| 'passkey' }` |
-| `auth.mfa_disabled` | user | user | `{ method }` |
 | `auth.account_deleted` | user | user | `{ anonymization_applied }` |
 
 ### VCS Integration Events
@@ -359,9 +351,7 @@ flowchart TD
 | `webhook.received` | bot | webhook_delivery | `{ provider, event_type, delivery_id }` |
 | `webhook.processed` | system | webhook_delivery | `{ delivery_id, processing_ms }` |
 | `webhook.dead_lettered` | system | webhook_delivery | `{ delivery_id, event_type, attempts, error }` |
-| `outbound_webhook.delivered` | system | outbound_webhook | `{ webhook_id, event_type, http_status }` |
-| `outbound_webhook.failed` | system | outbound_webhook | `{ webhook_id, event_type, error }` |
-| `outbound_webhook.disabled` | system | outbound_webhook | `{ webhook_id, consecutive_failures }` |
+
 
 ### Platform Admin Events
 
@@ -371,21 +361,21 @@ flowchart TD
 | `platform.admin_removed` | user | platform_admin | `{ user_id, role }` |
 | `platform.user_suspended` | user | user | `{ suspended_user_id, reason }` |
 | `platform.user_unsuspended` | user | user | `{ user_id }` |
-| `platform.invite_created` | user | organizer_invite | `{ email, org_id }` |
-| `platform.invite_revoked` | user | organizer_invite | `{ invite_id, email }` |
-| `platform.invite_accepted` | user | organizer_invite | `{ invite_id, user_id }` |
+| `platform.workspace_invite_created` | user | workspace_invite | `{ email, workspace_id }` |
+| `platform.workspace_invite_revoked` | user | workspace_invite | `{ invite_id, email }` |
+| `platform.workspace_invite_accepted` | user | workspace_invite | `{ invite_id, user_id }` |
 
-### Organization Events
+### Workspace Events
 
 | Action | Actor | Entity Type | Details |
 |--------|-------|-------------|---------|
-| `org.created` | user | organization | `{ slug, name }` |
-| `org.updated` | user | organization | `{ changes: ChangeSet }` |
-| `org.deleted` | user | organization | `{ slug, hackathon_count }` |
-| `org.member_added` | user | org_member | `{ user_id, role }` |
-| `org.member_removed` | user | org_member | `{ user_id, role }` |
-| `org.member_role_changed` | user | org_member | `{ user_id, from_role, to_role }` |
-| `org.ownership_transferred` | user | organization | `{ from_user_id, to_user_id }` |
+| `workspace.created` | user | workspace | `{ slug, name }` |
+| `workspace.updated` | user | workspace | `{ changes: ChangeSet }` |
+| `workspace.deleted` | user | workspace | `{ slug, hackathon_count }` |
+| `workspace.member_added` | user | workspace_member | `{ user_id, role }` |
+| `workspace.member_removed` | user | workspace_member | `{ user_id, role }` |
+| `workspace.member_role_changed` | user | workspace_member | `{ user_id, from_role, to_role }` |
+| `workspace.ownership_transferred` | user | workspace | `{ from_user_id, to_user_id }` |
 
 ### System Events
 
@@ -533,14 +523,14 @@ If transaction acquisition fails (timeout, contention), the audit event is writt
 ### REST Endpoints
 
 ```
-GET  /api/v1/hackathons/:slug/audit                    # Query hackathon audit trail (organizer+)
-GET  /api/v1/hackathons/:slug/audit/:eventId            # Get single event (organizer+)
-GET  /api/v1/hackathons/:slug/audit/entity/:entityType/:entityId  # Events for entity (organizer+)
-GET  /api/v1/hackathons/:slug/audit/actor/:actorId      # Events by actor (organizer+)
-GET  /api/v1/hackathons/:slug/audit/integrity           # Verify chain integrity (organizer+)
+GET  /api/v1/hackathons/:slug/audit                    # Query hackathon audit trail (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/audit/:eventId            # Get single event (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/audit/entity/:entityType/:entityId  # Events for entity (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/audit/actor/:actorId      # Events by actor (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/audit/integrity           # Verify chain integrity (organiser/co-organiser)
 
-GET  /api/v1/admin/audit                                # Platform-wide audit (platform admin)
-GET  /api/v1/admin/audit/user/:userId                   # All events by user (platform admin)
+GET  /api/v1/admin/audit                                # Platform-wide audit (platform admin — shikdd)
+GET  /api/v1/admin/audit/user/:userId                   # All events by user (platform admin — shikdd)
 ```
 
 ### Query Parameters
@@ -575,7 +565,7 @@ GET  /api/v1/admin/audit/user/:userId                   # All events by user (pl
       "entity_id": "sub_456",
       "details": {
         "tag_name": "submission_v3",
-        "version": 3,
+        "round_id": "round_abc",
         "sha": "abc123def"
       },
       "changes": null,
@@ -639,8 +629,8 @@ If integrity is broken:
 ### Export Formats
 
 ```
-GET /api/v1/hackathons/:slug/audit/export?format=csv    # CSV export (organizer+)
-GET /api/v1/hackathons/:slug/audit/export?format=json   # JSON export (organizer+)
+GET /api/v1/hackathons/:slug/audit/export?format=csv    # CSV export (organiser/co-organiser)
+GET /api/v1/hackathons/:slug/audit/export?format=json   # JSON export (organiser/co-organiser)
 ```
 
 Exports support all the same query parameters as the query API for filtering.
@@ -787,8 +777,8 @@ flowchart TD
 ### Archive Retrieval
 
 ```
-GET  /api/v1/hackathons/:slug/audit/archives              # List archive files (organizer+)
-GET  /api/v1/hackathons/:slug/audit/archives/:archiveId    # Download archive file (organizer+)
+GET  /api/v1/hackathons/:slug/audit/archives              # List archive files (organiser/co-organiser)
+GET  /api/v1/hackathons/:slug/audit/archives/:archiveId    # Download archive file (organiser/co-organiser)
 ```
 
 Archive download URLs are pre-signed R2 URLs with 1-hour expiry.
@@ -797,9 +787,9 @@ Archive download URLs are pre-signed R2 URLs with 1-hour expiry.
 
 ## 12. Audit Dashboards
 
-### Per-Hackathon Organizer Dashboard
+### Per-Hackathon Organiser Dashboard
 
-Organizers (and above) have access to a per-hackathon audit dashboard showing activity within their hackathon.
+Organisers and co-organisers have access to a per-hackathon audit dashboard showing activity within their hackathon.
 
 #### Dashboard Views
 
@@ -814,10 +804,10 @@ Organizers (and above) have access to a per-hackathon audit dashboard showing ac
 #### Organizer Dashboard API
 
 ```
-GET /api/v1/hackathons/:slug/audit/dashboard/recent     # Recent hackathon activity (organizer+)
-GET /api/v1/hackathons/:slug/audit/dashboard/security   # Security event feed (organizer+)
-GET /api/v1/hackathons/:slug/audit/dashboard/integrity  # Chain integrity summary (organizer+)
-GET /api/v1/hackathons/:slug/audit/dashboard/stats      # Event volume statistics (organizer+)
+GET /api/v1/hackathons/:slug/audit/dashboard/recent     # Recent hackathon activity (organiser/co-organiser)
+GET /api/v1/hackathons/:slug/audit/dashboard/security   # Security event feed (organiser/co-organiser)
+GET /api/v1/hackathons/:slug/audit/dashboard/integrity  # Chain integrity summary (organiser/co-organiser)
+GET /api/v1/hackathons/:slug/audit/dashboard/stats      # Event volume statistics (organiser/co-organiser)
 ```
 
 #### Per-Hackathon Statistics Response
@@ -853,7 +843,7 @@ GET /api/v1/hackathons/:slug/audit/dashboard/stats      # Event volume statistic
 
 ### Platform Admin Dashboard
 
-Platform admins (at `admin.devsage.org`) have access to a platform-wide audit dashboard with cross-hackathon visibility.
+Platform admins (at `shikdd.devsage.org`) have access to a platform-wide audit dashboard with cross-hackathon visibility.
 
 #### Platform Dashboard Views
 
@@ -920,8 +910,8 @@ GET /api/v1/admin/audit/dashboard/stats                 # Event volume statistic
 | Archived events needed for investigation | Admin downloads archive from R2. Archive files include full event data (except anonymized PII) |
 | Archival cron fails mid-way | Verify-before-delete ensures no data loss. Partial archives are retried next month |
 | Event details contain PII from a different user | Anonymization scrubs known PII patterns (email regex, user ID format) from all details fields |
-| Non-organizer tries to access hackathon audit trail | Rejected — only organizer+ roles within the hackathon can access per-hackathon audit data |
-| Platform admin queries audit for any hackathon | Allowed — platform admins at `admin.devsage.org` have full cross-hackathon audit access |
+| Non-organiser tries to access hackathon audit trail | Rejected — only organiser/co-organiser roles within the hackathon can access per-hackathon audit data |
+| Platform admin queries audit for any hackathon | Allowed — platform admins at `shikdd.devsage.org` have full cross-hackathon audit access |
 | Thousands of events in a single export | Chunked into background job with R2 output. Maximum 10,000 per inline response |
 | Clock skew between Workers instances | `created_at` may have minor ordering anomalies. `sequence` (auto-increment) is the canonical order |
 | Hash chain genesis event is anonymized | Genesis event retains its hash. Anonymization applies to content fields only, not integrity fields |
