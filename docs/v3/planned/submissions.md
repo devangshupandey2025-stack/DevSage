@@ -1,6 +1,6 @@
 # Submissions & Locking
 
-> Complete specification for the DevSage v3 submission system. Covers tag-based submission capture, exactly-once locking via Durable Objects, multi-artifact submissions, automated validation, force push detection, diff viewer, submission versioning, late handling, and the full pipeline from git tag to scored submission. Any developer should be able to implement the entire submission system from this document alone.
+> Complete specification for the DevSage v3 submission system. Covers tag-based submission capture, exactly-once locking via Durable Objects, rounds-based submission versioning, automated validation, force push detection, late handling, and the full pipeline from git tag to scored submission. Multi-artifact uploads (deck, screenshots) are deferred to Phase 2. Any developer should be able to implement the entire submission system from this document alone.
 
 ---
 
@@ -11,7 +11,7 @@
 - [Submission Pipeline (End-to-End)](#submission-pipeline-end-to-end)
 - [Exactly-Once Locking](#exactly-once-locking)
 - [Tag Pattern Matching](#tag-pattern-matching)
-- [Submission Versioning](#submission-versioning)
+- [Rounds System](#rounds-system)
 - [Multi-Artifact Submissions](#multi-artifact-submissions)
 - [Automated Validation](#automated-validation)
 - [Submission States](#submission-states)
@@ -19,7 +19,7 @@
 - [Late Submission Handling](#late-submission-handling)
 - [Deadline Enforcement](#deadline-enforcement)
 - [Commit Status Posting](#commit-status-posting)
-- [Diff Viewer](#diff-viewer)
+- [Version Comparison](#version-comparison)
 - [Submission Finalization](#submission-finalization)
 - [Idempotency](#idempotency)
 - [Submission Queries](#submission-queries)
@@ -36,10 +36,10 @@
 |------|-------------|
 | **Git-native workflow** | Teams submit by pushing a git tag. No forms, no file uploads, no manual intervention. The repo IS the submission. |
 | **Exactly-once acceptance** | A Durable Object guarantees that concurrent webhook deliveries for the same tag result in exactly one accepted submission. No duplicates, no races. |
-| **Multi-artifact** | Beyond the tagged code, teams can attach a demo URL, a presentation deck (uploaded to R2), and a README-based project description. |
+| **Rounds-based versioning** | Organizers choose the number of rounds and type of each round (normal or elimination). A simple hackathon has just 1 round. Each round is a submission window. Whether teams can re-submit within a round is configurable. |
+| **Multi-artifact (Phase 2)** | Beyond the tagged code, teams can attach a demo URL, a presentation deck (uploaded to R2), and screenshots. Demo URL is available in Phase 1; deck/screenshot uploads are deferred to Phase 2. |
 | **Automated validation** | Each submission runs through configurable validation checks: README exists, demo URL reachable, repo not empty, tag points to a real commit. |
 | **Force push detection** | If a team force-pushes to rewrite history after submitting, the system detects it and flags the submission for organizer review. |
-| **Diff viewer** | Judges can view a rich diff between submission versions, making it easy to see what changed between v1 and v2. |
 | **Immutable snapshots** | A submission pins the exact commit SHA at the moment the tag was pushed. Even if the team deletes the tag or force-pushes, the recorded SHA is preserved. |
 
 ---
@@ -54,11 +54,11 @@ A submission in DevSage is a git tag pushed to the team's linked GitHub reposito
 2. GitHub fires a `create` webhook (ref_type = tag)
 3. DevSage webhook handler validates the signature and enqueues the event
 4. Queue consumer finds the team by `repo_full_name`, checks if the tag matches the pattern
-5. If it matches, the consumer calls the hackathon's Durable Object to lock the submission
-6. The DO validates: correct phase, before deadline, under submission limit, not a duplicate
-7. If accepted, the submission is written to D1 and a commit status is posted back to GitHub
+5. If it matches, the consumer determines the current active round and calls the hackathon's Durable Object to lock the submission
+6. The DO validates: correct phase, round is active, team not eliminated, before round deadline, not already submitted this round, not a duplicate
+7. If accepted, the submission is written to D1 (with `round_id`) and a commit status is posted back to GitHub
 8. Automated validation runs asynchronously (README check, demo URL, etc.)
-9. The submission enters the judging pipeline
+9. When the round transitions to `judging`, finalized submissions enter the judging pipeline
 
 ---
 
@@ -90,7 +90,7 @@ sequenceDiagram
         TC->>TC: Log warning, skip (tag on unknown repo)
     end
 
-    TC->>D1: SELECT hackathon config (submission_tag_pattern, max_submissions, allow_late)
+    TC->>D1: SELECT hackathon config (submission_tag_pattern, allow_late)<br/>and current active round
     TC->>TC: matchSubmissionTag("submission_v1", "submission_v%")
 
     alt Tag does NOT match pattern
@@ -105,12 +105,11 @@ sequenceDiagram
     TC->>DO: POST /accept-submission<br/>{ team_id, tag_name, submission_id, commit_sha, webhook_delivery_id }
 
     DO->>DO: Single-threaded validation:
-    Note over DO: 1. Is hackathon in 'active' phase?<br/>2. Is current time before submission_deadline?<br/>   (or is allow_late_submissions = true?)<br/>3. Has team exceeded max_submissions_per_team?<br/>4. Is webhook_delivery_id already locked?<br/>5. Does tag match pattern? (redundant safety check)
+    Note over DO: 1. Is hackathon in 'active' phase?<br/>2. Is current round active?<br/>3. Is current time before round's submission_deadline?<br/>   (or is allow_late_submissions = true?)<br/>4. Has team already submitted for this round?<br/>   (if yes, is allow_resubmission = true? → replace previous)<br/>5. Is team eliminated from a previous round?<br/>6. Is webhook_delivery_id already locked?<br/>7. Does tag match pattern? (redundant safety check)
 
     alt All checks pass
         DO->>DO: INSERT into submission_locks (single-writer, no race)
-        DO->>DO: INCREMENT team_submissions.submission_count
-        DO-->>TC: { accepted: true, is_late: false, version: 1 }
+        DO-->>TC: { accepted: true, is_late: false, round: 1, version: 1 }
 
         TC->>D1: INSERT INTO submissions (status='received', version=1, ...)
         TC->>GH: POST commit status ✅ on commit_sha<br/>"Submission submission_v1 received by DevSage"
@@ -142,27 +141,36 @@ flowchart TD
 
     F --> F1{"Hackathon in 'active' phase?"}
     F1 -->|No| R1["Reject: HACKATHON_NOT_ACTIVE"]
-    F1 -->|Yes| F2{"Before submission_deadline?"}
+    F1 -->|Yes| F1B{"Current round active?"}
+    F1B -->|No| R1B["Reject: ROUND_NOT_ACTIVE"]
+    F1B -->|Yes| F1C{"Team eliminated?"}
+    F1C -->|Yes| R1C["Reject: TEAM_ELIMINATED"]
+    F1C -->|No| F2{"Before round deadline?"}
 
     F2 -->|No| F2A{"allow_late_submissions?"}
     F2A -->|No| R2["Reject: DEADLINE_PASSED"]
     F2A -->|Yes| F3
 
-    F2 -->|Yes| F3{"Team under max_submissions?"}
-    F3 -->|No| R3["Reject: MAX_SUBMISSIONS_REACHED"]
-    F3 -->|Yes| F4{"webhook_delivery_id<br/>already in submission_locks?"}
+    F2 -->|Yes| F3{"Team already submitted<br/>for this round?"}
+    F3 -->|Yes| F3A{"allow_resubmission?"}
+    F3A -->|No| R3["Reject: ALREADY_SUBMITTED_THIS_ROUND"]
+    F3A -->|Yes| F3B["Replace previous submission<br/>(mark old as superseded)"]
+    F3B --> F4
+    F3 -->|No| F4{"webhook_delivery_id<br/>already in submission_locks?"}
     F4 -->|Yes| R4["Idempotent: return previous result"]
     F4 -->|No| ACC["ACCEPT: Insert into submission_locks"]
 
     style D fill:#888,color:#fff
     style R1 fill:#cf222e,color:#fff
+    style R1B fill:#cf222e,color:#fff
+    style R1C fill:#cf222e,color:#fff
     style R2 fill:#cf222e,color:#fff
     style R3 fill:#cf222e,color:#fff
     style R4 fill:#888,color:#fff
     style ACC fill:#2d8a4e,color:#fff
 ```
 
-**Why a Durable Object and not a database lock?** D1 (SQLite) does not support row-level locking. Even with a UNIQUE constraint, concurrent INSERTs could create a tiny window where two processes both pass the `max_submissions` check and both insert. The DO eliminates this entirely — all requests are serialized through one JavaScript execution context. There is zero concurrency inside the DO.
+**Why a Durable Object and not a database lock?** D1 (SQLite) does not support row-level locking. Even with a UNIQUE constraint, concurrent INSERTs could create a tiny window where two processes both pass the "already submitted this round" check and both insert. The DO eliminates this entirely — all requests are serialized through one JavaScript execution context. There is zero concurrency inside the DO.
 
 ---
 
@@ -201,25 +209,82 @@ If the extracted portion is not numeric, versions are ordered by submission time
 
 ---
 
-## Submission Versioning
+## Rounds System
 
-Teams can push multiple tags (multiple submissions) if the hackathon's `max_submissions_per_team` allows it. Each accepted tag creates a new submission record with an incrementing version number.
+Organizers define **rounds** when configuring a hackathon. Each round is a submission window — teams push one git tag per round. Rounds can be **normal** (all teams continue) or **elimination** (some teams are cut after judging).
+
+### Round Configuration
+
+The organizer sets rounds at hackathon creation (or updates them before the hackathon goes `active`):
+
+```typescript
+interface HackathonRound {
+  id: string;
+  hackathon_id: string;
+  round_number: number;           // 1, 2, 3...
+  name: string;                   // "Round 1", "Semi-Finals", "Finals"
+  type: 'normal' | 'elimination';
+  advancement_method: 'score_threshold' | 'manual' | null; // null for normal rounds and final round
+  score_threshold: number | null; // Only if advancement_method = 'score_threshold'
+  submission_deadline: string;    // ISO-8601. Each round has its own deadline.
+  status: 'pending' | 'active' | 'judging' | 'completed';
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**Shared configuration:** All rounds share the same tag pattern, judge pool, and validation rules. Rounds only differ in deadline, type, and advancement method.
+
+### Round Flow
+
+```mermaid
+flowchart TD
+    A["Organizer creates hackathon<br/>with 3 rounds"] --> B["Round 1 (Normal)"]
+    B --> C["Teams submit: submission_v1"]
+    C --> D["Round 1 deadline passes"]
+    D --> E["Judges score Round 1 submissions"]
+    E --> F["Round 2 (Elimination)"]
+    F --> G["All teams submit: submission_v2"]
+    G --> H["Round 2 deadline passes"]
+    H --> I["Judges score Round 2"]
+    I --> J{"Advancement method?"}
+    J -->|score_threshold| K["Teams above threshold advance"]
+    J -->|manual| L["Organizer selects advancing teams"]
+    K --> M["Eliminated teams → read-only access"]
+    L --> M
+    M --> N["Round 3 / Finals"]
+    N --> O["Surviving teams submit: submission_v3"]
+    O --> P["Final judging & results"]
+```
+
+### Elimination Rules
+
+| Advancement Method | How It Works |
+|-------------------|--------------|
+| `score_threshold` | Teams with an average score ≥ threshold auto-advance. Below = eliminated. |
+| `manual` | Organizer reviews scores and manually selects which teams advance to the next round. |
+
+**Eliminated team access:** Eliminated teams retain **read-only access** to the hackathon site. They can view their own submissions, scores, and feedback. They cannot submit new tags or modify artifacts.
+
+### Version = Round
+
+Each submission's `version` number corresponds to the round number. A team pushes one tag per round:
 
 ```mermaid
 flowchart LR
-    A["submission_v1<br/>version: 1<br/>status: received"] --> B["submission_v2<br/>version: 2<br/>status: received"]
-    B --> C["submission_v3<br/>version: 3<br/>is_final: true<br/>status: locked"]
+    A["submission_v1<br/>Round 1<br/>status: received"] --> B["submission_v2<br/>Round 2<br/>status: received"]
+    B --> C["submission_v3<br/>Round 3 (Finals)<br/>status: locked"]
 
     style C fill:#2d8a4e,color:#fff
 ```
 
 **Rules:**
-- Each matching tag creates a new submission record
-- Version numbers auto-increment per team per hackathon
-- Only one submission per team can be `is_final = true`
-- The team leader can manually mark any version as final via the finalization endpoint
-- If no version is manually finalized by the time judging starts, the latest version is auto-finalized
-- Only the finalized submission enters the judging pipeline
+- Each matching tag creates a new submission record with `round_id` set
+- Version numbers correspond to round numbers (version 1 = Round 1, etc.)
+- Whether teams can re-submit within a round is configurable via `allow_resubmission` (default: false). If enabled, the latest accepted tag replaces the previous submission for that round. If disabled, only the first accepted tag counts — subsequent tags are rejected with `ALREADY_SUBMITTED_THIS_ROUND`.
+- The submission for the current active round is auto-finalized when the round transitions to `judging`
+- Only finalized submissions enter the judging pipeline for that round
+- Teams eliminated in a previous round cannot submit in subsequent rounds
 
 ---
 
@@ -229,15 +294,34 @@ Beyond the tagged code, a submission can include additional artifacts that give 
 
 ### Artifacts
 
-| Artifact | Source | Required | Storage |
-|----------|--------|----------|---------|
-| **Tagged code** | Git tag on linked repo | Yes (this IS the submission) | Referenced by `commit_sha` — lives in GitHub |
-| **README** | `README.md` at repo root at the tagged commit | Configurable (`require_readme`) | Fetched from GitHub API at validation time, cached in D1 |
-| **Demo URL** | Submitted by team leader via API | Configurable (`require_demo_url`) | Stored in `submissions.demo_url` |
-| **Presentation deck** | Uploaded by team leader (PDF/PPTX, max 50MB) | No | Uploaded to R2: `submissions/{submission_id}/deck.{ext}` |
-| **Screenshots** | Uploaded by team leader (PNG/JPG, max 5MB each, max 5) | No | Uploaded to R2: `submissions/{submission_id}/screenshots/` |
+| Artifact | Source | Required | Storage | Phase |
+|----------|--------|----------|---------|-------|
+| **Tagged code** | Git tag on linked repo | Yes (this IS the submission) | Referenced by `commit_sha` — lives in GitHub | Phase 1 |
+| **README** | `README.md` at repo root at the tagged commit | Configurable (`require_readme`) | Fetched from GitHub API at validation time, cached in D1 | Phase 1 |
+| **Demo URL** | Submitted by team leader via API | Configurable (`require_demo_url`) | Stored in `submissions.demo_url` | Phase 1 |
+| **Presentation deck** | Uploaded by team leader (PDF/PPTX, max 50MB) | No | Uploaded to R2: `submissions/{submission_id}/deck.{ext}` | **Phase 2** |
+| **Screenshots** | Uploaded by team leader (PNG/JPG, max 5MB each, max 5) | No | Uploaded to R2: `submissions/{submission_id}/screenshots/` | **Phase 2** |
 
-### Attaching Artifacts
+> **Phase 2 Note:** Presentation deck and screenshot uploads are deferred to Phase 2. Phase 1 supports tagged code, README (auto-fetched), and demo URL only. The DB schema includes the columns for forward compatibility, but the upload endpoints are not implemented in Phase 1.
+
+### Attaching Artifacts (Phase 1)
+
+```mermaid
+sequenceDiagram
+    participant L as Team Leader
+    participant W as API Worker
+    participant D1 as D1 Database
+
+    Note over L: After tag is accepted (submission status = received)
+
+    L->>W: PATCH /api/v1/hackathons/:slug/submissions/:id<br/>{ demo_url: "https://demo.example.com" }
+    W->>W: Verify: requester is team_lead
+    W->>W: Verify: submission status in ['received', 'validated']
+    W->>D1: UPDATE submissions SET demo_url = ?
+    W-->>L: 200 OK
+```
+
+### Attaching Artifacts (Phase 2 — Deferred)
 
 ```mermaid
 sequenceDiagram
@@ -245,13 +329,6 @@ sequenceDiagram
     participant W as API Worker
     participant D1 as D1 Database
     participant R2 as R2 Storage
-    participant GH as GitHub API
-
-    Note over L: After tag is accepted (submission status = received)
-
-    L->>W: PATCH /api/v1/hackathons/:slug/submissions/:id<br/>{ demo_url: "https://demo.example.com" }
-    W->>D1: UPDATE submissions SET demo_url = ?
-    W-->>L: 200 OK
 
     L->>W: POST /api/v1/hackathons/:slug/submissions/:id/deck<br/>(multipart file upload)
     W->>W: Validate: PDF or PPTX, max 50MB
@@ -336,7 +413,7 @@ stateDiagram-v2
     received --> invalid : Async validation fails (hard failure)
     received --> invalidated : Force push detected before validation
 
-    validated --> locked : Team leader finalizes OR auto-finalized at judging start
+    validated --> locked : Team leader finalizes OR auto-finalized at round judging start
     validated --> invalidated : Force push detected
 
     locked --> under_review : Judge assigned
@@ -358,6 +435,7 @@ stateDiagram-v2
 | `under_review` | At least one judge has been assigned. | No |
 | `scored` | All assigned judges have submitted scores. | No |
 | `invalidated` | Force push detected after acceptance — submission integrity compromised. | No — terminal |
+| `superseded` | Replaced by a newer submission in the same round (when `allow_resubmission` is enabled). | No — terminal |
 
 ---
 
@@ -438,24 +516,28 @@ Two layers enforce the submission deadline:
 
 ### Layer 1: Durable Object (Real-Time)
 
-Every submission attempt goes through the DO, which checks the current time against `submission_deadline`. The DO has access to the hackathon config and performs the check atomically with the locking operation.
+Every submission attempt goes through the DO, which checks the current time against the **current round's** `submission_deadline`. The DO has access to the hackathon config and round definitions, and performs the check atomically with the locking operation.
 
-### Layer 2: Phase Transition (State Change)
+### Layer 2: Round Transition (State Change)
 
-When the hackathon transitions from `active` to `judging` (via DO alarm or cron), the DO stops accepting submissions entirely. Any tag webhook that arrives after the transition gets `HACKATHON_NOT_ACTIVE`.
+When a round transitions from `active` to `judging`, the DO stops accepting submissions for that round. Any tag webhook that arrives after the transition gets `ROUND_NOT_ACTIVE`.
 
 ```mermaid
 flowchart TD
     A["Submission arrives at DO"] --> B{"Hackathon status = 'active'?"}
     B -->|No| C["Reject: HACKATHON_NOT_ACTIVE"]
-    B -->|Yes| D{"current_time <= submission_deadline?"}
+    B -->|Yes| B2{"Current round status = 'active'?"}
+    B2 -->|No| C2["Reject: ROUND_NOT_ACTIVE"]
+    B2 -->|Yes| B3{"Team eliminated?"}
+    B3 -->|Yes| C3["Reject: TEAM_ELIMINATED"]
+    B3 -->|No| D{"current_time <= round.submission_deadline?"}
     D -->|Yes| E["Accept normally<br/>is_late = false"]
     D -->|No| F{"allow_late_submissions?"}
     F -->|Yes| G["Accept as late<br/>is_late = true"]
     F -->|No| H["Reject: DEADLINE_PASSED"]
 ```
 
-**Why two layers?** The deadline check (layer 1) handles the common case during the `active` phase. The phase transition (layer 2) is the hard stop — once the hackathon moves to `judging`, no submissions are accepted regardless of `allow_late_submissions`. This prevents edge cases where a late-allowing hackathon keeps accepting submissions indefinitely.
+**Why two layers?** The deadline check (layer 1) handles the common case during the round's `active` period. The round transition (layer 2) is the hard stop — once the round moves to `judging`, no submissions are accepted regardless of `allow_late_submissions`. This prevents edge cases where a late-allowing round keeps accepting submissions indefinitely.
 
 ---
 
@@ -484,68 +566,55 @@ Authorization: Bearer {team_elevated_token}
   "state": "success" | "failure" | "pending",
   "description": "...",
   "context": "DevSage Submission",
-  "target_url": "https://devsage.org/hackathons/{slug}/submissions/{id}"
+  "target_url": "https://{slug}.devsage.org/submissions/{id}"
 }
 ```
 
 ---
 
-## Diff Viewer
+## Version Comparison
 
-Judges and team members can view a diff between submission versions. This helps judges understand what changed between iterations and helps teams verify their updates.
+Judges and team members can compare submission versions across rounds. Instead of building a custom diff viewer, the platform links directly to GitHub's compare view.
 
 ### How It Works
 
-1. For each submission, the `commit_sha` is pinned at acceptance time
-2. To generate a diff between v1 and v2, the Worker calls the GitHub Compare API:
+1. Each submission pins a `commit_sha` at acceptance time
+2. To compare Round 1 vs Round 2 submissions, the UI generates a GitHub compare URL:
    ```
-   GET /repos/{owner}/{repo}/compare/{base_sha}...{head_sha}
+   https://github.com/{owner}/{repo}/compare/{base_sha}...{head_sha}
    ```
-3. The response includes file-level diffs (additions, deletions, modifications)
-4. The diff is cached in D1 (keyed by `{base_sha}:{head_sha}`) for subsequent views
-5. The frontend renders the diff with syntax highlighting
+3. The link opens in a new tab — GitHub provides syntax-highlighted diffs natively
 
 ### API
 
 ```
-GET /api/v1/hackathons/:slug/submissions/:id/diff?base_version=1
-→ 200 { ok: true, data: { diff } }
+GET /api/v1/hackathons/:slug/submissions/:id/compare?base_round=1
+→ 200 { ok: true, data: { compare_url: "https://github.com/..." } }
 ```
 
-```typescript
-interface SubmissionDiff {
-  base_version: number;
-  head_version: number;
-  base_sha: string;
-  head_sha: string;
-  files: {
-    filename: string;
-    status: 'added' | 'removed' | 'modified' | 'renamed';
-    additions: number;
-    deletions: number;
-    patch: string;       // unified diff format
-  }[];
-  stats: {
-    total_additions: number;
-    total_deletions: number;
-    files_changed: number;
-  };
-}
-```
-
-**Access control:** Team members can view diffs of their own submissions in any phase. Judges can view diffs only during `judging` and `completed` phases. Organizers can view diffs in any phase.
-
-**Diff caching:** Diffs are immutable (the SHAs never change), so they are cached indefinitely once generated. The cache key is `diff:{base_sha}:{head_sha}`.
+**Access control:** Team members can compare their own submissions in any phase. Judges can compare during `judging` and `completed` phases. Organizers can compare in any phase.
 
 ---
 
 ## Submission Finalization
 
-Before judging begins, each team's submission must be finalized — one version is marked as the team's official entry.
+Before each round's judging begins, the team's submission for that round must be finalized.
 
-### Manual Finalization
+### Auto-Finalization (Per Round)
 
-The team leader can finalize any validated submission version:
+When a round transitions from `active` to `judging`, the team's submission for that round is auto-finalized:
+
+1. For each team with a validated submission in this round:
+2. Mark it as `is_final = true`, status = `locked`
+3. Audit event: `submission_auto_finalized` (actor: system, round: N)
+
+Since each team submits only one tag per round, there is no need for manual version selection — the submission for the round is the one that gets finalized.
+
+Teams with only `invalid` or `rejected` submissions for a round have no finalized submission and are excluded from that round's judging.
+
+### Manual Finalization (Edge Case)
+
+In rare cases, the team leader can finalize their submission before the round deadline (e.g., to signal they're done and lock artifacts):
 
 ```mermaid
 sequenceDiagram
@@ -554,30 +623,14 @@ sequenceDiagram
     participant D1 as D1 Database
 
     L->>W: POST /api/v1/hackathons/:slug/submissions/:id/finalize
-    W->>W: Verify: requester is team_leader
-    W->>W: Verify: hackathon status in ['active', 'judging']
+    W->>W: Verify: requester is team_lead
+    W->>W: Verify: submission belongs to current active round
     W->>W: Verify: submission status = 'validated'
-    W->>W: Verify: no other submission for this team is already finalized
-
-    alt Another version already finalized
-        W->>D1: UPDATE old submission SET is_final = 0, status = 'validated'
-    end
 
     W->>D1: UPDATE submission SET is_final = 1, status = 'locked', locked_at = now()
     W->>D1: INSERT INTO audit_events (submission_finalized)
     W-->>L: 200 { ok: true, data: { submission } }
 ```
-
-### Auto-Finalization
-
-When the hackathon transitions from `active` to `judging`, any team that has validated submissions but hasn't manually finalized one gets auto-finalized:
-
-1. For each team with validated but no finalized submissions:
-2. Select the latest validated submission (highest version number)
-3. Mark it as `is_final = true`, status = `locked`
-4. Audit event: `submission_auto_finalized` (actor: system)
-
-Teams with only `invalid` or `rejected` submissions have no finalized submission and are excluded from judging.
 
 ---
 
@@ -592,6 +645,7 @@ Multiple layers prevent duplicate submission processing. GitHub uses at-least-on
 | Durable Object | `UNIQUE(webhook_delivery_id)` in `submission_locks` SQLite table | `webhook_delivery_id` |
 | D1 submissions table | `UNIQUE(webhook_delivery_id)` constraint | `webhook_delivery_id` |
 | D1 submissions table | `UNIQUE(team_id, hackathon_id, tag_name)` constraint | Team + tag combo |
+| D1 submissions table | `UNIQUE(team_id, round_id)` constraint (when `allow_resubmission = false`) | One submission per team per round. When resubmission is enabled, old submission is marked `superseded` and constraint is on active submissions only. |
 
 If any layer detects a duplicate, the operation is a no-op — no error is returned, no new record is created.
 
@@ -604,6 +658,8 @@ If any layer detects a duplicate, the operation is a no-op — no error is retur
 ```
 GET /api/v1/hackathons/:slug/submissions
   ?team_id=...           (filter by team)
+  &round_id=...          (filter by round)
+  &round_number=1        (filter by round number)
   &status=validated      (filter by status)
   &is_final=true         (only finalized submissions)
   &is_late=false         (exclude late submissions)
@@ -612,9 +668,10 @@ GET /api/v1/hackathons/:slug/submissions
 ```
 
 **Access control:**
-- Organizers and judges: see all submissions in their assigned scope
-- Team members: see only their own team's submissions
-- Public (during `completed`/`archived`): see finalized submissions only
+- Organizers: see all submissions across all rounds
+- Judges: see finalized submissions for rounds they're assigned to judge
+- Team members: see only their own team's submissions (all rounds, including after elimination — read-only)
+- Public (during `completed`/`archived`): see finalized submissions from all rounds on the public hackathon site (`{slug}.devsage.org`)
 
 ### Get Single Submission
 
@@ -631,6 +688,7 @@ interface Submission {
   team_id: string;
   team_name: string;
   hackathon_id: string;
+  round: { id: string; round_number: number; name: string };
   track: { id: string; name: string };
   tag_name: string;
   commit_sha: string;
@@ -670,10 +728,10 @@ Tags in Git are not branch-specific — they point to commits, not branches. Dev
 
 GitHub does not allow pushing the same tag name twice without deleting it first. If a team deletes `submission_v1` and re-pushes it (pointing to a different commit), GitHub sends a new `create` webhook with a new `delivery_id`. The DO checks the `UNIQUE(team_id, tag_name)` constraint in `submission_locks` and rejects the duplicate tag name. The team should push `submission_v2` instead.
 
-### Submission During Phase Transition
+### Submission During Round Transition
 
-A tag webhook arrives at the exact moment the hackathon transitions from `active` to `judging`. The DO handles this atomically — the transition and the submission attempt are serialized. Either:
-- The transition happens first → submission rejected (`HACKATHON_NOT_ACTIVE`)
+A tag webhook arrives at the exact moment a round transitions from `active` to `judging`. The DO handles this atomically — the transition and the submission attempt are serialized. Either:
+- The transition happens first → submission rejected (`ROUND_NOT_ACTIVE`)
 - The submission is locked first → transition happens after (submission is valid)
 
 There is no in-between state because the DO is single-threaded.
@@ -686,9 +744,11 @@ If the GitHub API is unreachable during async validation (README check, commit v
 
 The diff viewer and README fetcher use GitHub's API, which handles large repos natively. However, diffs between commits with >300 changed files are truncated by GitHub's Compare API. In this case, the diff viewer shows a truncated view with a link to the full diff on GitHub.
 
-### Max Submissions Reached, Then Submission Invalidated
+### Submission Invalidated After Round Closes
 
-If a team has used all their submission slots and one submission is later invalidated (force push), the invalidation does NOT free up a slot. The team's `submission_count` in the DO is not decremented. This prevents gaming where a team intentionally force-pushes to invalidate an old submission and submit a new one. The organizer can manually reset the count if the invalidation was not the team's fault.
+If a team's submission for a round is later invalidated (force push) after the round has already moved to `judging`, the team has no valid submission for that round. The organizer can either:
+- Revert the round to `active` temporarily to allow a resubmission (if the force push was accidental)
+- Exclude the team from that round's judging
 
 ---
 
@@ -697,8 +757,10 @@ If a team has used all their submission slots and one submission is later invali
 | Code | HTTP Status | When |
 |------|-------------|------|
 | `HACKATHON_NOT_ACTIVE` | 400 | Submission attempt when hackathon is not in `active` phase |
-| `DEADLINE_PASSED` | 400 | Submission after deadline with `allow_late_submissions = false` |
-| `MAX_SUBMISSIONS_REACHED` | 400 | Team has reached `max_submissions_per_team` |
+| `ROUND_NOT_ACTIVE` | 400 | Current round is not accepting submissions |
+| `TEAM_ELIMINATED` | 403 | Team was eliminated in a previous round |
+| `ALREADY_SUBMITTED_THIS_ROUND` | 400 | Team has already submitted for the current round |
+| `DEADLINE_PASSED` | 400 | Submission after round deadline with `allow_late_submissions = false` |
 | `SUBMISSION_NOT_FOUND` | 404 | Submission ID does not exist |
 | `SUBMISSION_LOCKED` | 400 | Attempting to modify a finalized submission |
 | `SUBMISSION_ALREADY_FINALIZED` | 400 | Team already has a finalized submission (must un-finalize first) |
@@ -725,6 +787,7 @@ If a team has used all their submission slots and one submission is later invali
 | `id` | TEXT PK | UUID |
 | `team_id` | TEXT FK | → teams.id |
 | `hackathon_id` | TEXT FK | → hackathons.id |
+| `round_id` | TEXT FK | → hackathon_rounds.id |
 | `tag_name` | TEXT | e.g., `submission_v1` |
 | `commit_sha` | TEXT | Pinned at acceptance. 40-char hex. |
 | `commit_message` | TEXT | First line of commit message |
@@ -747,7 +810,7 @@ If a team has used all their submission slots and one submission is later invali
 | `created_at` | TEXT | ISO-8601 |
 | `updated_at` | TEXT | ISO-8601 |
 
-**Indexes:** `team_id`, `hackathon_id`, unique(`team_id`, `hackathon_id`, `tag_name`), unique(`webhook_delivery_id`), `status`, `is_final`.
+**Indexes:** `team_id`, `hackathon_id`, `round_id`, unique(`team_id`, `round_id`), unique(`team_id`, `hackathon_id`, `tag_name`), unique(`webhook_delivery_id`), `status`, `is_final`.
 
 ### `submission_screenshots` (new)
 
@@ -762,18 +825,38 @@ If a team has used all their submission slots and one submission is later invali
 
 **Indexes:** `submission_id`.
 
-### `submission_diffs` (new — cache)
+### `hackathon_rounds` (new)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | TEXT PK | UUID |
 | `hackathon_id` | TEXT FK | → hackathons.id |
-| `base_sha` | TEXT | Base commit SHA |
-| `head_sha` | TEXT | Head commit SHA |
-| `diff_data` | TEXT | JSON. Full diff response (files, stats, patches). |
+| `round_number` | INTEGER | 1, 2, 3... |
+| `name` | TEXT | "Round 1", "Semi-Finals", "Finals" |
+| `type` | TEXT | `normal` or `elimination` |
+| `advancement_method` | TEXT | `score_threshold`, `manual`, or NULL |
+| `score_threshold` | REAL | NULL unless advancement_method = 'score_threshold' |
+| `submission_deadline` | TEXT | ISO-8601. Round-specific deadline. |
+| `status` | TEXT | `pending`, `active`, `judging`, `completed` |
+| `created_at` | TEXT | ISO-8601 |
+| `updated_at` | TEXT | ISO-8601 |
+
+**Indexes:** `hackathon_id`, unique(`hackathon_id`, `round_number`).
+
+### `round_results` (new)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | TEXT PK | UUID |
+| `round_id` | TEXT FK | → hackathon_rounds.id |
+| `team_id` | TEXT FK | → teams.id |
+| `status` | TEXT | `advanced`, `eliminated` |
+| `average_score` | REAL | Average judge score for this round |
+| `decided_by` | TEXT | `system` (threshold) or user ID (manual) |
+| `decided_at` | TEXT | ISO-8601 |
 | `created_at` | TEXT | ISO-8601 |
 
-**Indexes:** unique(`base_sha`, `head_sha`).
+**Indexes:** `round_id`, `team_id`, unique(`round_id`, `team_id`).
 
 ### `force_push_events` (new)
 
@@ -805,6 +888,7 @@ If a team has used all their submission slots and one submission is later invali
 | Immutable commit SHA | Pinned at acceptance | Even if the team deletes the tag or force-pushes, the recorded SHA preserves what was submitted. Git objects are content-addressed — the SHA is the proof. | Store tag name only — tags can be moved. Store branch — branches are mutable. |
 | Force push flags, not auto-rejects | Organizer decides | Force pushes are sometimes legitimate (rebasing before submission). Auto-invalidation only triggers when the commit SHA is provably gone. Ambiguous cases are flagged for human review. | Auto-reject all force pushes — too aggressive, penalizes legitimate rebases. Ignore force pushes — misses tampering. |
 | `submitted_at` from GitHub, not server time | Fairness | GitHub's event timestamp reflects when the tag was actually created. Server receive time includes webhook delivery delay (seconds to minutes). Using server time could unfairly reject a submission that was pushed before the deadline. | Server time only — unfair to slow webhooks. Both timestamps — confusing, which one is authoritative? |
-| Max submissions not decremented on invalidation | Prevent gaming | If invalidation freed slots, teams could intentionally force-push to invalidate old submissions and get extra attempts. The organizer can manually reset if the invalidation was not the team's fault. | Auto-decrement — gameable. Separate invalidation counter — complex for little benefit. |
-| Diff caching in D1 | Immutable, cheap | Diffs between two commits never change (commits are immutable). Caching avoids repeated GitHub API calls. D1 storage is cheap. | No caching — repeated API calls per judge view. R2 caching — overkill for JSON. In-memory — lost on Worker restart. |
+| Rounds-based versioning | One submission per round | Organizers define rounds (elimination/normal). Each round has its own submission window and deadline. Version number = round number. Simpler than free-form versioning — teams get one shot per round. | Free-form versioning — confusing, no clear judging boundary. Single submission — too restrictive for multi-round hackathons. |
+| GitHub compare links (not custom diff viewer) | Lower complexity | GitHub already provides excellent diff views with syntax highlighting. Building a custom diff viewer adds significant frontend complexity for little benefit. | Custom diff viewer — expensive to build, GitHub does it better. No comparison — judges can't see evolution between rounds. |
+| Multi-artifact uploads deferred to Phase 2 | Ship faster | Phase 1 supports tagged code, README (auto-fetched), and demo URL. Deck/screenshot uploads add R2 upload complexity. Schema includes columns for forward compatibility. | Build everything at once — delays Phase 1 launch. |
 | Fail-open commit status posting | Non-critical | Commit statuses are a UX convenience (green/red check on GitHub). If the API call fails, the submission is still in D1. Blocking on this would make submissions fragile to GitHub outages. | Fail-closed — submission fails if GitHub API is down. Retry queue — complexity for a non-critical feature. |

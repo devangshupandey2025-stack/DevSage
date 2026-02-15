@@ -1,6 +1,6 @@
 # Data Model & Schema
 
-> Complete relational schema for the DevSage platform — 40+ tables across 10 domains in Cloudflare D1 (SQLite) via Drizzle ORM, with UUID primary keys, ISO-8601 timestamps, full ERD, indexing strategy, storage projections, migration approach, and partitioning plan for multi-tenant scale.
+> Complete relational schema for the DevSage platform — ~31 core tables across 10 domains in Cloudflare D1 (SQLite) via Drizzle ORM, with UUID primary keys, ISO-8601 timestamps, full ERD, indexing strategy, storage projections, migration approach, and partitioning plan for multi-tenant scale.
 
 ---
 
@@ -11,7 +11,7 @@
 - [2. Entity Relationship Diagram](#2-entity-relationship-diagram)
 - [3. Conventions](#3-conventions)
 - [4. Identity & Access Tables](#4-identity--access-tables)
-- [5. Organization Tables](#5-organization-tables)
+- [5. Workspace Tables](#5-workspace-tables)
 - [6. Hackathon Lifecycle Tables](#6-hackathon-lifecycle-tables)
 - [7. Team & Participation Tables](#7-team--participation-tables)
 - [8. Submission & Activity Tables](#8-submission--activity-tables)
@@ -45,22 +45,21 @@
 
 ## 1. Schema Overview
 
-40 tables organized into 10 domains:
+~31 core tables organized into 10 domains:
 
 | Domain | Tables | Purpose |
 |--------|--------|---------|
-| Identity & Access | 5 | Users, platform admins, organizer invites, API keys, sessions |
-| Organizations | 2 | Orgs, org members |
-| Hackathon Lifecycle | 3 | Hackathons, hackathon config, templates |
-| Teams & Participation | 4 | Teams, team members, team repos, join requests |
+| Identity & Access | 4 | Users, platform admins, workspace invites, refresh tokens |
+| Workspaces | 2 | Workspaces, workspace members |
+| Hackathon Lifecycle | 6 | Hackathons, rounds, round results, templates, sponsors, notification config |
+| Teams & Participation | 3 | Teams, team members, team repos |
 | Submissions & Activity | 3 | Submissions, commit log, force push events |
 | Judging | 5 | Judges, rubric criteria, judge assignments, scores, AI reviews |
-| Roles & Permissions | 3 | Organizer roles, custom role definitions, custom role assignments |
-| Webhooks & Integrations | 5 | Webhook deliveries, outbound webhooks, outbound deliveries, pending installations, hackathon integrations |
-| Notifications | 5 | In-app notifications, delivery records, preferences, push subscriptions, digest items |
-| Audit & Compliance | 3 | Audit events, audit archives, audit anonymizations |
+| Webhooks & Integrations | 2 | Webhook deliveries, pending installations |
+| Notifications | 3 | In-app notifications, delivery records, notification config |
+| Audit & Compliance | 3 | Audit events, audit archives (Phase 2), audit anonymizations (Phase 2) |
 
-**Total: ~38 core tables** (plus 2–3 idempotency/config tables).
+**Total: ~31 core tables** (plus 2–3 idempotency/config tables).
 
 ---
 
@@ -75,13 +74,10 @@ erDiagram
     users ||--o{ judges : "invited as judge"
     users ||--o{ scores : "submits scores"
     users ||--o| platform_admins : "may be admin"
-    users ||--o{ org_members : "belongs to orgs"
-    users ||--o{ api_keys : "creates keys"
-    users ||--o{ push_subscriptions : "registers devices"
-    users ||--o{ notification_preferences : "configures"
+    users ||--o{ workspace_members : "belongs to workspaces"
 
-    organizations ||--o{ org_members : "has members"
-    organizations ||--o{ hackathons : "owns hackathons"
+    workspaces ||--o{ workspace_members : "has members"
+    workspaces ||--o{ hackathons : "owns hackathons"
 
     hackathons ||--o{ organizer_roles : "managed by"
     hackathons ||--o{ teams : "hosts"
@@ -92,11 +88,12 @@ erDiagram
     hackathons ||--o{ rubric_criteria : "defines rubric"
     hackathons ||--o{ judge_assignments : "organizes judging"
     hackathons ||--o{ audit_events : "produces events"
-    hackathons ||--o{ custom_role_definitions : "has custom roles"
+
+    hackathons ||--o{ hackathon_rounds : "has rounds"
     hackathons ||--o{ webhook_deliveries : "receives webhooks"
-    hackathons ||--o{ outbound_webhooks : "sends webhooks"
     hackathons ||--o{ hackathon_notification_config : "configures notifications"
-    hackathons ||--o{ hackathon_integrations : "enables integrations"
+
+    hackathons ||--o{ hackathon_sponsors : "has sponsors"
 
     teams ||--o{ team_members : "contains"
     teams ||--o{ team_repos : "links repos"
@@ -104,7 +101,7 @@ erDiagram
     teams ||--o{ commit_log : "pushes"
     teams ||--o{ force_push_events : "triggers"
     teams ||--o{ judge_assignments : "reviewed by"
-    teams ||--o{ join_requests : "receives requests"
+
 
     team_repos ||--o{ webhook_deliveries : "triggers webhooks"
 
@@ -116,21 +113,22 @@ erDiagram
 
     rubric_criteria ||--o{ scores : "scored on"
 
-    custom_role_definitions ||--o{ custom_role_assignments : "assigned to users"
+
 ```
 
 ### Webhook & Notification Relationships
 
 ```mermaid
 erDiagram
+    hackathon_rounds ||--o{ round_results : "produces results"
+    hackathon_rounds ||--o{ submissions : "receives submissions"
+
     webhook_deliveries ||--o{ commit_log : "produces commits"
     webhook_deliveries ||--o{ force_push_events : "detects force pushes"
 
-    outbound_webhooks ||--o{ outbound_webhook_deliveries : "delivers to"
-
     users ||--o{ in_app_notifications : "receives"
     users ||--o{ notification_deliveries : "tracked for"
-    users ||--o{ pending_digest_items : "queued for"
+
 
     audit_events ||--o{ audit_archives : "archived to R2"
 ```
@@ -177,34 +175,11 @@ Core user identity. One row per authenticated person.
 | `suspended` | INTEGER | NOT NULL, DEFAULT 0 | Account suspension flag |
 | `suspended_at` | TEXT | | When suspended |
 | `suspended_reason` | TEXT | | Why suspended |
-| `mfa_enabled` | INTEGER | NOT NULL, DEFAULT 0 | MFA active |
-| `mfa_method` | TEXT | | 'totp', 'passkey', or null |
-| `totp_secret_encrypted` | TEXT | | Encrypted TOTP secret |
 | `last_login_at` | TEXT | | Last successful login |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
 **Indexes:** UNIQUE(`github_id`), UNIQUE(`google_id`), INDEX(`email`)
-
----
-
-### `user_passkeys`
-
-WebAuthn/passkey credentials for passwordless login.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique passkey ID |
-| `user_id` | TEXT | FK → users.id, NOT NULL, ON DELETE CASCADE | Owner |
-| `credential_id` | TEXT | UNIQUE, NOT NULL | WebAuthn credential ID (base64url) |
-| `public_key` | TEXT | NOT NULL | COSE public key (base64url) |
-| `sign_count` | INTEGER | NOT NULL, DEFAULT 0 | Replay protection counter |
-| `device_name` | TEXT | NOT NULL | User-provided label |
-| `transports` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of transport hints |
-| `last_used_at` | TEXT | | Last authentication |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`credential_id`), INDEX(`user_id`)
 
 ---
 
@@ -238,7 +213,7 @@ Global platform administrators (separate from per-hackathon roles).
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique row ID |
 | `user_id` | TEXT | FK → users.id, UNIQUE, NOT NULL | Which user |
-| `role` | TEXT | NOT NULL, CHECK IN ('super_admin','platform_admin') | Platform role |
+| `role` | TEXT | NOT NULL, DEFAULT 'platform_admin', CHECK IN ('super_admin','platform_admin') | Platform role (two levels: super_admin, platform_admin) |
 | `created_by` | TEXT | FK → users.id, NULL | Who added (null for seed) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
@@ -246,16 +221,17 @@ Global platform administrators (separate from per-hackathon roles).
 
 ---
 
-### `organizer_invites`
+### `workspace_invites`
 
-Invitations for new organizers, managed by platform admins.
+Invitations to join a workspace, managed by platform admins.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique invite ID |
 | `code` | TEXT | UNIQUE, NOT NULL | 32-char URL-safe random code |
 | `email` | TEXT | NOT NULL | Invitee's email |
-| `org_id` | TEXT | FK → organizations.id, NULL | Optional org association |
+| `workspace_id` | TEXT | FK → workspaces.id, NOT NULL | Target workspace |
+| `role` | TEXT | NOT NULL, DEFAULT 'workspace_member' | Role to assign upon acceptance |
 | `message` | TEXT | | Personal message from admin |
 | `status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, expired, revoked |
 | `expires_at` | TEXT | NOT NULL | ISO-8601 expiry (default +14 days) |
@@ -264,49 +240,26 @@ Invitations for new organizers, managed by platform admins.
 | `accepted_at` | TEXT | | When accepted |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** UNIQUE(`code`), INDEX(`email`, `status`), INDEX(`status`)
+**Indexes:** UNIQUE(`code`), INDEX(`email`, `status`), INDEX(`status`), INDEX(`workspace_id`)
 
 ---
 
-### `api_keys`
+## 5. Workspace Tables
 
-Scoped API keys for programmatic access.
+### `workspaces`
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique key ID |
-| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Scoped to one hackathon |
-| `owner_user_id` | TEXT | FK → users.id, NOT NULL | Creator |
-| `name` | TEXT | NOT NULL | Human label |
-| `key_prefix` | TEXT | NOT NULL | First 8 chars for identification |
-| `key_hash` | TEXT | UNIQUE, NOT NULL | SHA-256 of full key |
-| `scopes` | TEXT | NOT NULL | JSON array of APIScope strings |
-| `rate_limit` | INTEGER | NOT NULL, DEFAULT 60 | Requests per minute |
-| `expires_at` | TEXT | | Optional expiry |
-| `last_used_at` | TEXT | | Last use timestamp |
-| `revoked_at` | TEXT | | If/when revoked |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`key_hash`), INDEX(`hackathon_id`, `owner_user_id`), INDEX(`key_prefix`)
-
----
-
-## 5. Organization Tables
-
-### `organizations`
-
-Organization entities that own hackathons.
+Workspace entities that own hackathons. Platform admins create workspaces (one per club). Joined workspaces support co-hosted events.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique org ID |
+| `id` | TEXT | PK, UUID | Unique workspace ID |
 | `name` | TEXT | NOT NULL | Display name |
 | `slug` | TEXT | UNIQUE, NOT NULL | URL-safe identifier |
-| `description` | TEXT | NOT NULL, DEFAULT '' | Org description |
-| `logo_url` | TEXT | | R2 URL to org logo |
-| `website` | TEXT | | Org website URL |
-| `settings` | TEXT | NOT NULL, DEFAULT '{}' | JSON org settings |
-| `created_by` | TEXT | FK → users.id, NOT NULL | Creator |
+| `description` | TEXT | NOT NULL, DEFAULT '' | Workspace description |
+| `logo_url` | TEXT | | R2 URL to workspace logo |
+| `website` | TEXT | | Workspace website URL |
+| `settings` | TEXT | NOT NULL, DEFAULT '{}' | JSON workspace settings |
+| `created_by` | TEXT | FK → users.id, NOT NULL | Creator (platform admin) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
@@ -314,21 +267,21 @@ Organization entities that own hackathons.
 
 ---
 
-### `org_members`
+### `workspace_members`
 
-Organization membership and roles.
+Workspace membership and roles.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique row ID |
-| `org_id` | TEXT | FK → organizations.id, NOT NULL, ON DELETE CASCADE | Which org |
+| `workspace_id` | TEXT | FK → workspaces.id, NOT NULL, ON DELETE CASCADE | Which workspace |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Which user |
-| `role` | TEXT | NOT NULL, CHECK IN ('org_owner','org_admin','org_member') | Org-level role |
+| `role` | TEXT | NOT NULL, CHECK IN ('workspace_owner','workspace_admin','workspace_member') | Workspace-level role |
 | `invited_by` | TEXT | FK → users.id, NULL | Who invited |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** UNIQUE(`org_id`, `user_id`), INDEX(`user_id`)
+**Indexes:** UNIQUE(`workspace_id`, `user_id`), INDEX(`user_id`)
 
 ---
 
@@ -341,41 +294,37 @@ Core hackathon entity with all configuration.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Unique hackathon ID |
-| `org_id` | TEXT | FK → organizations.id, NULL | Owning org (null if no org) |
-| `slug` | TEXT | UNIQUE, NOT NULL | URL-safe identifier |
+| `workspace_id` | TEXT | FK → workspaces.id, NOT NULL | Owning workspace |
+| `slug` | TEXT | UNIQUE, NOT NULL | URL-safe identifier (used as subdomain: {slug}.devsage.org) |
 | `title` | TEXT | NOT NULL | Display name |
 | `tagline` | TEXT | | Short tagline |
 | `description` | TEXT | | Markdown description |
 | `rules_md` | TEXT | | Competition rules (Markdown) |
-| `status` | TEXT | NOT NULL, DEFAULT 'draft' | CHECK IN 7 valid states |
-| `registration_opens` | TEXT | NOT NULL | ISO-8601 |
-| `registration_closes` | TEXT | NOT NULL | ISO-8601 |
-| `hacking_starts` | TEXT | | ISO-8601 |
-| `submission_deadline` | TEXT | NOT NULL | ISO-8601 |
+| `status` | TEXT | NOT NULL, DEFAULT 'draft' | CHECK IN ('draft','active','judging','completed','archived') |
+| `starts_at` | TEXT | | ISO-8601 — when hackathon goes active |
 | `judging_starts` | TEXT | | ISO-8601 |
 | `judging_ends` | TEXT | | ISO-8601 |
 | `min_team_size` | INTEGER | NOT NULL, DEFAULT 1 | Minimum team members |
 | `max_team_size` | INTEGER | NOT NULL, DEFAULT 5 | Maximum team members |
 | `max_teams` | INTEGER | | NULL = unlimited |
-| `submission_tag_pattern` | TEXT | NOT NULL, DEFAULT '^submission_v\\d+$' | Regex for submission tags |
-| `max_submissions_per_team` | INTEGER | | NULL = unlimited |
-| `allow_late_submissions` | INTEGER | NOT NULL, DEFAULT 0 | Boolean |
+| `submission_tag_pattern` | TEXT | NOT NULL | Organiser-configured regex for submission tags |
+| `allow_resubmission` | INTEGER | NOT NULL, DEFAULT 0 | Whether teams can resubmit within a round (old submission superseded) |
+| `allow_registration_during_active` | INTEGER | NOT NULL, DEFAULT 0 | Whether new participants can register after draft→active |
+| `notify_all_on_deadline` | INTEGER | NOT NULL, DEFAULT 0 | Whether all team members get deadline reminders (not just team leads) |
+| `show_judge_comments_to_participants` | INTEGER | NOT NULL, DEFAULT 0 | Whether judge comments are visible to participants |
+| `registration_mode` | TEXT | NOT NULL, DEFAULT 'open' | CHECK IN ('open','domain_restricted','approval_based') |
+| `allowed_email_domains` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of allowed domains (used when registration_mode = 'domain_restricted') |
 | `require_repo` | INTEGER | NOT NULL, DEFAULT 1 | Team must link a repo |
-| `primary_color` | TEXT | DEFAULT '#6366f1' | Brand color |
-| `logo_r2_key` | TEXT | | R2 storage key for logo |
-| `banner_r2_key` | TEXT | | R2 storage key for banner |
-| `custom_subdomain` | TEXT | | e.g., "acmhack" |
 | `timezone` | TEXT | NOT NULL, DEFAULT 'UTC' | IANA timezone |
 | `template_id` | TEXT | FK → hackathon_templates.id, NULL | Cloned from template |
 | `tracks` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of track definitions |
 | `prizes` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of prize definitions |
-| `sponsors` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of sponsor entries |
 | `settings` | TEXT | NOT NULL, DEFAULT '{}' | JSON extensible settings blob |
-| `created_by` | TEXT | FK → users.id, NOT NULL | Owner/creator |
+| `created_by` | TEXT | FK → users.id, NOT NULL | Owner/creator (organiser or co-organiser) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** UNIQUE(`slug`), INDEX(`org_id`), INDEX(`status`), INDEX(`created_by`)
+**Indexes:** UNIQUE(`slug`), INDEX(`workspace_id`), INDEX(`status`), INDEX(`created_by`)
 
 ---
 
@@ -386,7 +335,7 @@ Reusable hackathon configuration templates.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Template ID |
-| `org_id` | TEXT | FK → organizations.id, NULL | Org scope (null = global) |
+| `workspace_id` | TEXT | FK → workspaces.id, NULL | Workspace scope (null = global) |
 | `name` | TEXT | NOT NULL | Template name |
 | `description` | TEXT | NOT NULL, DEFAULT '' | What this template is for |
 | `config_snapshot` | TEXT | NOT NULL | JSON snapshot of hackathon config fields |
@@ -395,7 +344,71 @@ Reusable hackathon configuration templates.
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** INDEX(`org_id`), INDEX(`created_by`)
+**Indexes:** INDEX(`workspace_id`), INDEX(`created_by`)
+
+---
+
+### `hackathon_sponsors`
+
+Sponsor entries managed by organizers per hackathon.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PK, UUID | Unique sponsor entry ID |
+| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL, ON DELETE CASCADE | Which hackathon |
+| `name` | TEXT | NOT NULL | Sponsor name |
+| `tier` | TEXT | NOT NULL, DEFAULT 'standard' | e.g., platinum, gold, silver, standard |
+| `logo_r2_key` | TEXT | | R2 key for sponsor logo |
+| `website` | TEXT | | Sponsor website URL |
+| `description` | TEXT | NOT NULL, DEFAULT '' | Short description |
+| `sort_order` | INTEGER | NOT NULL, DEFAULT 0 | Display order within tier |
+| `created_by` | TEXT | FK → users.id, NOT NULL | Organizer who added |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
+| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
+
+**Indexes:** INDEX(`hackathon_id`, `tier`, `sort_order`), UNIQUE(`hackathon_id`, `name`)
+
+---
+
+### `hackathon_rounds`
+
+Rounds within a hackathon. Organisers configure the number and type of rounds.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PK, UUID | Unique round ID |
+| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL, ON DELETE CASCADE | Which hackathon |
+| `round_number` | INTEGER | NOT NULL | Sequential round number (1, 2, 3...) |
+| `name` | TEXT | NOT NULL | Display name (e.g., "Qualifying Round", "Finals") |
+| `type` | TEXT | NOT NULL, DEFAULT 'standard' | Round type (standard, elimination, etc.) |
+| `status` | TEXT | NOT NULL, DEFAULT 'pending' | CHECK IN ('pending','active','judging','completed') |
+| `submission_deadline` | TEXT | | ISO-8601 deadline for this round |
+| `started_at` | TEXT | | When round was activated |
+| `completed_at` | TEXT | | When round was completed |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
+| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
+
+**Indexes:** UNIQUE(`hackathon_id`, `round_number`), INDEX(`hackathon_id`, `status`)
+
+---
+
+### `round_results`
+
+Per-team outcomes for each round (advanced or eliminated).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PK, UUID | Unique result ID |
+| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL, ON DELETE CASCADE | Which hackathon |
+| `round_id` | TEXT | FK → hackathon_rounds.id, NOT NULL, ON DELETE CASCADE | Which round |
+| `team_id` | TEXT | FK → teams.id, NOT NULL, ON DELETE CASCADE | Which team |
+| `status` | TEXT | NOT NULL | CHECK IN ('advanced','eliminated') |
+| `rank` | INTEGER | | Team's rank within this round (null if not ranked) |
+| `total_score` | REAL | | Aggregate score for this round |
+| `decided_by` | TEXT | FK → users.id, NULL | Organiser who published result (null if auto-calculated) |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
+
+**Indexes:** UNIQUE(`round_id`, `team_id`), INDEX(`hackathon_id`, `status`), INDEX(`team_id`)
 
 ---
 
@@ -412,14 +425,12 @@ Team entities within a hackathon.
 | `name` | TEXT | NOT NULL | 2–50 characters |
 | `description` | TEXT | NOT NULL, DEFAULT '' | Team description |
 | `invite_code` | TEXT | UNIQUE | 8-char join code |
-| `looking_for_members` | INTEGER | NOT NULL, DEFAULT 0 | Discovery directory flag |
-| `skills_wanted` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of skill tags |
 | `track_id` | TEXT | | Track this team is competing in |
 | `ready` | INTEGER | NOT NULL, DEFAULT 0 | Readiness status |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
-**Indexes:** UNIQUE(`hackathon_id`, `name`), INDEX(`hackathon_id`), INDEX(`invite_code`), INDEX(`hackathon_id`, `looking_for_members`)
+**Indexes:** UNIQUE(`hackathon_id`, `name`), INDEX(`hackathon_id`), INDEX(`invite_code`)
 
 ---
 
@@ -433,7 +444,6 @@ Team membership with roles.
 | `team_id` | TEXT | FK → teams.id, NOT NULL, ON DELETE CASCADE | Which team |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Which user |
 | `role` | TEXT | NOT NULL, DEFAULT 'member' | leader / member |
-| `skills` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of skill tags |
 | `joined_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
 **Indexes:** UNIQUE(`team_id`, `user_id`), INDEX(`user_id`)
@@ -462,25 +472,6 @@ Repository links for teams (supports multiple repos and providers).
 
 ---
 
-### `join_requests`
-
-Pending requests to join a team.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Unique request ID |
-| `team_id` | TEXT | FK → teams.id, NOT NULL, ON DELETE CASCADE | Target team |
-| `user_id` | TEXT | FK → users.id, NOT NULL | Requesting user |
-| `message` | TEXT | | Optional message |
-| `status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, declined, withdrawn |
-| `reviewed_by` | TEXT | FK → users.id, NULL | Who accepted/declined |
-| `reviewed_at` | TEXT | | When reviewed |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`team_id`, `user_id`), INDEX(`user_id`, `status`), INDEX(`team_id`, `status`)
-
----
-
 ## 8. Submission & Activity Tables
 
 ### `submissions`
@@ -499,8 +490,8 @@ Tag-based submission records. Immutable after creation (status transitions only)
 | `branch` | TEXT | DEFAULT 'main' | Branch the tag was on |
 | `provider` | TEXT | NOT NULL, DEFAULT 'github' | VCS provider |
 | `repo_full_name` | TEXT | NOT NULL | Repo that produced this submission |
-| `version` | INTEGER | NOT NULL | 1, 2, 3... |
-| `status` | TEXT | NOT NULL, DEFAULT 'received' | received, validated, validation_failed, locked, under_review, scored, invalid |
+| `round_id` | TEXT | FK → hackathon_rounds.id, NOT NULL | Which round this submission belongs to (auto-assigned to current active round) |
+| `status` | TEXT | NOT NULL, DEFAULT 'received' | received, validated, validation_failed, locked, under_review, scored, invalid, superseded |
 | `is_late` | INTEGER | NOT NULL, DEFAULT 0 | Past deadline |
 | `is_final` | INTEGER | NOT NULL, DEFAULT 0 | Marked as final by team leader |
 | `validation_results` | TEXT | | JSON validation check results |
@@ -510,7 +501,7 @@ Tag-based submission records. Immutable after creation (status transitions only)
 | `received_at` | TEXT | NOT NULL | Server receive time |
 | `webhook_delivery_id` | TEXT | UNIQUE | Idempotency key from webhook |
 
-**Indexes:** UNIQUE(`team_id`, `tag_name`), UNIQUE(`webhook_delivery_id`), INDEX(`hackathon_id`, `status`), INDEX(`team_id`), INDEX(`hackathon_id`, `is_final`)
+**Indexes:** UNIQUE(`team_id`, `tag_name`), UNIQUE(`webhook_delivery_id`), INDEX(`hackathon_id`, `status`), INDEX(`team_id`), INDEX(`hackathon_id`, `is_final`), INDEX(`round_id`, `team_id`)
 
 ---
 
@@ -581,8 +572,8 @@ Judge invitations and acceptance status.
 | `id` | TEXT | PK, UUID | Unique judge record ID |
 | `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL, ON DELETE CASCADE | Which hackathon |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Invited user |
-| `invite_status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, declined |
-| `track_id` | TEXT | | Track specialization (null = all tracks) |
+| `invite_status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, accepted, declined, removed |
+| `track_id` | TEXT | | DEPRECATED — use `judge_tracks` junction table for multi-track support (see judging.md). Kept for backward compatibility; null = all tracks |
 | `invited_by` | TEXT | FK → users.id, NOT NULL | Who invited |
 | `invited_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 | `responded_at` | TEXT | | When accepted/declined |
@@ -704,52 +695,6 @@ Tracks every inbound webhook from VCS providers.
 
 ---
 
-### `outbound_webhooks`
-
-Organizer-configured webhook endpoints.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Webhook ID |
-| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Which hackathon |
-| `url` | TEXT | NOT NULL | HTTPS endpoint |
-| `secret_hash` | TEXT | NOT NULL | SHA-256 of signing secret |
-| `events` | TEXT | NOT NULL | JSON array of event patterns |
-| `active` | INTEGER | NOT NULL, DEFAULT 1 | Enabled flag |
-| `description` | TEXT | NOT NULL, DEFAULT '' | Human label |
-| `consecutive_failures` | INTEGER | NOT NULL, DEFAULT 0 | Failure counter |
-| `created_by` | TEXT | FK → users.id, NOT NULL | Creator |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `disabled_at` | TEXT | | Auto-disable timestamp |
-
-**Indexes:** INDEX(`hackathon_id`, `active`)
-
----
-
-### `outbound_webhook_deliveries`
-
-Delivery tracking for outbound webhooks.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Delivery ID |
-| `webhook_id` | TEXT | FK → outbound_webhooks.id, NOT NULL, ON DELETE CASCADE | Which webhook |
-| `event_id` | TEXT | NOT NULL | Internal event ID |
-| `event_type` | TEXT | NOT NULL | Event type |
-| `status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, delivered, failed, dead_lettered |
-| `http_status` | INTEGER | | Response status code |
-| `response_ms` | INTEGER | | Response time |
-| `error_message` | TEXT | | Error if failed |
-| `attempts` | INTEGER | NOT NULL, DEFAULT 0 | Delivery attempts |
-| `next_retry_at` | TEXT | | Next retry time |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `delivered_at` | TEXT | | When delivered |
-
-**Indexes:** UNIQUE(`webhook_id`, `event_id`), INDEX(`webhook_id`, `status`), INDEX(`next_retry_at`)
-
----
-
 ### `pending_installations`
 
 VCS app installations for repos not yet linked to teams.
@@ -764,25 +709,6 @@ VCS app installations for repos not yet linked to teams.
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
 
 **Indexes:** UNIQUE(`provider`, `repo_full_name`)
-
----
-
-### `hackathon_integrations`
-
-Enabled integrations per hackathon.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Record ID |
-| `hackathon_id` | TEXT | FK → hackathons.id, NOT NULL | Which hackathon |
-| `integration_id` | TEXT | NOT NULL | Integration manifest ID |
-| `config` | TEXT | NOT NULL, DEFAULT '{}' | JSON integration config |
-| `active` | INTEGER | NOT NULL, DEFAULT 1 | Enabled flag |
-| `enabled_by` | TEXT | FK → users.id, NOT NULL | Who enabled |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`hackathon_id`, `integration_id`)
 
 ---
 
@@ -821,7 +747,7 @@ Delivery tracking across all channels.
 | `id` | TEXT | PK, UUID | Delivery ID |
 | `event_id` | TEXT | NOT NULL | Triggering event ID |
 | `user_id` | TEXT | FK → users.id, NOT NULL | Recipient |
-| `channel` | TEXT | NOT NULL | email, in_app, push, slack, discord |
+| `channel` | TEXT | NOT NULL, CHECK IN ('email','in_app') | Delivery channel (email and in-app only for v1) |
 | `notification_type` | TEXT | NOT NULL | Notification type |
 | `status` | TEXT | NOT NULL, DEFAULT 'pending' | pending, delivered, failed, permanent_failure, dead_lettered |
 | `error_message` | TEXT | | Error details |
@@ -833,62 +759,6 @@ Delivery tracking across all channels.
 
 ---
 
-### `notification_preferences`
-
-Per-user notification preferences.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Row ID |
-| `user_id` | TEXT | FK → users.id, UNIQUE, NOT NULL | Which user |
-| `channels` | TEXT | NOT NULL, DEFAULT '{}' | JSON per-type channel overrides |
-| `global_settings` | TEXT | NOT NULL, DEFAULT '{}' | JSON quiet hours, digest config |
-| `slack_config` | TEXT | | JSON Slack webhook config |
-| `discord_config` | TEXT | | JSON Discord webhook config |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** UNIQUE(`user_id`)
-
----
-
-### `push_subscriptions`
-
-Web Push subscription storage.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Subscription ID |
-| `user_id` | TEXT | FK → users.id, NOT NULL | Owner |
-| `endpoint` | TEXT | UNIQUE, NOT NULL | Web Push endpoint URL |
-| `key_p256dh` | TEXT | NOT NULL | Client public key |
-| `key_auth` | TEXT | NOT NULL | Auth secret |
-| `user_agent` | TEXT | | Device identifier |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-| `last_used_at` | TEXT | | Last successful push |
-
-**Indexes:** INDEX(`user_id`), UNIQUE(`endpoint`)
-
----
-
-### `pending_digest_items`
-
-Notifications queued for digest delivery.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PK, UUID | Item ID |
-| `user_id` | TEXT | FK → users.id, NOT NULL | Recipient |
-| `hackathon_id` | TEXT | FK → hackathons.id, NULL | Context hackathon |
-| `notification_type` | TEXT | NOT NULL | Type |
-| `title` | TEXT | NOT NULL | Title |
-| `body` | TEXT | NOT NULL | Body |
-| `metadata` | TEXT | NOT NULL, DEFAULT '{}' | JSON data |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO-8601 |
-
-**Indexes:** INDEX(`user_id`, `created_at`), INDEX(`user_id`, `hackathon_id`)
-
----
-
 ### `hackathon_notification_config`
 
 Per-hackathon notification settings.
@@ -897,10 +767,6 @@ Per-hackathon notification settings.
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK, UUID | Config ID |
 | `hackathon_id` | TEXT | FK → hackathons.id, UNIQUE, NOT NULL | Which hackathon |
-| `slack_webhook_url` | TEXT | | Slack incoming webhook |
-| `discord_webhook_url` | TEXT | | Discord webhook |
-| `slack_events` | TEXT | NOT NULL, DEFAULT '[]' | JSON event types for Slack |
-| `discord_events` | TEXT | NOT NULL, DEFAULT '[]' | JSON event types for Discord |
 | `email_from_name` | TEXT | | Custom "from" name |
 | `email_reply_to` | TEXT | | Custom reply-to |
 | `broadcast_cooldown_minutes` | INTEGER | NOT NULL, DEFAULT 12 | Broadcast rate limit |
@@ -923,7 +789,7 @@ Append-only audit log. No UPDATE or DELETE.
 | `sequence` | INTEGER | NOT NULL | Per-hackathon sequence |
 | `hackathon_id` | TEXT | FK → hackathons.id, NULL | Scope (null = platform) |
 | `actor_id` | TEXT | FK → users.id, NULL | Who (null for system/bot/cron) |
-| `actor_type` | TEXT | NOT NULL | user, system, bot, cron, api_key |
+| `actor_type` | TEXT | NOT NULL | user, system, bot, cron |
 | `actor_ip` | TEXT | | Request IP |
 | `actor_user_agent` | TEXT | | User-Agent (max 256) |
 | `action` | TEXT | NOT NULL | Dot-notation action |
@@ -940,9 +806,9 @@ Append-only audit log. No UPDATE or DELETE.
 
 ---
 
-### `audit_archives`
+### `audit_archives` — *Phase 2*
 
-R2 archive tracking for cold-stored audit data.
+R2 archive tracking for cold-stored audit data. Added when Phase 2 audit archival is implemented.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -964,9 +830,9 @@ R2 archive tracking for cold-stored audit data.
 
 ---
 
-### `audit_anonymizations`
+### `audit_anonymizations` — *Phase 2*
 
-GDPR anonymization records.
+GDPR anonymization records. Added when Phase 2 anonymization is implemented.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -980,6 +846,21 @@ GDPR anonymization records.
 | `performed_by` | TEXT | NOT NULL | 'user_self' or admin ID |
 
 **Indexes:** INDEX(`original_user_id`), INDEX(`pseudonymous_id`)
+
+---
+
+## 12b. Analytics Tables
+
+Analytics tables are stored in D1 alongside core tables. Full schema definitions are in [analytics.md](./analytics.md).
+
+| Table | Phase | Purpose |
+|-------|-------|---------|
+| `analytics_aggregates` | Phase 1 | Pre-computed counters (total teams, submissions, etc.) for fast dashboard reads |
+| `analytics_exports` | Phase 1 | Export job tracking and download URLs |
+| `analytics_user_preferences` | Phase 1 | User consent preferences for engagement tracking |
+| `analytics_scheduled_reports` | Phase 2 | Recurring export job configuration |
+
+> **Note:** Raw analytics events are stored in Cloudflare Analytics Engine (not D1). Only aggregates and job metadata live in D1.
 
 ---
 
@@ -1016,16 +897,16 @@ GDPR anonymization records.
 | Table | Estimated Rows | Avg Row Size | Total Size |
 |-------|---------------|-------------|------------|
 | `users` | 2,000 | 400 B | ~800 KB |
-| `user_passkeys` | 500 | 300 B | ~150 KB |
+
 | `refresh_tokens` | 4,000 | 250 B | ~1 MB |
-| `organizations` | 10 | 500 B | ~5 KB |
-| `org_members` | 50 | 200 B | ~10 KB |
+| `workspaces` | 10 | 500 B | ~5 KB |
+| `workspace_members` | 50 | 200 B | ~10 KB |
 | `hackathons` | 10 | 2 KB | ~20 KB |
 | `hackathon_templates` | 5 | 5 KB | ~25 KB |
 | `teams` | 500 | 300 B | ~150 KB |
 | `team_members` | 2,000 | 200 B | ~400 KB |
 | `team_repos` | 500 | 300 B | ~150 KB |
-| `join_requests` | 300 | 250 B | ~75 KB |
+| `hackathon_sponsors` | 100 | 350 B | ~35 KB |
 | `submissions` | 1,500 | 500 B | ~750 KB |
 | `commit_log` | 50,000 | 350 B | ~17 MB |
 | `force_push_events` | 100 | 400 B | ~40 KB |
@@ -1034,27 +915,24 @@ GDPR anonymization records.
 | `judge_assignments` | 1,500 | 200 B | ~300 KB |
 | `scores` | 15,000 | 150 B | ~2.2 MB |
 | `ai_reviews` | 1,500 | 2 KB | ~3 MB |
-| `organizer_roles` | 50 | 200 B | ~10 KB |
-| `custom_role_definitions` | 30 | 400 B | ~12 KB |
-| `custom_role_assignments` | 100 | 200 B | ~20 KB |
+| `hackathon_rounds` | 30 | 300 B | ~9 KB |
+| `round_results` | 1,500 | 200 B | ~300 KB |
+
 | `platform_admins` | 5 | 150 B | ~1 KB |
-| `organizer_invites` | 30 | 300 B | ~9 KB |
-| `api_keys` | 50 | 300 B | ~15 KB |
+| `workspace_invites` | 30 | 300 B | ~9 KB |
+
 | `webhook_deliveries` | 60,000 | 300 B | ~18 MB |
-| `outbound_webhooks` | 30 | 300 B | ~9 KB |
-| `outbound_webhook_deliveries` | 10,000 | 250 B | ~2.5 MB |
 | `pending_installations` | 20 | 200 B | ~4 KB |
-| `hackathon_integrations` | 30 | 300 B | ~9 KB |
+
 | `in_app_notifications` | 50,000 | 300 B | ~15 MB |
 | `notification_deliveries` | 100,000 | 200 B | ~20 MB |
 | `notification_preferences` | 2,000 | 500 B | ~1 MB |
-| `push_subscriptions` | 1,000 | 300 B | ~300 KB |
-| `pending_digest_items` | 5,000 | 250 B | ~1.2 MB |
+
 | `hackathon_notification_config` | 10 | 400 B | ~4 KB |
 | `audit_events` | 200,000 | 400 B | ~80 MB |
 | `audit_archives` | 20 | 300 B | ~6 KB |
 | `audit_anonymizations` | 10 | 250 B | ~2.5 KB |
-| **Total** | **~506,000** | | **~165 MB** |
+| **Total** | **~495,000** | | **~160 MB** |
 
 ### Growth Projections
 
@@ -1091,40 +969,6 @@ flowchart LR
 | Test in dev first | All migrations run against local D1 (miniflare) before production |
 | One migration per PR | Each pull request generates at most one migration file |
 
-### v2 → v3 Migration Approach
-
-The v3 schema extends v2 significantly. Migration happens in phases:
-
-| Phase | Changes | Risk |
-|-------|---------|------|
-| 1. Add new tables | `organizations`, `org_members`, `team_repos`, `join_requests`, `custom_role_*`, notification tables, etc. | Zero risk — additive only |
-| 2. Add new columns | `users.mfa_enabled`, `hackathons.org_id`, `hackathons.tracks`, etc. | Low risk — nullable or with defaults |
-| 3. Data backfill | Populate `team_repos` from `teams.repo_full_name`, move refresh tokens from KV to D1, etc. | Medium risk — requires scripts |
-| 4. Remove deprecated columns | Drop `teams.repo_full_name` (replaced by `team_repos`) after verification | High risk — only after confirming no code references |
-
-### Backfill Scripts
-
-```typescript
-// Example: Migrate team repo data from teams table to team_repos table
-async function backfillTeamRepos(db: DbClient) {
-  const teams = await db.select().from(teamsTable).where(isNotNull(teamsTable.repo_full_name));
-
-  for (const team of teams) {
-    await db.insert(teamReposTable).values({
-      id: crypto.randomUUID(),
-      team_id: team.id,
-      hackathon_id: team.hackathon_id,
-      provider: 'github',
-      repo_full_name: team.repo_full_name,
-      repo_url: team.repo_url ?? `https://github.com/${team.repo_full_name}`,
-      installation_id: team.github_installation_id?.toString() ?? null,
-      bot_active: team.bot_active,
-      is_primary: 1,
-    }).onConflictDoNothing();
-  }
-}
-```
-
 ---
 
 ## 16. Partitioning & Scale
@@ -1144,17 +988,17 @@ flowchart TD
     B -->|Yes| C["Strategy 1:<br/>Audit archival to R2<br/>(biggest table)"]
     C --> D{"Still growing?"}
     D -->|No| C
-    D -->|Yes| E["Strategy 2:<br/>Per-org D1 instances<br/>(tenant isolation)"]
+    D -->|Yes| E["Strategy 2:<br/>Per-workspace D1 instances<br/>(tenant isolation)"]
     E --> F["Strategy 3:<br/>D1 read replicas<br/>(read scalability)"]
 ```
 
-### Partitioning by Organization
+### Partitioning by Workspace
 
 | Concern | Approach |
 |---------|----------|
-| Routing | API middleware routes to correct D1 instance based on org slug |
-| Cross-org queries | Platform admin queries fan out across instances (rare operation) |
-| User table | Shared `users` table in primary D1, org-specific tables in tenant D1 |
+| Routing | API middleware routes to correct D1 instance based on workspace slug |
+| Cross-workspace queries | Platform admin queries fan out across instances (rare operation) |
+| User table | Shared `users` table in primary D1, workspace-specific tables in tenant D1 |
 | Migrations | All D1 instances run same schema. Migration applied to all |
 
 ### D1 Read Replicas (Future Cloudflare Feature)

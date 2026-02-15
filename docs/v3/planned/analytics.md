@@ -137,7 +137,7 @@ interface AnalyticsEvent {
 }
 
 type EventCategory = 
-  | 'registration'
+  | 'participation'
   | 'team'
   | 'submission'
   | 'judging'
@@ -145,7 +145,6 @@ type EventCategory =
   | 'webhook'
   | 'notification'
   | 'sponsor'
-  | 'mentor'
   | 'platform';
 ```
 
@@ -185,15 +184,17 @@ The Event Processor enriches raw events before writing to Analytics Engine:
 
 ## Event Taxonomy
 
-### Registration Events
+### Participation Events
+
+Since all access is invite-only, there is no self-registration funnel. Events track invitation acceptance.
 
 | Action | Dimensions | Metrics | Trigger |
 |--------|-----------|---------|---------|
-| `registration.started` | `method`, `source`, `referrer` | — | User begins registration flow |
-| `registration.completed` | `method`, `source`, `referrer`, `track` | `duration_ms` | User completes registration |
-| `registration.abandoned` | `method`, `source`, `step` | `duration_ms` | User exits registration without completing |
-| `registration.waitlisted` | `source` | — | Registration when capacity full |
-| `registration.promoted` | — | — | Waitlisted user promoted to participant |
+| `participation.invited` | `method`, `role`, `track` | — | Invitation sent to user |
+| `participation.accepted` | `method`, `role`, `track` | `response_time_ms` | User accepts invitation |
+| `participation.declined` | `method`, `role` | `response_time_ms` | User declines invitation |
+| `participation.waitlisted` | `role` | — | User waitlisted (capacity full) |
+| `participation.promoted` | — | — | Waitlisted user promoted to participant |
 
 ### Team Events
 
@@ -221,7 +222,6 @@ The Event Processor enriches raw events before writing to Analytics Engine:
 | `judging.score_submitted` | `round`, `track`, `rubric_category` | `score`, `duration_ms` | Judge submits a score |
 | `judging.assignment_accepted` | `round` | — | Judge accepts assignment |
 | `judging.round_completed` | `round` | `submissions_scored`, `avg_score` | All scores in for a round |
-| `judging.audience_vote` | `track` | — | Audience member casts vote |
 | `judging.ai_review_completed` | `track`, `model` | `duration_ms`, `token_count` | AI review generated |
 
 ### Engagement Events
@@ -230,8 +230,7 @@ The Event Processor enriches raw events before writing to Analytics Engine:
 |--------|-----------|---------|---------|
 | `engagement.page_view` | `page`, `referrer` | `session_duration_ms` | Page loaded (frontend beacon) |
 | `engagement.announcement_viewed` | `announcement_id`, `priority` | — | User sees announcement |
-| `engagement.leaderboard_viewed` | — | — | User views leaderboard |
-| `engagement.mentor_requested` | `topic` | — | Participant requests mentor |
+
 | `engagement.sponsor_clicked` | `sponsor_id`, `placement` | — | User interacts with sponsor content |
 | `engagement.export_downloaded` | `format`, `dataset` | `row_count` | User downloads export file |
 
@@ -304,14 +303,14 @@ interface AnalyticsDatapoint {
 ### Query Examples
 
 ```sql
--- Registrations per day for a hackathon
+-- Accepted invitations per day for a hackathon
 SELECT
   toDate(timestamp) AS date,
-  count() AS registrations
+  count() AS accepted
 FROM analytics_events
 WHERE index1 = 'hack_abc123'
-  AND blob1 = 'registration'
-  AND blob2 = 'registration.completed'
+  AND blob1 = 'participation'
+  AND blob2 = 'participation.accepted'
   AND timestamp >= '2026-01-01'
 GROUP BY date
 ORDER BY date
@@ -380,18 +379,19 @@ interface AggregateEntry {
 
 | Metric | Dimension | Update Trigger |
 |--------|-----------|---------------|
-| `total_registrations` | — | `registration.completed` |
-| `total_registrations_by_track` | `track` | `registration.completed` |
+| `total_invited` | — | `participation.invited` |
+| `total_accepted` | — | `participation.accepted` |
+| `total_accepted_by_track` | `track` | `participation.accepted` |
 | `total_teams` | — | `team.created` |
 | `total_submissions` | — | `submission.created` |
 | `total_submissions_by_track` | `track` | `submission.created` |
 | `total_scores_submitted` | — | `judging.score_submitted` |
-| `total_audience_votes` | — | `judging.audience_vote` |
+
 | `total_page_views` | — | `engagement.page_view` |
 | `unique_visitors` | — | `engagement.page_view` (HyperLogLog via session) |
 | `total_commits` | — | `webhook.received` (push events) |
 | `total_pull_requests` | — | `webhook.received` (PR events) |
-| `total_mentor_sessions` | — | `engagement.mentor_requested` |
+
 | `total_sponsor_clicks` | `sponsor_id` | `engagement.sponsor_clicked` |
 
 ### Update Strategy
@@ -410,9 +410,33 @@ DO UPDATE SET value = value + 1, updated_at = excluded.updated_at;
 
 ## Dashboards
 
+### Participant Stats
+
+Participants can see basic stats about their hackathon. These are read from D1 aggregates and do not require Analytics Engine queries.
+
+| Stat | Description | Visible To |
+|------|-------------|------------|
+| Total teams | Number of teams in this hackathon | All participants |
+| Total participants | Number of accepted participants | All participants |
+| Total submissions | Number of submissions received | All participants |
+| Team activity | Own team's commit count, PR count, activity graph | Team members only |
+| Activity leaderboard | Ranked list of teams by commit activity | All participants (if enabled by organizer) |
+
+#### Participant Stats API
+
+```
+GET /api/v1/hackathons/:slug/analytics/participant-stats  # Basic hackathon stats (participant+)
+GET /api/v1/hackathons/:slug/analytics/my-team            # Own team's activity (team member+)
+GET /api/v1/hackathons/:slug/analytics/leaderboard        # Activity leaderboard (participant+, if enabled)
+```
+
+> **Note:** The activity leaderboard is opt-in per hackathon. Organizers enable/disable it in hackathon settings. When disabled, the endpoint returns `403`.
+
+---
+
 ### Organizer Dashboard
 
-Available to `admin+` roles. Shows hackathon health and engagement metrics.
+Available to `organizer+` roles on `platform.devsage.org`. Shows per-hackathon health and engagement metrics.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -425,12 +449,12 @@ Available to `admin+` roles. Shows hackathon health and engagement metrics.
 │          │ (+12 ↑)  │          │          │                 │
 ├──────────┴──────────┴──────────┴──────────┴─────────────────┤
 │                                                              │
-│  Registration Funnel              Activity Over Time         │
+│  Invitation Status                Activity Over Time         │
 │  ┌─────────────────┐             ┌─────────────────────┐    │
-│  │ Visited: 2,450  │             │ ~~^~~  ~~~~^~~~~     │    │
-│  │ Started: 890    │             │ commits  PRs  subs   │    │
-│  │ Completed: 186  │             │                      │    │
-│  │ Conv: 7.6%      │             │ [hourly / daily]     │    │
+│  │ Invited: 300    │             │ ~~^~~  ~~~~^~~~~     │    │
+│  │ Accepted: 186   │             │ commits  PRs  subs   │    │
+│  │ Declined: 14    │             │                      │    │
+│  │ Pending: 100    │             │ [hourly / daily]     │    │
 │  └─────────────────┘             └─────────────────────┘    │
 │                                                              │
 │  Submissions by Track             Team Size Distribution     │
@@ -448,7 +472,7 @@ Available to `admin+` roles. Shows hackathon health and engagement metrics.
 │  │                  │             │ 3. NullPtr (52c)    │    │
 │  └─────────────────┘             └─────────────────────┘    │
 │                                                              │
-│  [Export CSV]  [Export JSON]  [Schedule Report]               │
+│  [Export CSV]  [Export JSON]                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -457,7 +481,7 @@ Available to `admin+` roles. Shows hackathon health and engagement metrics.
 | Widget | Data Source | Refresh |
 |--------|-----------|---------|
 | Summary counters | D1 aggregates | Real-time (WebSocket) |
-| Registration funnel | Analytics Engine query | 1 minute |
+| Invitation status | D1 aggregates | Real-time |
 | Activity over time | Analytics Engine query | 1 minute |
 | Submissions by track | D1 aggregates | Real-time |
 | Team size distribution | Analytics Engine query | 5 minutes |
@@ -465,22 +489,9 @@ Available to `admin+` roles. Shows hackathon health and engagement metrics.
 | Top active teams | Analytics Engine query | 1 minute |
 | Online now | KV presence snapshot | 10 seconds |
 
-### Sponsor Dashboard
-
-Available to users with `sponsor` permission flag. Shows sponsor-specific metrics.
-
-| Widget | Description |
-|--------|-------------|
-| Impressions | How many times sponsor content was viewed |
-| Click-through rate | Clicks on sponsor links / total impressions |
-| Unique visitors | Distinct users who saw sponsor content |
-| Lead captures | Form submissions from sponsor-branded pages |
-| Placement performance | Breakdown by placement location (banner, sidebar, page) |
-| Comparison | Performance vs. other sponsors at same tier (anonymized) |
-
 ### Platform Admin Dashboard
 
-Available to platform `owner` role only. Cross-hackathon platform metrics.
+Available to platform admins at `admin.devsage.org`. Cross-hackathon platform metrics.
 
 | Widget | Description |
 |--------|-------------|
@@ -488,7 +499,7 @@ Available to platform `owner` role only. Cross-hackathon platform metrics.
 | User growth | New signups over time |
 | API health | Request count, error rate, p50/p95 latency |
 | Queue depth | Messages pending in each queue |
-| Top hackathons | By registration count, engagement, submissions |
+| Top hackathons | By participant count, engagement, submissions |
 | Error log | Recent 5xx errors with stack traces |
 
 ---
@@ -535,13 +546,13 @@ sequenceDiagram
 
 | Dataset | Description | Max Rows | Available To |
 |---------|-------------|----------|-------------|
-| `registrations` | All registration events with metadata | 100K | admin+ |
-| `submissions` | Submission events with validation results | 50K | admin+ |
-| `judging_scores` | All scores with rubric breakdowns | 50K | admin+ |
-| `activity` | Git activity (commits, PRs, issues) | 500K | admin+ |
-| `engagement` | Page views, interactions | 1M | admin+ |
-| `sponsor_metrics` | Sponsor impressions, clicks, leads | 100K | admin+, sponsor |
-| `full_export` | All events combined | 1M | owner only |
+| `participation` | Invitation and acceptance events | 100K | organizer+ |
+| `submissions` | Submission events with validation results | 50K | organizer+ |
+| `judging_scores` | All scores with rubric breakdowns | 50K | organizer+ |
+| `activity` | Git activity (commits, PRs, issues) | 500K | organizer+ |
+| `engagement` | Page views, interactions | 1M | organizer+ |
+| `sponsor_metrics` | Sponsor impressions, clicks, leads | 100K | organizer+ |
+| `full_export` | All events combined | 1M | organizer+ |
 
 ### Export Request
 
@@ -587,7 +598,9 @@ interface ExportResponse {
 | Rate limit | 10 exports per hour per hackathon | Prevent runaway export jobs |
 | Processing timeout | 5 minutes | Kill hung export jobs |
 
-### Scheduled Reports
+### Scheduled Reports — *Phase 2*
+
+> **Phase 2**: Scheduled email reports. In Phase 1, organizers use on-demand exports only.
 
 Organizers can schedule recurring export jobs:
 
@@ -642,7 +655,7 @@ function pseudonymize(userId: string, salt: string): string {
 | Analytics Engine datapoints | 2 years | Automatic (Cloudflare retention policy) |
 | D1 aggregate cache | Lifetime of hackathon + 1 year | Cron cleanup job |
 | R2 export files | 7 days | R2 lifecycle rule |
-| Scheduled reports | Until disabled or hackathon archived | Manual or archival cleanup |
+| Scheduled reports *(Phase 2)* | Until disabled or hackathon archived | Manual or archival cleanup |
 
 ### GDPR Compliance
 
@@ -650,23 +663,29 @@ function pseudonymize(userId: string, salt: string): string {
 |-------|---------------|
 | Right to access | Export API provides all analytics data for a hackathon |
 | Right to erasure | Pseudonymized data cannot be linked back to user. Salt rotation ensures eventual de-linkage |
-| Right to restrict | Users can opt out of engagement tracking (page views) via account settings |
+| Right to restrict | Users can revoke tracking consent via cookie banner or account settings. Engagement tracking requires explicit consent |
 | Data portability | CSV/JSON export in standard formats |
 
-### Opt-out Mechanism
+### Consent Mechanism
 
-Users can opt out of frontend engagement tracking:
+Frontend engagement tracking requires explicit user consent via a cookie/tracking consent banner (GDPR-compliant).
 
 ```typescript
-interface AnalyticsPreferences {
-  trackPageViews: boolean;      // Default: true
-  trackInteractions: boolean;   // Default: true
+interface AnalyticsConsent {
+  trackPageViews: boolean;      // Default: false (requires consent)
+  trackInteractions: boolean;   // Default: false (requires consent)
   // Note: server-side events (submissions, scores) are always tracked
   // because they are operational data, not behavioral tracking
 }
 ```
 
-When opted out, the frontend SDK does not emit `engagement.*` events. Server-side events (registrations, submissions, scores) are always recorded because they are operational, not behavioral.
+**Consent flow:**
+1. First visit → show consent banner ("We use analytics to improve the hackathon experience")
+2. User accepts → store consent in cookie + `analytics_user_preferences` table, start tracking
+3. User declines → no `engagement.*` events emitted, no banner shown again for 30 days
+4. User can change preference at any time via account settings
+
+Server-side events (participation, submissions, scores) are always recorded because they are operational, not behavioral — these do not require consent.
 
 ---
 
@@ -676,14 +695,13 @@ When opted out, the frontend SDK does not emit `engagement.*` events. Server-sid
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `/api/v1/hackathons/:slug/analytics/summary` | JWT | admin | Summary counters (from D1 aggregates) |
-| GET | `/api/v1/hackathons/:slug/analytics/registrations` | JWT | admin | Registration funnel data |
-| GET | `/api/v1/hackathons/:slug/analytics/activity` | JWT | admin | Activity timeline (commits, PRs, submissions) |
-| GET | `/api/v1/hackathons/:slug/analytics/engagement` | JWT | admin | Engagement metrics (page views, heatmap) |
-| GET | `/api/v1/hackathons/:slug/analytics/teams` | JWT | admin | Team statistics (size distribution, activity ranking) |
-| GET | `/api/v1/hackathons/:slug/analytics/submissions` | JWT | admin | Submission metrics by track, validation results |
-| GET | `/api/v1/hackathons/:slug/analytics/judging` | JWT | admin | Judging progress, score distributions |
-| GET | `/api/v1/hackathons/:slug/analytics/sponsors` | JWT | admin | Sponsor performance metrics |
+| GET | `/api/v1/hackathons/:slug/analytics/summary` | JWT | organizer | Summary counters (from D1 aggregates) |
+| GET | `/api/v1/hackathons/:slug/analytics/invitations` | JWT | organizer | Invitation status (invited, accepted, declined, pending) |
+| GET | `/api/v1/hackathons/:slug/analytics/activity` | JWT | organizer | Activity timeline (commits, PRs, submissions) |
+| GET | `/api/v1/hackathons/:slug/analytics/engagement` | JWT | organizer | Engagement metrics (page views, heatmap) |
+| GET | `/api/v1/hackathons/:slug/analytics/teams` | JWT | organizer | Team statistics (size distribution, activity ranking) |
+| GET | `/api/v1/hackathons/:slug/analytics/submissions` | JWT | organizer | Submission metrics by track, validation results |
+| GET | `/api/v1/hackathons/:slug/analytics/judging` | JWT | organizer | Judging progress, score distributions |
 
 ### Query Parameters (common to all dashboard endpoints)
 
@@ -699,34 +717,27 @@ When opted out, the frontend SDK does not emit `engagement.*` events. Server-sid
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| POST | `/api/v1/hackathons/:slug/analytics/exports` | JWT | admin | Create export job |
-| GET | `/api/v1/hackathons/:slug/analytics/exports` | JWT | admin | List export jobs |
-| GET | `/api/v1/hackathons/:slug/analytics/exports/:exportId` | JWT | admin | Get export job status + download URL |
-| DELETE | `/api/v1/hackathons/:slug/analytics/exports/:exportId` | JWT | admin | Cancel/delete export job |
+| POST | `/api/v1/hackathons/:slug/analytics/exports` | JWT | organizer | Create export job |
+| GET | `/api/v1/hackathons/:slug/analytics/exports` | JWT | organizer | List export jobs |
+| GET | `/api/v1/hackathons/:slug/analytics/exports/:exportId` | JWT | organizer | Get export job status + download URL |
+| DELETE | `/api/v1/hackathons/:slug/analytics/exports/:exportId` | JWT | organizer | Cancel/delete export job |
 
-### Scheduled Report Endpoints
-
-| Method | Path | Auth | Min Role | Description |
-|--------|------|------|----------|-------------|
-| POST | `/api/v1/hackathons/:slug/analytics/reports` | JWT | admin | Create scheduled report |
-| GET | `/api/v1/hackathons/:slug/analytics/reports` | JWT | admin | List scheduled reports |
-| PATCH | `/api/v1/hackathons/:slug/analytics/reports/:reportId` | JWT | admin | Update scheduled report |
-| DELETE | `/api/v1/hackathons/:slug/analytics/reports/:reportId` | JWT | admin | Delete scheduled report |
-
-### Sponsor-Specific Endpoints
+### Scheduled Report Endpoints — *Phase 2*
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `/api/v1/hackathons/:slug/analytics/sponsors/:sponsorId` | JWT | sponsor | Sponsor's own metrics |
-| POST | `/api/v1/hackathons/:slug/analytics/sponsors/:sponsorId/export` | JWT | sponsor | Export sponsor's own data |
+| POST | `/api/v1/hackathons/:slug/analytics/reports` | JWT | organizer | Create scheduled report |
+| GET | `/api/v1/hackathons/:slug/analytics/reports` | JWT | organizer | List scheduled reports |
+| PATCH | `/api/v1/hackathons/:slug/analytics/reports/:reportId` | JWT | organizer | Update scheduled report |
+| DELETE | `/api/v1/hackathons/:slug/analytics/reports/:reportId` | JWT | organizer | Delete scheduled report |
 
 ### Platform Admin Endpoints
 
 | Method | Path | Auth | Min Role | Description |
 |--------|------|------|----------|-------------|
-| GET | `/api/v1/admin/analytics/platform` | JWT | platform_owner | Platform-wide metrics |
-| GET | `/api/v1/admin/analytics/hackathons` | JWT | platform_owner | Cross-hackathon comparison |
-| GET | `/api/v1/admin/analytics/api-health` | JWT | platform_owner | API request metrics |
+| GET | `/api/v1/admin/analytics/platform` | JWT | platform admin | Platform-wide metrics |
+| GET | `/api/v1/admin/analytics/hackathons` | JWT | platform admin | Cross-hackathon comparison |
+| GET | `/api/v1/admin/analytics/api-health` | JWT | platform admin | API request metrics |
 
 ### Ingestion Endpoint (Frontend SDK)
 
@@ -757,13 +768,13 @@ The frontend SDK batches events and sends them every 10 seconds or when the batc
 | Analytics Engine is down | Events queued in Cloudflare Queue (7-day retention). Replayed when AE recovers |
 | Export job exceeds 5-minute timeout | Job marked as `failed` with error message. User can retry with narrower time range or filters |
 | Hackathon has zero events | Dashboard shows empty states with helpful messages ("No submissions yet") |
+| Participant accesses leaderboard when disabled | Returns 403. Organizer must enable leaderboard in hackathon settings |
 | Two export jobs request overlapping data | Both run independently — no deduplication (simple, correct) |
 | Export file exceeds 100MB | Processing truncates at 100MB with warning in export metadata |
-| User opts out of tracking mid-hackathon | Future `engagement.*` events stop. Historical data remains (pseudonymized, cannot be linked) |
+| User revokes tracking consent mid-hackathon | Future `engagement.*` events stop. Historical data remains (pseudonymized, cannot be linked) |
 | Salt rotation occurs during active hackathon | Same user gets new pseudonym. Unique user counts may slightly overcount during rotation window (acceptable) |
 | Hackathon spans timezone boundary | All timestamps UTC. Dashboard displays in organizer's configured timezone |
-| Sponsor views analytics for wrong hackathon | Sponsor permission is per-hackathon. Role check prevents cross-hackathon access |
-| Cron job generates scheduled report but hackathon is archived | Report generated with final data. Schedule automatically disabled on next run |
+| Cron job generates scheduled report but hackathon is archived | Report generated with final data. Schedule automatically disabled on next run *(Phase 2)* |
 | Frontend SDK fails to send events (ad blocker, network) | Events silently dropped. Server-side events (the important ones) are unaffected |
 | Analytics query returns too many rows | Queries capped at 10,000 rows. Dashboard uses `LIMIT` and aggregation. Export API handles large results via pagination |
 | Concurrent aggregate updates (race condition) | D1 `ON CONFLICT ... SET value = value + 1` is atomic. Queue consumer processes events sequentially per hackathon |
@@ -774,7 +785,7 @@ The frontend SDK batches events and sends them every 10 seconds or when the batc
 
 | Code | HTTP Status | Condition |
 |------|-------------|-----------|
-| `ANALYTICS_FORBIDDEN` | 403 | User lacks admin+ role for analytics access |
+| `ANALYTICS_FORBIDDEN` | 403 | User lacks required role for analytics access |
 | `ANALYTICS_HACKATHON_NOT_FOUND` | 404 | Hackathon slug doesn't exist |
 | `ANALYTICS_INVALID_TIME_RANGE` | 400 | `from` is after `to`, or range exceeds 365 days |
 | `ANALYTICS_INVALID_GRANULARITY` | 400 | Requested granularity too fine for time range (e.g., minute for 30 days) |
@@ -788,7 +799,7 @@ The frontend SDK batches events and sends them every 10 seconds or when the batc
 | `REPORT_INVALID_SCHEDULE` | 400 | Invalid schedule configuration |
 | `EVENT_BATCH_TOO_LARGE` | 400 | Frontend event batch exceeds 50 events |
 | `EVENT_INVALID_FORMAT` | 400 | Event missing required fields or invalid dimension/metric types |
-| `SPONSOR_ANALYTICS_FORBIDDEN` | 403 | User is not a sponsor for this hackathon |
+
 
 ---
 
@@ -801,7 +812,7 @@ Pre-computed counters stored in D1 for fast dashboard reads.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `hackathon_id` | TEXT | NOT NULL, FK → hackathons.id | Hackathon this aggregate belongs to |
-| `metric` | TEXT | NOT NULL | Metric name (e.g., `total_registrations`) |
+| `metric` | TEXT | NOT NULL | Metric name (e.g., `total_accepted`) |
 | `dimension` | TEXT | NOT NULL, DEFAULT '' | Grouping dimension (e.g., track name, empty for totals) |
 | `value` | REAL | NOT NULL, DEFAULT 0 | Current aggregate value |
 | `updated_at` | TEXT | NOT NULL | Last update timestamp |
@@ -820,7 +831,7 @@ Tracks export job status and download URLs.
 | `id` | TEXT | PRIMARY KEY | Export job ID (`exp_` prefix + UUID) |
 | `hackathon_id` | TEXT | NOT NULL, FK → hackathons.id | Hackathon context |
 | `requested_by` | TEXT | NOT NULL, FK → users.id | User who requested the export |
-| `dataset` | TEXT | NOT NULL | Dataset name (e.g., `registrations`) |
+| `dataset` | TEXT | NOT NULL | Dataset name (e.g., `participation`) |
 | `format` | TEXT | NOT NULL | `csv`, `json`, or `jsonl` |
 | `status` | TEXT | NOT NULL, DEFAULT 'queued' | `queued`, `processing`, `ready`, `failed`, `expired` |
 | `time_range_from` | TEXT | NOT NULL | Start of exported time range |
@@ -839,9 +850,9 @@ Tracks export job status and download URLs.
 - `idx_exports_hackathon_status` → `(hackathon_id, status)` — list active exports
 - `idx_exports_expires` → `(expires_at)` — cleanup expired exports
 
-### analytics_scheduled_reports
+### analytics_scheduled_reports — *Phase 2*
 
-Configuration for recurring export jobs.
+Configuration for recurring export jobs. Only needed when Phase 2 scheduled reports are implemented.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -870,8 +881,8 @@ User opt-out preferences for engagement tracking.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `user_id` | TEXT | PRIMARY KEY, FK → users.id | User ID |
-| `track_page_views` | INTEGER | NOT NULL, DEFAULT 1 | 1 = allow, 0 = opted out |
-| `track_interactions` | INTEGER | NOT NULL, DEFAULT 1 | 1 = allow, 0 = opted out |
+| `track_page_views` | INTEGER | NOT NULL, DEFAULT 0 | 0 = no consent, 1 = consented |
+| `track_interactions` | INTEGER | NOT NULL, DEFAULT 0 | 0 = no consent, 1 = consented |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Last preference change |
 
 ---

@@ -1,6 +1,6 @@
 # 13 — Frontend Architecture
 
-> React SPA with component-driven design, real-time data flow, accessibility-first development, and strict performance budgets — all running on Cloudflare Pages at the edge.
+> React SPA with component-driven design, real-time data flow, accessibility-first development, and strict performance budgets — all running on Cloudflare Workers Sites at the edge. Phase 1 uses invite-only participation (no public registration), GitHub as the sole VCS provider, 5-state hackathon lifecycle with rounds-based elimination, and email + in-app as the only notification channels.
 
 ---
 
@@ -58,7 +58,7 @@
 | Icons | Lucide React | Latest | Consistent icon set, tree-shakeable |
 | Date/time | date-fns | Latest | Lightweight, tree-shakeable date formatting |
 | Charts | Recharts | Latest | SVG-based, accessible chart components |
-| Hosting | Cloudflare Pages | — | Edge-deployed, global CDN |
+| Hosting | Cloudflare Workers Sites | — | Edge-deployed, global CDN |
 
 ### Shared Package Dependency
 
@@ -130,7 +130,7 @@ flowchart TD
 | Layout | Used For | SideNav Content |
 |--------|----------|-----------------|
 | `PublicLayout` | Landing, login, public hackathon pages | None — full-width content |
-| `DashboardLayout` | User dashboard, settings, org management | My Hackathons, Teams, Settings, Admin |
+| `DashboardLayout` | User dashboard, settings, workspace management | My Hackathons, Teams, Settings, Admin |
 | `HackathonLayout` | Everything inside a specific hackathon | Overview, Teams, Submissions, Judging, Activity, Settings |
 
 ---
@@ -146,13 +146,15 @@ flowchart TD
 /dashboard/settings                 → User settings
 /dashboard/notifications            → Notification center
 
-/hackathons                         → Browse/discover hackathons (PublicLayout)
+/hackathons                         → Browse hackathons (PublicLayout)
 /hackathons/new                     → Create hackathon wizard (DashboardLayout)
 
 /:slug                              → Hackathon landing (PublicLayout or HackathonLayout)
-/:slug/register                     → Registration flow
+/:slug/accept-invite                → Accept invitation flow (invite-only)
 /:slug/teams                        → Team listing
 /:slug/teams/:teamId                → Team detail
+/:slug/rounds                       → Rounds overview (active/completed)
+/:slug/rounds/:roundId              → Round detail (submissions for that round)
 /:slug/submissions                  → Submission gallery
 /:slug/submissions/:submissionId    → Submission detail + diff viewer
 /:slug/judging                      → Judging dashboard (judge+ role)
@@ -160,22 +162,23 @@ flowchart TD
 /:slug/leaderboard                  → Public leaderboard
 /:slug/activity                     → Real-time activity feed
 /:slug/announcements                → Announcements timeline
-/:slug/mentors                      → Mentor directory + request
 /:slug/sponsors                     → Sponsor showcase
-/:slug/analytics                    → Analytics dashboard (admin+ role)
-/:slug/settings                     → Hackathon settings (admin+ role)
-/:slug/settings/roles               → Role management
-/:slug/settings/webhooks            → Webhook configuration
+/:slug/analytics                    → Analytics dashboard (organizer+ role)
+/:slug/settings                     → Hackathon settings (organizer+ role)
 /:slug/settings/judges              → Judge management
 /:slug/settings/tracks              → Track/category management
+/:slug/settings/rounds              → Round configuration
+/:slug/settings/invites             → Invite management
 
-/admin                              → Platform admin (owner role)
-/admin/orgs                         → Organization management
+/admin                              → Platform admin (platform_admin role)
+/admin/workspaces                   → Workspace management
 /admin/users                        → User management
 /admin/audit                        → Global audit log viewer
 
 /*                                  → 404 Not Found
 ```
+
+> **Phase 2**: Additional routes will be added for `/:slug/mentors` (mentor directory and request system), `/:slug/settings/webhooks` (outbound webhook configuration), and `/:slug/settings/roles` (custom role management) when those features are introduced.
 
 ### Route Protection
 
@@ -213,7 +216,7 @@ interface ProtectedRouteProps {
 // RoleGuard — requires minimum role within a hackathon
 interface RoleGuardProps {
   children: React.ReactNode;
-  minRole: 'participant' | 'team_leader' | 'judge' | 'moderator' | 'admin' | 'owner';
+  minRole: 'team_member' | 'team_lead' | 'judge' | 'co_organizer' | 'organizer';
   hackathonSlug: string;
   fallback?: React.ReactNode;  // Show instead of redirect
 }
@@ -221,7 +224,7 @@ interface RoleGuardProps {
 // FeatureGate — conditional rendering based on hackathon config
 interface FeatureGateProps {
   children: React.ReactNode;
-  feature: 'mentorship' | 'sponsors' | 'analytics' | 'audience_voting';
+  feature: 'sponsors' | 'analytics' | 'rounds';
   hackathonSlug: string;
   fallback?: React.ReactNode;
 }
@@ -268,9 +271,10 @@ components/
 │   └── CommandPalette.tsx
 ├── hackathon/           # Hackathon-specific components
 │   ├── HackathonCard.tsx
-│   ├── PhaseIndicator.tsx
+│   ├── StateIndicator.tsx
+│   ├── RoundIndicator.tsx
 │   ├── CountdownTimer.tsx
-│   ├── RegistrationForm.tsx
+│   ├── InviteAcceptance.tsx
 │   └── AnnouncementBanner.tsx
 ├── team/                # Team components
 │   ├── TeamCard.tsx
@@ -288,8 +292,7 @@ components/
 │   ├── RubricForm.tsx
 │   ├── ScoreSlider.tsx
 │   ├── LeaderboardTable.tsx
-│   ├── JudgeAssignmentGrid.tsx
-│   └── AudienceVotingCard.tsx
+│   └── JudgeAssignmentGrid.tsx
 ├── notification/        # Notification components
 │   ├── NotificationBell.tsx
 │   ├── NotificationList.tsx
@@ -301,16 +304,12 @@ components/
 │   ├── FunnelChart.tsx
 │   ├── HeatmapCalendar.tsx
 │   └── ExportButton.tsx
-├── mentor/              # Mentorship components
-│   ├── MentorCard.tsx
-│   ├── SessionScheduler.tsx
-│   ├── MentorRequestForm.tsx
-│   └── FeedbackForm.tsx
 └── sponsor/             # Sponsor components
     ├── SponsorTierCard.tsx
-    ├── SponsorShowcase.tsx
-    └── LeadCaptureForm.tsx
+    └── SponsorShowcase.tsx
 ```
+
+> **Phase 2**: Additional component directories will be added for `mentor/` (mentorship system — MentorCard, SessionScheduler, MentorRequestForm, FeedbackForm), `sponsor/LeadCaptureForm` (sponsor lead capture), and `judging/AudienceVotingCard` (audience voting) when those features are introduced.
 
 ### Component Design Principles
 
@@ -380,6 +379,10 @@ const queryKeys = {
     all: (slug: string) => ['hackathons', slug, 'teams'] as const,
     detail: (slug: string, teamId: string) => ['hackathons', slug, 'teams', teamId] as const,
     members: (slug: string, teamId: string) => ['hackathons', slug, 'teams', teamId, 'members'] as const,
+  },
+  rounds: {
+    all: (slug: string) => ['hackathons', slug, 'rounds'] as const,
+    detail: (slug: string, roundId: string) => ['hackathons', slug, 'rounds', roundId] as const,
   },
   submissions: {
     all: (slug: string) => ['hackathons', slug, 'submissions'] as const,
@@ -633,7 +636,9 @@ const eventQueryMap: Record<string, (event: RealtimeEvent) => readonly unknown[]
   'submission.validated':  (e) => queryKeys.submissions.detail(e.hackathonSlug, e.submissionId),
   'score.submitted':       (e) => queryKeys.judging.leaderboard(e.hackathonSlug),
   'team.member_joined':    (e) => queryKeys.teams.members(e.hackathonSlug, e.teamId),
-  'hackathon.phase_changed': (e) => queryKeys.hackathons.detail(e.hackathonSlug),
+  'hackathon.state_changed': (e) => queryKeys.hackathons.detail(e.hackathonSlug),
+  'round.started':           (e) => queryKeys.hackathons.detail(e.hackathonSlug),
+  'team.eliminated':         (e) => queryKeys.teams.all(e.hackathonSlug),
   'announcement.created':  (e) => queryKeys.hackathons.detail(e.hackathonSlug),
 };
 ```
@@ -823,8 +828,8 @@ interface LiveRegionConfig {
   formErrors: 'assertive';
   // Toast notifications — polite
   toasts: 'polite';
-  // Phase transitions — assertive
-  phaseChange: 'assertive';
+  // State transitions — assertive
+  stateChange: 'assertive';
 }
 ```
 
@@ -879,7 +884,7 @@ interface LiveRegionConfig {
 | Font loading | `font-display: swap`, preload critical fonts |
 | CSS | Tailwind v4 JIT — only ships used utilities |
 | Tree shaking | ESM imports, sideEffects: false in package.json |
-| Compression | Brotli (Cloudflare Pages automatic) |
+| Compression | Brotli (Cloudflare Workers Sites automatic) |
 | Caching | Immutable hashed assets (1yr cache), HTML no-cache |
 | Skeleton screens | Content-shaped placeholders during loading |
 | Virtual scrolling | `@tanstack/react-virtual` for long lists (teams, submissions, activity) |
@@ -1027,7 +1032,7 @@ flowchart LR
     E --> F[Bundle Analysis]
     F --> G{Budget exceeded?}
     G -->|Yes| H[Fail CI]
-    G -->|No| I[Deploy to Cloudflare Pages]
+    G -->|No| I[Deploy to Workers Site]
     
     I --> J[Preview Deploy on PR]
     I --> K[Production Deploy on main]
@@ -1058,7 +1063,7 @@ interface BuildConfig {
 
 | Environment | URL | Deploy Trigger | Purpose |
 |-------------|-----|---------------|---------|
-| Preview | `{branch}.devsage.pages.dev` | Every PR push | Review changes in isolation |
+| Preview | `web.devsage-org.workers.dev` | Every PR push | Review changes in isolation |
 | Staging | `staging.devsage.org` | Merge to `staging` branch | Pre-production validation |
 | Production | `devsage.org` | Merge to `main` branch | Live traffic |
 
@@ -1094,7 +1099,7 @@ In development, Vite proxies API requests to the local Wrangler dev server:
 | Scenario | Behavior |
 |----------|----------|
 | User opens app with expired JWT | `/auth/me` returns 401 → redirect to login, preserve current URL as `returnTo` |
-| User has app open during hackathon phase transition | WebSocket pushes `phase_changed` event → invalidate hackathon query → UI reflects new phase with banner notification |
+| User has app open during hackathon state transition | WebSocket pushes `state_changed` event → invalidate hackathon query → UI reflects new state with banner notification |
 | Network drops during form submission | Mutation retries 3x with backoff → if all fail, show error with "Save draft locally" option → retry on reconnect |
 | User opens same hackathon in multiple tabs | Each tab has its own WebSocket connection → presence shows as single user (server deduplicates) |
 | Browser doesn't support WebSocket | Automatic fallback to SSE → reduced functionality (no presence, no bi-directional) |
@@ -1151,7 +1156,7 @@ When a lazy-loaded chunk fails (common after deployment when hashes change):
 | Real-time approach | WebSocket + SSE fallback | WebSocket for bidirectional (presence), SSE as graceful degradation | Long polling (wasteful), WebSocket only (no fallback), Firebase (vendor lock) |
 | Form handling | React Hook Form + Zod | Uncontrolled by default (performance), Zod resolver shares schemas with API | Formik (heavier, controlled), native forms (no validation DX) |
 | Build tool | Vite | Fastest HMR, ESBuild for dev, Rollup for production, ecosystem standard | Webpack (slower), Turbopack (too new), Parcel (less configurable) |
-| Hosting | Cloudflare Pages | Same vendor as API (Workers), global CDN, preview deploys per PR, generous free tier | Vercel (different vendor), Netlify (different vendor), S3+CloudFront (more complex) |
+| Hosting | Cloudflare Workers Sites | Same vendor and runtime as API (Workers), global CDN, preview deploys per PR, generous free tier | Cloudflare Pages (separate build system), Vercel (different vendor), Netlify (different vendor), S3+CloudFront (more complex) |
 | Charts | Recharts | SVG-based (accessible), React-native API, tree-shakeable, lightweight | Chart.js (canvas-based, less accessible), D3 (too low-level), Nivo (heavier) |
 | Virtual scrolling | @tanstack/react-virtual | Same ecosystem as TanStack Query, lightweight, supports variable-height items | react-window (less maintained), react-virtualized (heavier) |
 | Error monitoring | Sentry | Industry standard, React integration, source map upload, performance tracing | LogRocket (expensive), Bugsnag (less React support), custom (maintenance burden) |

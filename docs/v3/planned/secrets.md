@@ -87,7 +87,7 @@ The web app uses only `VITE_*` environment variables, which are embedded in the 
 ```
 .env
 .env.*
-!apps/web/.env.production     # Exception: client-visible vars only
+!apps/platform/.env.production # Exception: client-visible vars only
 .dev.vars
 .wrangler/
 apps/api/.env.production      # Production secret file for bulk upload

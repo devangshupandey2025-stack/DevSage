@@ -1,6 +1,6 @@
 # Production Deployment
 
-> Full CI/CD pipeline with preview deploys per PR, staging environment validation, production deployment to Cloudflare Workers + Pages, automated migration rollback, and multi-environment secret management.
+> Full CI/CD pipeline with preview deploys per PR, staging environment validation, production deployment to Cloudflare Workers + Workers Sites, automated migration rollback, and multi-environment secret management.
 
 ---
 
@@ -65,7 +65,7 @@ flowchart LR
 | Environment | API URL | Web URL | Deploy Trigger | Purpose |
 |-------------|---------|---------|---------------|---------|
 | **Local** | `http://localhost:8787` | `http://localhost:5173` | `pnpm dev` | Development |
-| **Preview** | `{branch}-api.devsage.pages.dev` | `{branch}.devsage.pages.dev` | Every PR push | Isolated review |
+| **Preview** | `api.devsage-org.workers.dev` | `platform.devsage-org.workers.dev` | Every PR push | Isolated review |
 | **Staging** | `https://staging-api.devsage.org` | `https://staging.devsage.org` | Push to `staging` branch | Pre-production validation |
 | **Production** | `https://api.devsage.org` | `https://devsage.org` | Merge to `main` | Live traffic |
 
@@ -147,7 +147,7 @@ jobs:
           name: build-output
           path: |
             apps/api/dist/
-            apps/web/dist/
+            apps/platform/dist/
 
   bundle-analysis:
     runs-on: ubuntu-latest
@@ -177,7 +177,7 @@ jobs:
       - name: Deploy to staging
         run: |
           pnpm deploy:api:staging
-          pnpm deploy:web:staging
+pnpm deploy:platform:staging
 
   deploy-production:
     runs-on: ubuntu-latest
@@ -257,11 +257,11 @@ pnpm deploy:web
 pnpm deploy:web:staging
 ```
 
-This runs `tsc --noEmit && vite build` followed by `wrangler deploy` from `apps/web/`.
+This runs `tsc --noEmit && vite build` followed by `wrangler deploy` from `apps/platform/`.
 
 ### Web Environment Variables
 
-The production env file `apps/web/.env.production` is committed to the repository:
+The production env file `apps/platform/.env.production` is committed to the repository:
 
 ```env
 VITE_API_ORIGIN=https://api.devsage.org
@@ -370,7 +370,7 @@ Every pull request automatically deploys a preview environment:
 
 | Feature | Detail |
 |---------|--------|
-| URL pattern | `{branch-name}.devsage.pages.dev` |
+| URL pattern | `{app}.devsage-org.workers.dev` |
 | Isolation | Separate D1 database per PR |
 | Lifecycle | Created on first PR push, deleted when PR closes |
 | Seed data | Automatically seeded with sample data |
@@ -383,8 +383,9 @@ Every pull request automatically deploys a preview environment:
 
 | Service | URL | Status |
 |---------|-----|--------|
-| Web | [feat-team-invites.devsage.pages.dev](https://...) | ✅ Deployed |
-| API | [feat-team-invites-api.devsage.pages.dev](https://...) | ✅ Deployed |
+| Platform | [platform.devsage-org.workers.dev](https://...) | ✅ Deployed |
+| API | [api.devsage-org.workers.dev](https://...) | ✅ Deployed |
+| Admin | [admin.devsage-org.workers.dev](https://...) | ✅ Deployed |
 
 Deployed at: 2026-01-15 10:30 UTC
 Commit: abc1234
@@ -524,6 +525,8 @@ Or use the Cloudflare dashboard: Workers & Pages → Worker → Logs.
 | Record | Name | Target | Notes |
 |--------|------|--------|-------|
 | CNAME | `devsage.org` | Web Worker | Proxied through Cloudflare |
+| CNAME | `platform.devsage.org` | Platform Worker | Proxied through Cloudflare |
+| CNAME | `shikdd.devsage.org` | Admin Worker (`admin.devsage-org.workers.dev`) | Proxied through Cloudflare |
 | CNAME | `api.devsage.org` | API Worker | Proxied through Cloudflare |
 | CNAME | `staging.devsage.org` | Staging Web Worker | Proxied |
 | CNAME | `staging-api.devsage.org` | Staging API Worker | Proxied |

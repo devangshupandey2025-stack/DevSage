@@ -1,6 +1,6 @@
 # Infrastructure & Deployment
 
-> Edge-native platform on Cloudflare Workers with D1, Durable Objects, Queues, KV, and R2 — deployed via CI/CD with staging environments, preview deploys, observability dashboards, secret rotation, cost modelling, and a multi-region readiness plan. Everything runs at the edge, $5/month at Year 1 scale.
+> Edge-native platform on Cloudflare Workers with D1, Durable Objects, Queues, KV, and R2 — deployed via CI/CD with staging environments, preview deploys, observability dashboards, secret rotation, cost modelling, and a multi-region readiness plan. Everything runs at the edge, $5/month at Year 1 scale. Phase 1 uses GitHub as the sole VCS provider, JWT cookie auth only (no API keys), and email as the only external notification channel.
 
 ---
 
@@ -56,7 +56,7 @@ graph TD
         end
 
         subgraph "Storage"
-            D1[("D1 Database<br/>(SQLite, ~40 tables)")]
+            D1[("D1 Database<br/>(SQLite, ~28 tables)")]
             KV["Workers KV<br/>(rate limits, tokens, cache)"]
             R2["R2 Object Storage<br/>(logos, banners, archives)"]
         end
@@ -64,29 +64,24 @@ graph TD
         subgraph "Async Processing"
             Q1["WEBHOOK_QUEUE<br/>(VCS webhook processing)"]
             Q2["EVENT_QUEUE<br/>(internal event bus)"]
-            Q3["OUTBOUND_WEBHOOK_QUEUE<br/>(organizer webhook delivery)"]
             CRON["Cron Triggers<br/>(15min + hourly + daily)"]
         end
     end
 
     subgraph "External Services"
         GH["GitHub API"]
-        GL["GitLab API"]
-        BB["Bitbucket API"]
+        GOOGLE["Google OAuth"]
         SMTP["SMTP Service<br/>(email delivery)"]
         AI["AI Provider<br/>(code review)"]
-        PUSH["Web Push Services<br/>(FCM, Mozilla)"]
     end
 
     subgraph "Clients"
         SPA["React SPA<br/>(devsage.org)"]
-        CLI["API Keys<br/>(CI/CD tools)"]
-        VCS["VCS Webhooks<br/>(GitHub, GitLab, BB)"]
+        VCS["VCS Webhooks<br/>(GitHub)"]
     end
 
     SPA -->|"REST + SSE"| CDN
     CDN -->|"API routes"| W
-    CLI -->|"Bearer dk_..."| W
     VCS -->|"POST + HMAC"| W
 
     W --> D1
@@ -96,22 +91,18 @@ graph TD
     W --> DO2
     W --> Q1
     W --> Q2
-    W --> Q3
 
     Q1 --> W
     Q2 --> W
-    Q3 --> W
     CRON --> W
 
     DO1 -.->|"reads via Worker"| D1
     DO2 -.->|"pushes to clients"| SPA
 
     W --> GH
-    W --> GL
-    W --> BB
+    W --> GOOGLE
     W --> SMTP
     W --> AI
-    W --> PUSH
 
     style W fill:#f97316,color:#fff
     style D1 fill:#3b82f6,color:#fff
@@ -127,14 +118,13 @@ graph TD
 
 | Binding | Type | Name / Class | Purpose |
 |---------|------|--------------|---------|
-| `DB` | D1 Database | `devsage-db` | Primary datastore (40 tables) |
+| `DB` | D1 Database | `devsage-db` | Primary datastore (~28 tables) |
 | `KV` | KV Namespace | `devsage-kv` | OAuth state, rate limits, token cache, session cache |
 | `R2` | R2 Bucket | `devsage-assets` | Logos, banners, exports, audit archives |
 | `HACKATHON_SM` | Durable Object | `HackathonStateMachine` | State machine, submission locking, deadline alarms |
 | `REALTIME_GW` | Durable Object | `RealTimeGateway` | WebSocket/SSE connection hub, event broadcasting |
 | `WEBHOOK_QUEUE` | Queue (producer) | `webhook-inbound` | VCS webhook processing |
 | `EVENT_QUEUE` | Queue (producer) | `event-bus` | Internal event distribution |
-| `OUTBOUND_WEBHOOK_QUEUE` | Queue (producer) | `outbound-webhooks` | Organizer webhook delivery |
 
 ### Worker Configuration
 
@@ -163,7 +153,6 @@ interface Env {
   // Queues (producer)
   WEBHOOK_QUEUE: Queue;
   EVENT_QUEUE: Queue;
-  OUTBOUND_WEBHOOK_QUEUE: Queue;
 
   // Secrets
   JWT_SECRET: string;
@@ -174,14 +163,10 @@ interface Env {
   GITHUB_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
-  GITLAB_WEBHOOK_TOKEN: string;
-  BITBUCKET_WEBHOOK_SECRET: string;
   SMTP_URL: string;
   SMTP_USERNAME: string;
   SMTP_PASSWORD: string;
   SMTP_EMAIL_ADDR: string;
-  VAPID_PUBLIC_KEY: string;
-  VAPID_PRIVATE_KEY: string;
   FRONTEND_URL: string;
   PLATFORM_URL: string;
   ADMIN_URL: string;
@@ -223,7 +208,7 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  // Queue consumer (webhook processing, event bus, outbound webhooks)
+  // Queue consumer (webhook processing, event bus)
   async queue(batch: MessageBatch, env: Env, ctx: ExecutionContext): Promise<void> {
     await queueDispatcher(batch, env, ctx);
   },
@@ -333,7 +318,6 @@ function getRealTimeDO(env: Env, hackathonId: string): DurableObjectStub {
 |-------|---------|---------|-----------|-------------|-------------|
 | `webhook-inbound` | `WEBHOOK_QUEUE` | VCS webhook processing | 10 | 3 | 30s, 2min, 10min |
 | `event-bus` | `EVENT_QUEUE` | Internal event distribution | 10 | 3 | 30s, 2min, 10min |
-| `outbound-webhooks` | `OUTBOUND_WEBHOOK_QUEUE` | Organizer webhook delivery | 5 | 5 | 1min, 5min, 15min, 30min, 1hr |
 
 ### Queue Flow
 
@@ -350,7 +334,6 @@ flowchart LR
     subgraph "Queues"
         Q1["WEBHOOK_QUEUE"]
         Q2["EVENT_QUEUE"]
-        Q3["OUTBOUND_WEBHOOK_QUEUE"]
     end
 
     subgraph "Consumer (same Worker)"
@@ -362,11 +345,9 @@ flowchart LR
     QH --> Q2
     DO --> Q2
     CRON --> Q2
-    QH --> Q3
 
     Q1 --> DISP
     Q2 --> DISP
-    Q3 --> DISP
 ```
 
 ### Queue Dispatcher
@@ -387,9 +368,6 @@ async function queueDispatcher(
         case 'event-bus':
           await eventBusProcessor(message.body, env);
           break;
-        case 'outbound-webhooks':
-          await outboundWebhookProcessor(message.body, env);
-          break;
       }
       message.ack();
     } catch (error) {
@@ -400,10 +378,12 @@ async function queueDispatcher(
 }
 ```
 
+> **Phase 2**: An `OUTBOUND_WEBHOOK_QUEUE` will be added for organizer webhook delivery (separate retry policy: 5 retries with 1min–1hr backoff) when outbound webhooks are introduced.
+
 ### Dead Letter Handling
 
 After exhausting retries, messages are acknowledged (removed from queue) and logged:
-- Audit event: `webhook.dead_lettered` or `outbound_webhook.dead_lettered`
+- Audit event: `webhook.dead_lettered` or `event.dead_lettered`
 - Dashboard indicator for organizers
 - Platform admin alert for system-level failures
 
@@ -463,16 +443,17 @@ async function cronHandler(event: ScheduledEvent, env: Env, ctx: ExecutionContex
 | Category | Secrets | Storage |
 |----------|---------|---------|
 | Authentication | `JWT_SECRET`, `GOOGLE_CLIENT_*`, `GITHUB_CLIENT_*` | Worker secrets |
-| VCS Integration | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITLAB_WEBHOOK_TOKEN`, `BITBUCKET_WEBHOOK_SECRET` | Worker secrets |
+| VCS Integration | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` | Worker secrets |
 | Email | `SMTP_URL`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_EMAIL_ADDR` | Worker secrets |
-| Push Notifications | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Worker secrets |
 | CORS | `FRONTEND_URL`, `PLATFORM_URL`, `ADMIN_URL` | Worker secrets |
+
+> **Phase 2**: Additional secrets will be added for GitLab (`GITLAB_WEBHOOK_TOKEN`), Bitbucket (`BITBUCKET_WEBHOOK_SECRET`), and push notifications (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) when multi-VCS and push notification support are introduced.
 
 ### Development Secrets
 
 ```
 apps/api/.dev.vars       # API secrets (gitignored)
-apps/web/.env.local      # Web dev overrides (gitignored)
+apps/platform/.env.local # Platform dev overrides (gitignored)
 ```
 
 ### Production Secret Deployment
@@ -597,7 +578,7 @@ wrangler deploy --env production
 | Environment | API URL | Web URL | D1 Database | Purpose |
 |------------|---------|---------|-------------|---------|
 | Development | `http://localhost:8787` | `http://localhost:5173` | Local miniflare | Developer machine |
-| Preview | `https://preview-{sha}.api.devsage.org` | `https://preview-{sha}.devsage.org` | Preview D1 | PR review |
+| Preview | `https://api.devsage-org.workers.dev` | `https://platform.devsage-org.workers.dev` | Preview D1 | PR review |
 | Staging | `https://staging-api.devsage.org` | `https://staging.devsage.org` | Staging D1 | Pre-production validation |
 | Production | `https://api.devsage.org` | `https://devsage.org` | Production D1 | Live users |
 
@@ -675,7 +656,7 @@ console.warn(JSON.stringify({
 
 | Metric | Threshold | Alert |
 |--------|-----------|-------|
-| API error rate (5xx) | > 1% of requests | Immediate (Slack + email) |
+| API error rate (5xx) | > 1% of requests | Immediate (email) |
 | API p99 latency | > 500ms | Warning |
 | D1 error rate | > 0.1% of queries | Immediate |
 | Queue dead letters | > 0 in 1 hour | Warning |
@@ -728,11 +709,10 @@ flowchart TD
     end
 
     subgraph "Non-Critical — Fail Open"
-        SMF["SMTP down"] --> SMR["Email queued in retry queue<br/>Other channels still deliver<br/>Retry with exponential backoff"]
+        SMF["SMTP down"] --> SMR["Email queued in retry queue<br/>In-app notifications still deliver<br/>Retry with exponential backoff"]
         AIF["AI provider down"] --> AIR["Reviews unavailable<br/>Judges proceed manually<br/>No retry (on-demand only)"]
         KVF["KV unavailable"] --> KVR["Fall through to D1<br/>Slower but functional<br/>Rate limiting degraded"]
         R2F["R2 unavailable"] --> R2R["Asset uploads fail<br/>Existing assets cached at CDN<br/>Exports temporarily unavailable"]
-        PSF["Push service down"] --> PSR["Push notifications fail<br/>In-app and email still deliver<br/>Retry with backoff"]
     end
 
     style D1F fill:#ef4444,color:#fff
@@ -756,7 +736,6 @@ flowchart TD
 | GitHub API | Degraded | Commit status not posted | Queue retry | No status checks on PR |
 | SMTP | Degraded | Emails delayed | Queue retry | Delayed email notifications |
 | AI Provider | Non-critical | Reviews unavailable | On-demand retry | Judges proceed without AI |
-| Push Services | Degraded | Push notifications fail | Retry with backoff | No push, in-app still works |
 
 ### Rollback Strategy
 
@@ -818,12 +797,11 @@ flowchart TD
 | Service | Purpose | Timeout | Failure Mode | Rate Limit | Auth |
 |---------|---------|---------|-------------|------------|------|
 | GitHub API | OAuth, commit status, file reads | 10s | Fail-open | 5,000 req/hr | App installation tokens (KV-cached) |
-| GitLab API | Commit status, file reads | 10s | Fail-open | 600 req/min | Project access tokens |
-| Bitbucket API | Commit status, file reads | 10s | Fail-open | 1,000 req/hr | App passwords |
+| Google OAuth | OAuth login | 10s | Fail-open | N/A | Client ID/secret |
 | SMTP Service | Email delivery | 10s | Fail-open, retry | 500 emails/hr | Username/password |
 | AI Provider | Code reviews | 25s | Fail-open | Per-token | API key |
-| Web Push (FCM) | Push notifications | 10s | Fail-open, retry | Per-subscription | VAPID |
-| Web Push (Mozilla) | Push notifications | 10s | Fail-open, retry | Per-subscription | VAPID |
+
+> **Phase 2**: GitLab API, Bitbucket API, and Web Push (FCM/Mozilla) will be added as additional external service dependencies when multi-VCS and push notification support are introduced.
 
 ### Fail-Open Pattern
 
@@ -926,7 +904,7 @@ pnpm deploy:web              # Deploy web app
 
 D1 has a primary location. Workers execute globally but read/write to the primary D1. Smart Placement moves the Worker closer to D1 for lower latency.
 
-### Phase 1: D1 Read Replicas (When Available)
+### D1 Read Replicas (When Available)
 
 ```mermaid
 flowchart LR
@@ -954,18 +932,18 @@ flowchart LR
 
 **Benefits:** Read-heavy endpoints (leaderboard, team directory, commit log) served from local replica. Writes still go to primary.
 
-### Phase 2: Per-Org D1 Isolation
+### Per-Workspace D1 Isolation (Future)
 
-When a single D1 approaches limits (5 GB or performance), partition by organization:
+> **Phase 2**: When a single D1 approaches limits (5 GB or performance), partition by workspace:
 
 | Strategy | Description |
 |----------|-------------|
 | Shared tables | `users`, `platform_admins` remain in primary D1 |
-| Tenant tables | All hackathon-scoped tables in per-org D1 |
-| Routing | Middleware resolves org from slug, routes to correct D1 |
+| Tenant tables | All hackathon-scoped tables in per-workspace D1 |
+| Routing | Middleware resolves workspace from slug, routes to correct D1 |
 | Migrations | All D1 instances run identical schema |
 
-### Phase 3: Global Durable Objects
+### Global Durable Objects (Future)
 
 Durable Objects already run closest to the first request. For global events:
 
@@ -999,7 +977,7 @@ Durable Objects already run closest to the first request. For global events:
 | JWT | HttpOnly, Secure, SameSite=Lax cookies. No localStorage |
 | Secrets | Encrypted at rest in Workers runtime. Never logged |
 | Input validation | Zod on every endpoint (body, query, params) |
-| Rate limiting | Per-IP, per-user, per-API-key limits |
+| Rate limiting | Per-IP and per-user limits |
 | SQL injection | Drizzle ORM parameterized queries (never raw SQL) |
 | HMAC verification | Timing-safe comparison for webhook signatures |
 | Audit trail | Every mutation logged with actor, IP, user-agent |
@@ -1028,7 +1006,7 @@ flowchart LR
 | SQLite-backed Durable Objects | `new_sqlite_classes` for HackathonStateMachine | Persistent state survives DO eviction. SQL queries for complex state (submission locks, alarm schedules). No KV iteration needed | KV-backed DO (no SQL queries, iterate-all for lookups); in-memory only (lost on eviction); external DB from DO (latency) |
 | Workers KV for caching | Rate limits, OAuth state, token cache | Globally replicated, sub-millisecond reads, TTL support. Perfect for ephemeral data. Eventually consistent is fine for caches | D1 for everything (slower for hot data); external Redis (latency, cost); DO for rate limiting (expensive) |
 | R2 for object storage | Logos, banners, audit archives, exports | S3-compatible, zero-egress, co-located with Workers. Cheaper than S3 for reads from Workers | Cloudflare Images (less flexible); S3 (egress costs from Workers); D1 BLOB (not designed for large objects) |
-| Three separate queues | webhook-inbound, event-bus, outbound-webhooks | Separate retry policies (webhooks need fast retry, outbound needs slow backoff). Independent backpressure. Clear separation of concerns | Single queue with message types (can't differentiate retry policies); more queues (operational overhead); no queues (sync processing, timeouts) |
+| Two separate queues | webhook-inbound, event-bus | Separate retry policies per concern. Independent backpressure. Webhook ingestion isolated from internal event processing | Single queue with message types (can't differentiate retry policies); more queues (operational overhead); no queues (sync processing, timeouts) |
 | $5/month target | Workers Paid plan as baseline | Free tier's KV write limit (1K/day) is too tight. $5 unlocks 10M requests, 1M KV writes, 50M D1 writes — enormous headroom for Year 1. No per-request billing surprise | Stay on free tier (too constrained); higher tier (unnecessary); external providers (more expensive) |
 | CI/CD with staging gate | main → staging → smoke test → production | Catches deployment issues before they reach users. Staging uses separate D1 (no production data risk). Smoke tests validate critical paths | Direct to production (risky); manual promotion (slow, error-prone); feature flags only (doesn't catch infra issues) |
 | Preview environments per PR | Ephemeral Worker + D1 per PR | Reviewers can test changes in isolation. No shared state between PRs. Auto-cleanup after 24 hours | Shared staging for all PRs (conflicts); no preview (review code only); local only (can't share URLs) |

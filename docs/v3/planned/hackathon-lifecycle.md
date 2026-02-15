@@ -36,7 +36,7 @@
 | **Automated deadline enforcement** | Deadlines trigger automatic transitions via DO alarms. A cron job acts as a safety net. No manual intervention required for time-based transitions. |
 | **Templateable** | Organizers can save hackathon configurations as reusable templates. Common formats (24-hour, weekend, week-long) ship as platform defaults. |
 | **Multi-track support** | A single hackathon can have multiple tracks (e.g., "AI/ML", "Web3", "Social Impact"). Teams select a track at registration. Judges are assigned per track. Leaderboards are per-track and overall. |
-| **Custom phases** | Organizers can insert optional custom phases between the standard phases (e.g., "Mentorship Period" between registration and active, "Demo Day" between judging and completed). |
+| **Custom phases** | Organizers can insert optional custom phases between the standard phases (e.g., "Workshop Day" during active, "Demo Day" between judging and completed). |
 | **Idempotent operations** | All state transitions are idempotent — retrying the same transition with the same expected version is safe. |
 
 ---
@@ -45,14 +45,12 @@
 
 ### Core States
 
-Every hackathon progresses through 7 mandatory states. The state machine is forward-only — no backward transitions, no skipping.
+Every hackathon progresses through 5 mandatory states. The state machine is forward-only — no backward transitions, no skipping. Registration and team formation happen during the `draft` phase — the participant site (`{slug}.devsage.org`) goes live during draft for this purpose. Late registration during `active` is configurable per hackathon.
 
 ```mermaid
 stateDiagram-v2
     [*] --> draft
-    draft --> registration_open : Organizer publishes
-    registration_open --> registration_closed : Registration deadline OR manual close
-    registration_closed --> active : Organizer starts hackathon
+    draft --> active : Organizer starts hackathon
     active --> judging : Submission deadline passes
     judging --> completed : All judges scored OR organizer finalizes
     completed --> archived : Organizer archives
@@ -63,13 +61,11 @@ stateDiagram-v2
 
 ```typescript
 const HACKATHON_STATUS_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
-  draft:               ['registration_open'],
-  registration_open:   ['registration_closed'],
-  registration_closed: ['active'],
-  active:              ['judging'],
-  judging:             ['completed'],
-  completed:           ['archived'],
-  archived:            [],  // Terminal state
+  draft:     ['active'],
+  active:    ['judging'],
+  judging:   ['completed'],
+  completed: ['archived'],
+  archived:  ['completed'],  // Un-archive for score corrections only
 };
 ```
 
@@ -85,13 +81,11 @@ Organizers can insert optional custom phases between standard phases (see [Custo
 
 | State | Visibility | Description | Who Can Do What |
 |-------|-----------|-------------|-----------------|
-| `draft` | Private (organizers only) | Initial creation. Not visible to the public. | **Organizers:** Edit all config (title, description, deadlines, rubric, tracks, branding). Invite co-organizers. Delete hackathon. Set submission tag pattern. Configure team size limits. **Nobody else:** Cannot see this hackathon. |
-| `registration_open` | Public | Participants can discover, register, and form teams. | **Participants:** Create teams, join teams via invite code, leave teams. **Organizers:** Edit non-critical fields (description, rules, branding). Cannot change deadlines that have already passed. Can manually close registration early. **Judges:** Can be invited. |
-| `registration_closed` | Public | Registration ended. Teams are finalized. | **Participants:** Cannot create or join teams. Can still leave (but cannot rejoin). **Organizers:** Can start the hackathon (transition to active). Can still invite judges. **Teams:** Can link repositories in preparation. |
-| `active` | Public | Hackathon is live. Participants build and submit. | **Participants:** Push code, link repos, submit via git tag, update submissions (if under limit). **Bot:** Tracks commits, detects force pushes, captures tags. **Organizers:** Monitor activity feed, send announcements. Cannot edit deadlines. |
-| `judging` | Public | Submission deadline passed. All submissions are locked. | **Judges:** Score assigned submissions, view code, see AI reviews. **Organizers:** Assign/reassign judges, force finalize, trigger AI reviews. **Participants:** View own submission (read-only), cannot modify. |
-| `completed` | Public | All judging is done. Results are visible. | **Everyone:** View leaderboard, final scores, per-criterion breakdown. **Organizers:** Download results (CSV/JSON), publish announcements. **Participants:** View feedback from judges. |
-| `archived` | Public (read-only) | Historical record. Data preserved indefinitely. | **Everyone:** View only. All data frozen. No mutations allowed except organizer un-archiving (returns to `completed`). |
+| `draft` | Participant site live for registration + team formation | Hackathon is being configured. `{slug}.devsage.org` is live — participants can register and form teams, but cannot push code or submit. | **Organizers/Co-Organizers:** Edit all config (title, description, deadlines, rubric, tracks, branding). Invite co-organizers, judges. Send registration links to participants. Delete hackathon. **Participants:** Register via hackathon link, form teams, invite team members, view hackathon info. **Judges:** Can accept invites. |
+| `active` | Full hackathon features live | Hackathon is live. Building and coding begins. | **Participants:** Push code, link repos, submit via git tag, upload supplementary files, update submissions (if under limit). New registration allowed if organizer enabled `allow_registration_during_active`. **Bot:** Tracks commits, detects force pushes, captures tags. **Organizers:** Monitor activity feed, send announcements. Cannot edit deadlines. **Judges:** Can be invited. |
+| `judging` | Landing page public, rest invite-only | Submission deadline passed. All submissions are locked. | **Judges:** Score assigned submissions, view code, see AI reviews. **Organizers:** Assign/reassign judges, force finalize, trigger AI reviews. **Participants:** View own submission (read-only), cannot modify. No new invites accepted. |
+| `completed` | Landing page public, rest invite-only | All judging is done. Results are visible. | **All invited users:** View leaderboard, final scores, per-criterion breakdown. **Organizers:** Download results (CSV/JSON), publish announcements. **Participants:** View feedback from judges. |
+| `archived` | Landing page public, rest invite-only | Historical record. Data preserved indefinitely. | **All invited users:** View only. All data frozen. No mutations allowed except organizer un-archiving (returns to `completed`). |
 
 ### Archive and Un-archive
 
@@ -100,8 +94,11 @@ Archiving is a soft operation — it marks the hackathon as read-only but does n
 ```typescript
 // Exception to forward-only: archived can return to completed
 const HACKATHON_STATUS_TRANSITIONS = {
-  // ... standard transitions ...
-  archived: ['completed'],  // Un-archive only
+  draft:     ['active'],
+  active:    ['judging'],
+  judging:   ['completed'],
+  completed: ['archived'],
+  archived:  ['completed'],  // Un-archive only
 };
 ```
 
@@ -115,15 +112,11 @@ Each transition has preconditions that must be satisfied. The DO validates these
 
 ```mermaid
 flowchart TD
-    A["draft → registration_open"] --> A1["Preconditions:<br/>- title is set (non-empty)<br/>- description is set (non-empty)<br/>- registration_opens date is set<br/>- registration_closes date is set<br/>- submission_deadline date is set<br/>- registration_closes > registration_opens<br/>- submission_deadline > registration_closes<br/>- at least 1 rubric criterion defined<br/>- at least 1 track defined (default track auto-created if none)"]
+    A["draft → active"] --> A1["Trigger:<br/>- Manual organizer/co-organizer action<br/>Preconditions:<br/>- title is set (non-empty)<br/>- description is set (non-empty)<br/>- submission_deadline date is set and in the future<br/>- at least 1 rubric criterion defined<br/>- at least 1 track defined (default track auto-created if none)<br/>- at least 1 team with >= min_team_size members<br/>Effect:<br/>- Building/coding features unlock<br/>- Participants can push code, link repos, submit<br/>- New registration closed unless allow_registration_during_active is set"]
 
-    B["registration_open → registration_closed"] --> B1["Trigger:<br/>- DO alarm at registration_closes datetime<br/>- OR manual organizer action (close early)<br/>Preconditions:<br/>- None (can close with 0 teams)"]
+    D["active → judging"] --> D1["Trigger:<br/>- DO alarm at submission_deadline datetime<br/>- OR hourly cron (safety net)<br/>Preconditions:<br/>- submission_deadline has passed (cannot transition early)<br/>Effect:<br/>- All submissions locked (no new tags accepted)<br/>- Force push detection flags raised<br/>- No new invites accepted"]
 
-    C["registration_closed → active"] --> C1["Trigger:<br/>- Manual organizer action only<br/>Preconditions:<br/>- at least 1 registered team with >= min_team_size members"]
-
-    D["active → judging"] --> D1["Trigger:<br/>- DO alarm at submission_deadline datetime<br/>- OR hourly cron (safety net)<br/>Preconditions:<br/>- submission_deadline has passed (cannot transition early)<br/>Effect:<br/>- All submissions locked (no new tags accepted)<br/>- Force push detection flags raised"]
-
-    E["judging → completed"] --> E1["Trigger:<br/>- All assigned judges have submitted scores for all assigned submissions<br/>- OR organizer forces finalization (overrides incomplete scoring)<br/>Preconditions (auto):<br/>- Every submission has scores from all assigned judges<br/>Preconditions (forced):<br/>- Organizer role >= admin<br/>- Warning acknowledged: 'N submissions have incomplete scores'"]
+    E["judging → completed"] --> E1["Trigger:<br/>- All assigned judges have submitted scores for all assigned submissions<br/>- OR organizer forces finalization (overrides incomplete scoring)<br/>Preconditions (auto):<br/>- Every submission has scores from all assigned judges<br/>Preconditions (forced):<br/>- Organizer role >= co_organizer<br/>- Warning acknowledged: 'N submissions have incomplete scores'"]
 
     F["completed → archived"] --> F1["Trigger:<br/>- Manual organizer action<br/>Preconditions:<br/>- None<br/>Effect:<br/>- All data becomes read-only<br/>- Leaderboard finalized"]
 ```
@@ -197,7 +190,7 @@ The Worker communicates with the DO via HTTP (Durable Object fetch). These are i
 | POST | `/transition` | `{ target_status, expected_version }` | `{ success, status, version }` | Attempt a state transition. Validates forward-only rule and preconditions. |
 | POST | `/accept-submission` | `{ team_id, tag_name, submission_id, commit_sha, webhook_delivery_id }` | `{ accepted: boolean, reason? }` | Lock a submission. Returns `accepted: false` if: status is not `active`, team at submission limit, duplicate `webhook_delivery_id`, or tag doesn't match pattern. |
 | GET | `/can-accept-submissions` | — | `{ can_accept: boolean, reason? }` | Quick check for submission acceptance eligibility. |
-| POST | `/update-config` | `{ config, expected_version }` | `{ success, version }` | Update deadlines/limits (only allowed in `draft` and `registration_open` with restrictions). |
+| POST | `/update-config` | `{ config, expected_version }` | `{ success, version }` | Update config (most fields only allowed in `draft`; description and rules editable in `active`). |
 
 ### Optimistic Concurrency
 
@@ -217,8 +210,7 @@ When a transition occurs, the DO schedules the next deadline alarm:
 
 | Current State | Alarm Scheduled For | Action on Fire |
 |---------------|-------------------|----------------|
-| `registration_open` | `registration_closes` datetime | Auto-transition to `registration_closed` |
-| `registration_closed` | None (manual transition to `active`) | — |
+| `draft` | None (manual transition to `active`) | — |
 | `active` | `submission_deadline` datetime | Auto-transition to `judging`, lock all submissions |
 | `judging` | `judging_ends` datetime (if set) | Notify organizer that judging window is closing. Does NOT auto-transition — organizer must finalize or force-complete. |
 
@@ -243,11 +235,11 @@ sequenceDiagram
 
     C->>W: POST /api/v1/hackathons<br/>{ slug?, title, description, dates, tracks?, ... }
     W->>W: Validate request body against CreateHackathonSchema
-    W->>W: Verify user is authenticated
+    W->>W: Verify user is authenticated (organizer or co-organizer of workspace)
     W->>W: Generate slug from title if not provided<br/>(lowercase, hyphenated, unique check)
 
-    W->>D1: INSERT INTO hackathons (id, slug, title, ..., status='draft')
-    W->>D1: INSERT INTO organizer_roles (hackathon_id, user_id, role='owner')
+    W->>D1: INSERT INTO hackathons (id, slug, title, ..., status='draft', workspace_id)
+    W->>D1: INSERT INTO organizer_roles (hackathon_id, user_id, role='organizer')
     W->>D1: INSERT INTO hackathon_tracks (default track, if no tracks specified)
     W->>D1: INSERT INTO rubric_criteria (if provided)
 
@@ -277,8 +269,8 @@ sequenceDiagram
     participant D1 as D1 Database
     participant Q as NOTIFICATION_QUEUE
 
-    C->>W: PATCH /api/v1/hackathons/:slug/status<br/>{ status: "registration_open" }
-    W->>W: Verify role >= admin for this hackathon
+    C->>W: PATCH /api/v1/hackathons/:slug/status<br/>{ status: "active" }
+    W->>W: Verify role >= co_organizer for this hackathon
 
     W->>DO: POST /transition { target_status, expected_version }
     DO->>DO: Validate: is target_status in TRANSITIONS[current_status]?
@@ -326,11 +318,6 @@ flowchart TD
     G -->|Yes| I["POST /transition to 'judging' via DO"]
     I --> J["Audit: phase_transitioned (actor: cron)"]
 
-    A --> K["Query D1: hackathons WHERE<br/>status = 'registration_open' AND registration_closes <= now()"]
-    K --> L{Any overdue?}
-    L -->|No| D
-    L -->|Yes| M["For each: transition to 'registration_closed' via DO"]
-
     A --> N["Query D1: hackathons WHERE<br/>status = 'active' AND submission_deadline<br/>BETWEEN now() AND now() + 24h"]
     N --> O{Approaching deadlines?}
     O -->|Yes| P["Enqueue deadline_reminder notification<br/>(if not already sent — dedup by hackathon_id + type)"]
@@ -343,38 +330,39 @@ The cron should never be the primary transition mechanism — it exists only to 
 
 ## Hackathon Configuration
 
-All configuration fields for a hackathon. Set during creation, editable during `draft` and partially during `registration_open`.
+All configuration fields for a hackathon. Set during creation, editable during `draft` only (with minor exceptions noted below).
 
 ### Core Fields
 
 | Field | Type | Required | Default | Editable In | Description |
 |-------|------|----------|---------|-------------|-------------|
 | `slug` | TEXT | Yes | Auto from title | Never (immutable) | URL-safe identifier. Unique across all hackathons. |
-| `title` | TEXT | Yes | — | draft, registration_open | Display name |
-| `tagline` | TEXT | No | — | draft, registration_open | Short one-line description for cards/previews |
-| `description` | TEXT | Yes | — | draft, registration_open, registration_closed | Full description (Markdown supported) |
-| `rules_md` | TEXT | No | — | draft, registration_open, registration_closed | Competition rules (Markdown) |
+| `title` | TEXT | Yes | — | draft | Display name |
+| `tagline` | TEXT | No | — | draft | Short one-line description for cards/previews |
+| `description` | TEXT | Yes | — | draft, active | Full description (Markdown supported) |
+| `rules_md` | TEXT | No | — | draft, active | Competition rules (Markdown) |
 
 ### Dates and Deadlines
 
 | Field | Type | Required | Editable In | Constraints |
 |-------|------|----------|-------------|-------------|
-| `registration_opens` | ISO-8601 | Yes | draft | Must be in the future at creation |
-| `registration_closes` | ISO-8601 | Yes | draft, registration_open (only if not yet passed) | Must be > `registration_opens` |
-| `submission_deadline` | ISO-8601 | Yes | draft, registration_open | Must be > `registration_closes` |
-| `judging_starts` | ISO-8601 | No | draft, registration_open | If set, must be >= `submission_deadline` |
-| `judging_ends` | ISO-8601 | No | draft, registration_open | If set, must be > `judging_starts` |
+| `starts_at` | ISO-8601 | Yes | draft | When the hackathon goes live (transition to `active`) |
+| `submission_deadline` | ISO-8601 | Yes | draft | Must be > `starts_at` |
+| `judging_starts` | ISO-8601 | No | draft | If set, must be >= `submission_deadline` |
+| `judging_ends` | ISO-8601 | No | draft | If set, must be > `judging_starts` |
 
-**Constraint:** Dates must always maintain chronological order: `registration_opens < registration_closes < submission_deadline <= judging_starts < judging_ends`. Editing one date validates the entire chain.
+**Constraint:** Dates must always maintain chronological order: `starts_at < submission_deadline <= judging_starts < judging_ends`. Editing one date validates the entire chain. All dates are immutable after `draft → active` transition.
 
 ### Team Configuration
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `min_team_size` | INTEGER | 1 | Minimum members per team. Enforced at `registration_closed → active` transition. |
+| `min_team_size` | INTEGER | 1 | Minimum members per team. Enforced at `draft → active` transition. |
 | `max_team_size` | INTEGER | 5 | Maximum members per team. Enforced at join time. |
 | `max_teams` | INTEGER | unlimited (null) | Cap on total registered teams. Enforced at team creation. |
 | `allow_solo` | BOOLEAN | true | Whether single-member teams are allowed (convenience for `min_team_size = 1`) |
+| `allow_registration_during_active` | BOOLEAN | false | If true, new participants can register and join teams even after the hackathon moves to `active`. If false, registration closes at `draft → active`. Configurable by organizer. |
+| `track_assignment_mode` | ENUM | `team_choice` | `organizer_assigned` (organizer picks track per team) or `team_choice` (team lead picks) |
 
 ### Submission Configuration
 
@@ -397,11 +385,11 @@ All configuration fields for a hackathon. Set during creation, editable during `
 
 ### Visibility and Access
 
+Hackathon access requires the registration link. The hackathon landing page (`{slug}.devsage.org/`) may be publicly accessible for informational purposes (title, description, dates, branding) depending on `landing_page_public` setting. Registration is available during `draft` (and optionally during `active` if `allow_registration_during_active` is set). Registration mode (open link, domain-restricted, or approval-based) is configured per hackathon (see authentication doc).
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `visibility` | ENUM | `public` | `public` (listed in directory), `unlisted` (accessible via direct link), `private` (invite-only) |
-| `require_approval` | BOOLEAN | false | If true, team registrations require organizer approval before confirmation. |
-| `require_mfa` | BOOLEAN | false | If true, admin+ roles must have MFA enabled (see authentication doc). |
+| `landing_page_public` | BOOLEAN | true | Whether the hackathon landing page is visible to unauthenticated visitors. If false, even the landing page requires login. |
 
 ---
 
@@ -443,7 +431,7 @@ interface HackathonTemplate {
     judges_per_submission: number;
     enable_ai_reviews: boolean;
     blind_judging: boolean;
-    visibility: 'public' | 'unlisted' | 'private';
+    landing_page_public: boolean;
     tracks: { name: string; description: string }[];
     rubric_criteria: { name: string; description: string; max_score: number; weight: number }[];
     // ... other config fields
@@ -485,8 +473,13 @@ A hackathon can have one or more tracks. Each track represents a category or the
 
 ### How Tracks Work
 
-- Every hackathon has at least one track. If the organizer doesn't configure tracks, a "General" default track is created automatically.
-- Teams select exactly one track at registration. They cannot change tracks after `registration_closed`.
+- Tracks are optional. If the organizer doesn't configure tracks, a "General" default track is created automatically.
+- Every hackathon has at least one track (default or custom).
+- **Track assignment mode** is set by the organizer per-hackathon:
+  - `organizer_assigned` — organizer assigns each team to a track when inviting the team lead
+  - `team_choice` — team lead chooses a track when accepting the invite or forming their team
+- Once a team's track is set (by either method), the **team lead cannot change it**. The organizer can override/reassign a team's track at any time before `judging`.
+- Tracks can have a `max_teams` cap. If a track is full, new teams cannot be assigned to it.
 - Judges can be assigned to specific tracks (a judge may score submissions in "AI/ML" track only) or to all tracks.
 - Leaderboards are per-track and overall (weighted aggregate).
 - Rubric criteria can be global (apply to all tracks) or track-specific.
@@ -541,7 +534,7 @@ Organizers can insert optional custom phases between standard phases. Custom pha
 - Custom phases are sub-states displayed in the hackathon timeline UI.
 - They have a name, description, start time, and end time.
 - They do not block or gate state transitions — the core state machine is unaware of them.
-- They are purely visual/informational: "Mentorship Period", "Demo Day", "Workshop Week".
+- They are purely visual/informational: "Demo Day", "Workshop Week", "Review Period".
 
 ### Custom Phase Schema
 
@@ -562,11 +555,9 @@ interface CustomPhase {
 
 | Core State | Custom Phase | Dates |
 |-----------|-------------|-------|
-| `registration_open` | — | Mar 1 – Mar 7 |
-| `registration_closed` | — | Mar 7 – Mar 8 |
-| `active` | Workshop Day | Mar 8 – Mar 9 |
-| `active` | Build Sprint | Mar 9 – Mar 15 |
-| `judging` | — | Mar 15 – Mar 22 |
+| `active` | Workshop Day | Mar 1 – Mar 2 |
+| `active` | Build Sprint | Mar 2 – Mar 8 |
+| `judging` | — | Mar 8 – Mar 15 |
 
 The frontend timeline component reads both core states and custom phases to render a rich visual timeline.
 
@@ -599,13 +590,13 @@ sequenceDiagram
     participant DO as DO
 
     C->>W: POST /api/v1/hackathons/:slug/clone<br/>{ new_title, new_slug?, dates }
-    W->>W: Verify role >= admin on source hackathon
+    W->>W: Verify role >= co_organizer on source hackathon
     W->>D1: Fetch source hackathon + tracks + rubric + judges
 
     W->>D1: INSERT new hackathon (status=draft, new dates)
     W->>D1: INSERT cloned tracks (new IDs, same config)
     W->>D1: INSERT cloned rubric criteria (mapped to new track IDs)
-    W->>D1: INSERT organizer_roles (cloner as owner)
+    W->>D1: INSERT organizer_roles (cloner as organizer)
     W->>D1: INSERT judge invitations (re-invited, status=pending)
     W->>DO: POST /initialize (new hackathon ID, config)
 
@@ -636,7 +627,7 @@ Each hackathon can be visually branded with custom colors, logos, and banners.
 
 ### Organizer Extends Deadline Mid-Hackathon
 
-Not allowed once the hackathon enters `active` state. Deadlines are immutable after `registration_open → registration_closed` transition. If an organizer needs to extend:
+Not allowed once the hackathon enters `active` state. Deadlines are immutable after the `draft → active` transition. If an organizer needs to extend:
 - They cannot. The system enforces this rigidly to maintain fairness.
 - Workaround: if `allow_late_submissions = true` is set before the hackathon starts, late tags are accepted but flagged.
 
@@ -663,15 +654,15 @@ If the `active → judging` transition fires and no team has submitted:
 
 ### Team Below Minimum Size at Start
 
-When transitioning `registration_closed → active`, the precondition checks that at least 1 team meets `min_team_size`. Teams below the minimum are NOT auto-removed — they are flagged with `status = 'incomplete'` and blocked from submitting. This allows their members to see a warning and potentially merge with other incomplete teams (if organizer enables it).
+When transitioning `draft → active`, the precondition checks that at least 1 team meets `min_team_size`. Teams below the minimum are NOT auto-removed — they are flagged with `status = 'incomplete'` and blocked from submitting. This allows their members to see a warning and potentially merge with other incomplete teams (if organizer enables it).
 
 ### Deleting a Hackathon
 
-Only allowed in `draft` state. Once a hackathon has been published (`registration_open` or later), it cannot be deleted — only archived. This preserves data integrity for participants who have already registered.
+Only allowed in `draft` state before any participants have registered. Once a hackathon has participants or has transitioned to `active`, it cannot be deleted — only archived. This preserves data integrity for participants who have already registered.
 
 ```
 DELETE /api/v1/hackathons/:slug
-- Requires: role = owner, status = draft
+- Requires: role = organizer, status = draft
 - Effect: Hard delete from D1, destroy DO instance
 - Audit: hackathon_deleted event (captured before deletion)
 ```
@@ -709,10 +700,9 @@ DELETE /api/v1/hackathons/:slug
 | `tagline` | TEXT | Nullable |
 | `description` | TEXT | Markdown |
 | `rules_md` | TEXT | Nullable, Markdown |
-| `status` | TEXT | One of the 7 states. Synced from DO. |
-| `visibility` | TEXT | `public`, `unlisted`, `private` |
-| `registration_opens` | TEXT | ISO-8601 |
-| `registration_closes` | TEXT | ISO-8601 |
+| `status` | TEXT | One of the 5 states (draft, active, judging, completed, archived). Synced from DO. |
+| `landing_page_public` | INTEGER | 0 or 1. Default 1. |
+| `starts_at` | TEXT | ISO-8601. When hackathon goes live. |
 | `submission_deadline` | TEXT | ISO-8601 |
 | `judging_starts` | TEXT | ISO-8601. Nullable. |
 | `judging_ends` | TEXT | ISO-8601. Nullable. |
@@ -720,6 +710,7 @@ DELETE /api/v1/hackathons/:slug
 | `max_team_size` | INTEGER | Default 5 |
 | `max_teams` | INTEGER | Nullable (unlimited) |
 | `allow_solo` | INTEGER | 0 or 1. Default 1. |
+| `allow_registration_during_active` | INTEGER | 0 or 1. Default 0. |
 | `submission_tag_pattern` | TEXT | Default `submission_v%` |
 | `max_submissions_per_team` | INTEGER | Nullable (unlimited) |
 | `allow_late_submissions` | INTEGER | 0 or 1. Default 0. |
@@ -729,8 +720,7 @@ DELETE /api/v1/hackathons/:slug
 | `enable_ai_reviews` | INTEGER | 0 or 1. Default 1. |
 | `blind_judging` | INTEGER | 0 or 1. Default 0. |
 | `enable_audience_voting` | INTEGER | 0 or 1. Default 0. |
-| `require_approval` | INTEGER | 0 or 1. Default 0. |
-| `require_mfa` | INTEGER | 0 or 1. Default 0. |
+
 | `primary_color` | TEXT | Default `#6366f1` |
 | `secondary_color` | TEXT | Nullable |
 | `logo_r2_key` | TEXT | Nullable |
@@ -739,11 +729,12 @@ DELETE /api/v1/hackathons/:slug
 | `custom_css` | TEXT | Nullable. Max 10KB. |
 | `template_id` | TEXT | Nullable. FK → hackathon_templates. Which template was used. |
 | `cloned_from_id` | TEXT | Nullable. FK → hackathons. Source hackathon if cloned. |
-| `created_by` | TEXT | FK → users.id |
+| `workspace_id` | TEXT | FK → workspaces.id. Every hackathon belongs to a workspace. |
+| `created_by` | TEXT | FK → users.id (organizer or co-organizer who created it) |
 | `created_at` | TEXT | ISO-8601 |
 | `updated_at` | TEXT | ISO-8601 |
 
-**Indexes:** `slug` (unique), `status`, `created_by`, `registration_opens`, `submission_deadline`.
+**Indexes:** `slug` (unique), `status`, `created_by`, `starts_at`, `submission_deadline`.
 
 ### `hackathon_tracks` (new)
 

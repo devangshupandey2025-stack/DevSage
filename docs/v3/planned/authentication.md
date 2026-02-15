@@ -1,6 +1,6 @@
 # Authentication & Sessions
 
-> Complete specification for DevSage v3 authentication. Covers OAuth 2.0 (GitHub + Google), dual-token architecture (short-lived access + rotating refresh), passkey/WebAuthn, TOTP-based MFA, session management, account lifecycle, and GDPR compliance. Built entirely on Web Crypto APIs — no external auth libraries.
+> Complete specification for DevSage v3 authentication. DevSage operates across three separate domains with independent login systems: Admin (`shikdd.devsage.org`, Google OAuth), Organizer/Judge platform (`platform.devsage.org`, Google OAuth), and per-hackathon participant sites (`{slug}.devsage.org`, GitHub OAuth primary + Google option). Covers dual-token architecture (short-lived access + rotating refresh), session management, account lifecycle, and GDPR compliance. Built entirely on Web Crypto APIs — no external auth libraries.
 
 ---
 
@@ -15,8 +15,7 @@
 - [Auth Middleware](#auth-middleware)
 - [Frontend Auth Flow](#frontend-auth-flow)
 - [Logout](#logout)
-- [Passkey / WebAuthn](#passkey--webauthn)
-- [Multi-Factor Authentication (TOTP)](#multi-factor-authentication-totp)
+
 - [Session Management](#session-management)
 - [OAuth Scope Expansion](#oauth-scope-expansion)
 - [Rate Limiting](#rate-limiting)
@@ -38,24 +37,83 @@
 | **Zero external auth libraries** | All cryptography via `crypto.subtle` (Web Crypto API). No JWT libraries, no passport.js, no `@hono/oauth-providers`. Cloudflare Workers runtime only. |
 | **Short-lived access tokens** | Access tokens expire in 15 minutes. Limits blast radius of stolen tokens. |
 | **Rotating refresh tokens** | Single-use refresh tokens with family-based replay detection. Compromised refresh tokens trigger full revocation. |
-| **Passwordless-first** | Primary auth via OAuth (GitHub/Google) or passkeys. No password database. |
+| **OAuth-only authentication** | All authentication via OAuth providers (GitHub for participants, Google for organizers/admins). No passwords, no passkeys, no MFA. OAuth providers handle credential security. |
 | **Per-request role resolution** | Roles are never baked into tokens. Resolved from the database on every request, per hackathon. |
 | **Multi-device session visibility** | Users can see and revoke all active sessions from a settings page. |
 | **GDPR compliance** | Full data export and account deletion with cascading cleanup. |
 
 ---
 
+## Platform Architecture (Auth Domains)
+
+DevSage operates as three separate applications, each with its own domain, login system, and user base. There are no shared sessions across domains.
+
+| Domain | App | Users | OAuth Provider | Notes |
+|--------|-----|-------|----------------|-------|
+| `shikdd.devsage.org` | Admin Panel | Platform admins | Google OAuth only | Internal admin dashboard. Admins invite organizers (clubs or individuals) |
+| `platform.devsage.org` | Organizer/Judge Portal | Organizers (clubs + individuals) + Judges | Google OAuth only | Organizers create/manage hackathons. Judges access judging interfaces. Routes: `/clubs/{slug}` for club hackathons, `/{slug}` for individual hackathons |
+| `{slug}.devsage.org` | Participant Site | Team Leads + Team Members | GitHub OAuth (primary) + Google OAuth (option) | Per-hackathon site. GitHub account always required. Registration mode is configurable per hackathon (see below) |
+
+### Invite Chain
+
+All invites are sent as emails by DevSage on behalf of the inviting party. Recipients receive an email with a link to their respective platform.
+
+```
+Admin (shikdd.devsage.org)
+  └─ Invites → Organizer (club or individual) → email with platform.devsage.org link
+       ├─ Invites → Judge → email with platform.devsage.org link (scoped to inviting workspace)
+       ├─ Invites → Co-organizer → email with platform.devsage.org link
+       └─ Invites → Team Lead → email with {slug}.devsage.org link
+            └─ Invites → Team Member → email with {slug}.devsage.org link
+```
+
+**Judge workspace scoping:** A judge invited by a workspace can only judge hackathons within that workspace. To judge across workspaces, they must be invited separately by each workspace's organizer.
+
+### Organizer Types
+
+| Type | Domain Route | Subscription | Collaboration |
+|------|-------------|-------------|---------------|
+| **Club** | `platform.devsage.org/clubs/{slug}` | Subscription-based (recurring) | Can collaborate with other clubs on events |
+| **Individual** | `platform.devsage.org/{slug}` | One-time payment per hackathon | No collaboration features |
+
+### Participant Registration Modes
+
+Organizers can configure how participants register for each hackathon. DevSage sends all invite emails on behalf of the organizer.
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Open Link** | Anyone with the `{slug}.devsage.org` registration link can sign up | Public hackathons, wide reach |
+| **Domain-Restricted** | Only users with emails from allowed domains (e.g., `@university.edu`) can register | University-internal or organization-scoped hackathons |
+| **Approval-Based** | Anyone can register via the link, but the organizer must approve each registration before the participant gains access | Curated hackathons, limited capacity events |
+
+The registration mode is set per hackathon by the organizer during hackathon configuration. Regardless of mode, all participants must link a GitHub account to use hackathon features.
+
+---
+
 ## Auth Providers
 
-DevSage supports three authentication methods. GitHub is required for full platform functionality because the bot features (commit tracking, PR comments, submission capture) depend on a linked GitHub account.
+Each domain has specific OAuth provider requirements. There is no shared user table across domains — each app maintains its own users.
 
-| Provider | Role | Required? | When Available |
-|----------|------|-----------|----------------|
-| GitHub OAuth 2.0 | Primary identity + bot features | Yes (for full access) | Launch |
-| Google OAuth 2.0 | Convenience login | No | Launch |
-| Passkey / WebAuthn | Passwordless, phishing-resistant | No | Post-launch |
+### Admin Panel (`shikdd.devsage.org`)
 
-Users who sign in with Google without a linked GitHub account have limited access — they cannot join teams, submit, or use any GitHub-dependent features. They are prompted to link a GitHub account.
+| Provider | Role | Required? |
+|----------|------|-----------|
+| Google OAuth 2.0 | Primary and only identity | Yes |
+
+### Organizer/Judge Platform (`platform.devsage.org`)
+
+| Provider | Role | Required? |
+|----------|------|-----------|
+| Google OAuth 2.0 | Primary and only identity | Yes |
+
+### Participant Sites (`{slug}.devsage.org`)
+
+| Provider | Role | Required? |
+|----------|------|-----------|
+| GitHub OAuth 2.0 | Primary identity + code submission | Yes (must be linked) |
+| Google OAuth 2.0 | Convenience login option | No — but must link GitHub after |
+
+Participants who sign in with Google must link a GitHub account before they can join teams or submit code. If a participant does not have a GitHub account, they must create one on github.com first.
 
 ---
 
@@ -105,11 +163,7 @@ sequenceDiagram
     W->>W: Sign refresh token (30-day expiry)
     W->>D1: Insert token family record
 
-    alt User has MFA enabled
-        W->>U: Set-Cookie: mfa_pending=<temp_token><br/>302 → /auth/mfa-challenge
-    else No MFA
-        W->>U: Set-Cookie: access_token + refresh_token<br/>302 → {origin}/auth/callback
-    end
+    W->>U: Set-Cookie: access_token + refresh_token<br/>302 → {origin}/auth/callback
 ```
 
 **GitHub OAuth parameters:**
@@ -123,7 +177,7 @@ sequenceDiagram
 | Redirect URI | `/auth/callback/github` |
 | State storage | Workers KV, 10-minute TTL, consumed on use |
 
-**Why GitHub is required:** DevSage's core value prop is GitHub-native hackathon management. The bot tracks commits, detects force pushes, captures tag-based submissions, and comments on PRs. All of this requires a linked `github_id`. Without it, the user is essentially read-only.
+**Why GitHub is required for participants:** DevSage's core value prop is GitHub-native hackathon management. The bot tracks commits, detects force pushes, captures tag-based submissions, and comments on PRs. All of this requires a linked `github_id`. Participants on `{slug}.devsage.org` must have GitHub linked to use any hackathon features. Organizers and admins (on `platform.devsage.org` and `shikdd.devsage.org`) use Google OAuth only — they don't need GitHub since they don't submit code.
 
 ### Google OAuth (Secondary)
 
@@ -176,9 +230,7 @@ sequenceDiagram
 
     W->>W: Create token family, sign access + refresh tokens
 
-    alt User has MFA enabled
-        W->>U: Set-Cookie: mfa_pending<br/>302 → /auth/mfa-challenge
-    else User has github_id
+    alt User has github_id
         W->>U: Set-Cookie: access_token + refresh_token<br/>302 → {origin}/auth/callback
     else User has NO github_id
         W->>U: Set-Cookie: access_token + refresh_token<br/>302 → {origin}/link-required
@@ -205,9 +257,7 @@ Users who sign in with Google but have no GitHub account linked are redirected t
 ```mermaid
 flowchart TD
     A[Google OAuth callback] --> B{User has github_id?}
-    B -->|Yes| C{MFA enabled?}
-    C -->|Yes| D[Set mfa_pending cookie → /auth/mfa-challenge]
-    C -->|No| E[Set access + refresh cookies → /dashboard]
+    B -->|Yes| E[Set access + refresh cookies → /dashboard]
     B -->|No| F[Set access + refresh cookies → /link-required]
     F --> G["User clicks 'Link GitHub Account'"]
     G --> H[GitHub OAuth flow with link_mode=true in state]
@@ -284,7 +334,7 @@ interface RefreshToken {
 - **Email** — may change; always fetched from DB when needed
 - **Display name** — may change; always fetched from DB when needed
 - **Permissions** — derived from roles at request time
-- **MFA status** — checked during login flow, not on every request
+
 
 **Why 15-minute access tokens?** Short enough that a stolen token has limited utility (attacker has at most 15 minutes). Long enough that most user sessions (clicking through pages, filling forms) never hit a refresh boundary. The 15-minute window also means a compromised token cannot be used indefinitely even if the refresh token is not compromised.
 
@@ -294,7 +344,7 @@ interface RefreshToken {
 
 ```mermaid
 flowchart TD
-    A[User completes OAuth + MFA] --> B[Worker creates token family]
+    A[User completes OAuth] --> B[Worker creates token family]
     B --> C[Sign access token — 15-min expiry]
     B --> D[Generate refresh token — 30-day expiry]
     C --> E[Set access_token cookie — path /]
@@ -361,11 +411,15 @@ All tokens are stored in HttpOnly cookies. JavaScript never touches tokens direc
 
 ### Production
 
+Cookies are scoped to each app's specific subdomain — NOT to `.devsage.org`. This prevents cookie leakage across domains (e.g., a participant's token being sent to the admin panel).
+
 | Cookie | Value | HttpOnly | Secure | SameSite | Path | MaxAge | Domain |
 |--------|-------|----------|--------|----------|------|--------|--------|
-| `access_token` | Signed JWT | Yes | Yes | `Strict` | `/` | 900 (15 min) | `.devsage.org` |
-| `refresh_token` | Opaque UUID | Yes | Yes | `Strict` | `/auth/refresh` | 2592000 (30 days) | `.devsage.org` |
-| `mfa_pending` | Temporary JWT | Yes | Yes | `Strict` | `/auth/mfa` | 300 (5 min) | `.devsage.org` |
+| `access_token` | Signed JWT | Yes | Yes | `Strict` | `/` | 900 (15 min) | Per-app subdomain (e.g., `hackathon-a.devsage.org`, `platform.devsage.org`) |
+| `refresh_token` | Opaque UUID | Yes | Yes | `Strict` | `/auth/refresh` | 2592000 (30 days) | Per-app subdomain |
+
+
+**Critical: Never set domain to `.devsage.org`** — that would make cookies available to ALL subdomains including untrusted `{slug}.devsage.org` sites.
 
 ### Development
 
@@ -373,9 +427,9 @@ All tokens are stored in HttpOnly cookies. JavaScript never touches tokens direc
 |--------|-------|----------|--------|----------|------|--------|--------|
 | `access_token` | Signed JWT | Yes | No | `Lax` | `/` | 900 | *(omitted — defaults to localhost)* |
 | `refresh_token` | Opaque UUID | Yes | No | `Lax` | `/auth/refresh` | 2592000 | *(omitted)* |
-| `mfa_pending` | Temporary JWT | Yes | No | `Lax` | `/auth/mfa` | 300 | *(omitted)* |
 
-**Why `SameSite=Strict` in production but `Lax` in development?** In production, both the frontend (`devsage.org`) and the OAuth callback (`api.devsage.org/auth/callback/...`) share the `.devsage.org` domain — so the redirect from GitHub/Google back to our callback is same-site and `Strict` works. In development, GitHub redirects to `localhost`, which is a different site from `github.com` — `Strict` would block the cookie from being sent on the redirect, so `Lax` is needed.
+
+**Why `SameSite=Strict` in production but `Lax` in development?** In production, each app's frontend and its API share the same subdomain (e.g., `platform.devsage.org` serves both the SPA and API routes) — so OAuth redirects back to the callback are same-site and `Strict` works. In development, GitHub/Google redirects to `localhost`, which is cross-site — `Strict` would block the cookie, so `Lax` is needed.
 
 **Why separate paths for refresh and access cookies?** The refresh token cookie has `path: /auth/refresh`, so it is only sent on refresh requests. This means a compromised endpoint elsewhere in the API cannot extract the refresh token — it is never present in those requests.
 
@@ -403,7 +457,7 @@ The middleware sets the authenticated user on the request context. Downstream ha
 
 ### `optionalAuth` (lenient)
 
-Used on public routes that optionally personalize content for logged-in users (e.g., leaderboard highlighting, "your team" badges).
+Used on routes that may serve both authenticated and unauthenticated contexts (e.g., hackathon registration landing pages, pre-login hackathon info pages). Unauthenticated access is limited to registration/invite link landing pages and the login page itself.
 
 ```mermaid
 flowchart LR
@@ -415,24 +469,7 @@ flowchart LR
     E --> F["next()"]
 ```
 
-No error is returned for missing or invalid tokens — the request proceeds unauthenticated.
-
-### `requireMFA` (conditional)
-
-Used on sensitive operations where the organizer has mandated MFA for admin+ roles.
-
-```mermaid
-flowchart LR
-    A[Request with valid access token] --> B{Route requires MFA?}
-    B -->|No| C["next()"]
-    B -->|Yes| D{User has MFA enabled?}
-    D -->|No| E[403 MFA_REQUIRED — redirect to /settings/security]
-    D -->|Yes| F{MFA verified within last 30 minutes?}
-    F -->|Yes| C
-    F -->|No| G[403 MFA_CHALLENGE_REQUIRED — redirect to /auth/mfa-challenge]
-```
-
-**Note:** MFA verification status is tracked server-side in the token family record (`mfa_verified_at` timestamp), not in the JWT. This prevents replay of a "pre-MFA" access token after the user completes MFA — the check hits D1 on every request that requires it.
+No error is returned for missing or invalid tokens — the request proceeds unauthenticated. This is only used on registration/invite acceptance and login routes, NOT for general public browsing (there are no public pages).
 
 ---
 
@@ -485,7 +522,7 @@ interface AuthContext {
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user` | `User \| null` | Current user: `id`, `github_username`, `display_name`, `avatar_url`, `has_mfa`, `github_linked` |
+| `user` | `User \| null` | Current user: `id`, `github_username`, `display_name`, `avatar_url`, `github_linked` |
 | `isAuthenticated` | `boolean` | `true` if user object is present |
 | `isLoading` | `boolean` | `true` during initial `/auth/me` check and during token refresh |
 | `logout()` | `() => Promise<void>` | Calls `POST /auth/logout`, clears context state, redirects to `/` |
@@ -542,172 +579,6 @@ sequenceDiagram
 ```
 
 ---
-
-## Passkey / WebAuthn
-
-Passkeys provide phishing-resistant, passwordless authentication. Users register a platform authenticator (fingerprint, Face ID, hardware security key) from their settings page. Passkeys are additive — they do not replace OAuth. A user can log in via OAuth or passkey.
-
-### Registration Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User Browser
-    participant SPA as Settings Page
-    participant W as API Worker
-    participant D1 as D1 Database
-
-    U->>SPA: Click "Add passkey"
-    SPA->>W: POST /auth/passkey/register/begin
-    W->>W: Generate challenge (32 random bytes)
-    W->>D1: Store challenge with 5-minute TTL
-    W-->>SPA: PublicKeyCredentialCreationOptions<br/>(challenge, rp, user, pubKeyCredParams, attestation: none)
-
-    SPA->>U: Browser prompts for biometric / security key
-    U->>SPA: User completes gesture
-    SPA->>W: POST /auth/passkey/register/complete<br/>(attestationResponse)
-
-    W->>D1: Verify challenge exists and is not expired
-    W->>W: Parse attestation, extract public key
-    W->>D1: INSERT into user_credentials<br/>(credential_id, public_key, sign_count, transports, name)
-    W-->>SPA: 201 Created
-```
-
-### Login Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User Browser
-    participant SPA as Login Page
-    participant W as API Worker
-    participant D1 as D1 Database
-
-    U->>SPA: Click "Sign in with passkey"
-    SPA->>W: POST /auth/passkey/login/begin
-    W->>W: Generate challenge (32 random bytes)
-    W->>D1: Store challenge with 5-minute TTL
-    W-->>SPA: PublicKeyCredentialRequestOptions<br/>(challenge, rpId, allowCredentials: [])
-
-    SPA->>U: Browser prompts for passkey selection
-    U->>SPA: User completes gesture
-    SPA->>W: POST /auth/passkey/login/complete<br/>(assertionResponse)
-
-    W->>D1: Look up credential by credential_id
-    W->>W: Verify signature against stored public key via crypto.subtle
-    W->>W: Verify sign count > stored sign count (cloning detection)
-    W->>D1: Update sign_count
-
-    W->>W: Create token family, sign access + refresh tokens
-    W->>U: Set-Cookie: access_token + refresh_token
-```
-
-### WebAuthn Configuration
-
-| Property | Value | Rationale |
-|----------|-------|-----------|
-| Relying Party ID | `devsage.org` | Scoped to main domain |
-| Relying Party Name | `DevSage` | Displayed in browser prompts |
-| Attestation | `none` | Privacy-preserving — no attestation verification needed |
-| User verification | `preferred` | Use biometric when available, fall back to PIN |
-| Discoverable credentials | Yes | Enables passkey auto-fill in browsers |
-| Algorithms | ES256 (-7), RS256 (-257) | Broad device support |
-| Challenge TTL | 5 minutes | Generous for slow biometric prompts |
-| Credential naming | User-provided label ("MacBook Pro", "YubiKey") | For session management UI |
-
----
-
-## Multi-Factor Authentication (TOTP)
-
-TOTP-based MFA is an optional security layer. Users enroll from a security settings page. Organizers can require MFA for admin-and-above roles on their hackathon.
-
-### Enrollment Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant SPA as Settings Page
-    participant W as API Worker
-    participant D1 as D1 Database
-
-    U->>SPA: Navigate to /settings/security, click "Enable MFA"
-    SPA->>W: POST /auth/mfa/enroll/begin
-
-    W->>W: Generate 20-byte random secret (base32-encoded)
-    W->>W: Build otpauth URI:<br/>otpauth://totp/DevSage:{username}?secret={s}&issuer=DevSage&digits=6&period=30
-    W->>D1: Store encrypted secret (AES-256-GCM) in user_mfa, status=pending
-    W-->>SPA: { qr_uri, secret_plaintext, recovery_codes: string[10] }
-
-    SPA->>U: Display QR code + manual entry key + recovery codes
-    Note over U: User scans QR code with authenticator app
-
-    U->>SPA: Enter 6-digit code from authenticator
-    SPA->>W: POST /auth/mfa/enroll/verify { code }
-
-    W->>D1: Decrypt secret, generate expected TOTP
-    W->>W: Compare code with +-1 step tolerance
-
-    alt Code valid
-        W->>D1: UPDATE user_mfa SET status = active
-        W->>D1: INSERT hashed recovery codes into recovery_codes table
-        W-->>SPA: 200 MFA enabled
-    else Code invalid
-        W-->>SPA: 400 MFA_INVALID
-    end
-```
-
-### Login with MFA
-
-When a user with MFA enabled completes OAuth, they are not immediately issued access/refresh tokens. Instead, they receive a short-lived `mfa_pending` cookie and are redirected to a challenge page.
-
-```mermaid
-sequenceDiagram
-    participant U as User Browser
-    participant SPA as MFA Challenge Page
-    participant W as API Worker
-    participant D1 as D1 Database
-
-    Note over U: User completed OAuth, has mfa_pending cookie
-
-    SPA->>U: Display TOTP input field
-    U->>SPA: Enter 6-digit code
-    SPA->>W: POST /auth/mfa/verify<br/>Cookie: mfa_pending=...<br/>Body: { code }
-
-    W->>W: Verify mfa_pending JWT (5-min expiry, contains user_id)
-    W->>D1: Decrypt TOTP secret for user
-    W->>W: Validate code (30-second window, +-1 step tolerance)
-
-    alt Code valid
-        W->>W: Create token family, sign access + refresh tokens
-        W->>D1: SET mfa_verified_at = now() on token family
-        W->>U: Clear mfa_pending cookie<br/>Set-Cookie: access_token + refresh_token<br/>200 OK
-    else Code invalid
-        W->>U: 401 MFA_INVALID (attempts remaining: N)
-    else Too many attempts (5+)
-        W->>U: 429 MFA_RATE_LIMITED (locked for 15 minutes)
-    end
-```
-
-### Recovery Codes
-
-10 single-use recovery codes are generated at MFA enrollment. Each is 8 characters, alphanumeric, stored as bcrypt hashes in the `recovery_codes` table. When a user submits a recovery code instead of a TOTP code:
-
-1. Hash the submitted code, compare against all unused recovery codes for the user
-2. If match found: mark that recovery code as `used_at = now()`, proceed as if TOTP succeeded
-3. If no match: return `MFA_INVALID`
-4. If fewer than 3 recovery codes remain: warn the user to generate new ones
-
-### TOTP Configuration
-
-| Property | Value |
-|----------|-------|
-| Algorithm | TOTP (RFC 6238) using HMAC-SHA1 via `crypto.subtle` |
-| Period | 30 seconds |
-| Digits | 6 |
-| Window tolerance | +-1 step (accepts previous, current, and next code) |
-| Secret length | 20 bytes (160 bits), base32-encoded for QR URI |
-| Secret storage | AES-256-GCM encrypted in `user_mfa` table. Encryption key: `MFA_ENCRYPTION_KEY` env var |
-| Recovery codes | 10 codes, 8 chars alphanumeric, bcrypt-hashed |
-| Max attempts | 5 per challenge session, then 15-minute lockout |
-| Enforcement | Optional per-user. Organizers can require MFA for `admin`+ roles via hackathon settings |
 
 ---
 
@@ -812,8 +683,7 @@ All `/auth/*` endpoints are rate-limited at the Cloudflare edge to prevent crede
 | `GET /auth/callback/*` | 20 | 1 minute | 10 minutes | OAuth callbacks |
 | `POST /auth/refresh` | 30 | 1 minute | 5 minutes | Token refresh |
 | `POST /auth/logout` | 10 | 1 minute | 1 minute | Logout |
-| `POST /auth/mfa/*` | 10 | 1 minute | 15 minutes | MFA verification — stricter to prevent brute force |
-| `POST /auth/passkey/*` | 10 | 1 minute | 10 minutes | WebAuthn ceremonies |
+
 | `DELETE /auth/account` | 3 | 1 hour | 1 hour | Account deletion requests |
 
 **Implementation:** Configured via Cloudflare Rate Limiting Rules (dashboard or Terraform). Not enforced in Worker code — edge enforcement means blocked requests never consume Worker CPU.
@@ -872,8 +742,7 @@ sequenceDiagram
     Q->>D1: Revoke all token families for user
     Q->>D1: Remove from all teams (reassign leader if needed)
     Q->>D1: Delete scores submitted by user
-    Q->>D1: Delete user_credentials (passkeys)
-    Q->>D1: Delete user_mfa + recovery_codes
+
     Q->>D1: Anonymize audit events (set actor to "deleted_user_{hash}")
     Q->>D1: Delete OAuth tokens (github_elevated_token)
     Q->>D1: Delete user record
@@ -914,15 +783,11 @@ Every error response from auth endpoints uses a machine-readable `code` field in
 | `GITHUB_LINK_REQUIRED` | 403 | User has no github_id, trying to access GitHub-dependent feature | "Please link your GitHub account to use this feature." |
 | `GITHUB_SCOPE_REQUIRED` | 403 | Bot action needs elevated GitHub token | "Additional GitHub permissions required." |
 | `ACCOUNT_MERGE_CONFLICT` | 409 | Account linking would create conflicting team memberships | "Cannot link accounts — conflicting team memberships exist." |
-| `MFA_REQUIRED` | 403 | Route requires MFA but user has not enrolled | "Multi-factor authentication required for this action." |
-| `MFA_CHALLENGE_REQUIRED` | 403 | User has MFA but hasn't verified in this session recently | "Please verify your identity with your authenticator app." |
-| `MFA_INVALID` | 401 | TOTP code or recovery code is incorrect | "Invalid verification code. Please try again." |
-| `MFA_RATE_LIMITED` | 429 | Too many failed MFA attempts | "Too many failed attempts. Try again in 15 minutes." |
+
 | `RATE_LIMITED` | 429 | Cloudflare edge rate limit triggered | "Too many requests. Please wait and try again." |
 | `ACCOUNT_DELETED` | 410 | User attempts to log in after account deletion | "This account has been deleted." |
 | `ACCOUNT_NOT_FOUND` | 404 | User ID in token doesn't match any DB record | "Account not found." |
-| `PASSKEY_REGISTRATION_FAILED` | 400 | WebAuthn attestation verification failed | "Passkey registration failed. Please try again." |
-| `PASSKEY_VERIFICATION_FAILED` | 401 | WebAuthn assertion verification failed | "Passkey verification failed. Please try again." |
+
 | `DELETION_TOKEN_INVALID` | 400 | Account deletion confirmation token expired or invalid | "Deletion link expired. Please request again." |
 
 ---
@@ -936,8 +801,7 @@ Every error response from auth endpoints uses a machine-readable `code` field in
 | Token replay (access) | 15-minute expiry limits window. No server-side revocation check on access tokens (stateless by design). |
 | Token replay (refresh) | Single-use with family-based replay detection. Reuse of a consumed refresh token revokes the entire family, killing all sessions from that login. |
 | OAuth state forgery | Cryptographically random state stored in KV with 10-minute TTL. State is consumed (deleted) on first use — cannot be replayed. |
-| Brute-force MFA | 5-attempt limit per challenge, then 15-minute lockout. Edge rate limiting on `/auth/mfa/*`. |
-| Passkey cloning | Sign count verification — if a credential's sign count is not strictly increasing, the credential may have been cloned. Reject and warn user. |
+
 | Account takeover via email | Email is not used for authentication. OAuth provider identity (GitHub ID / Google ID) is the key. Changing email on the provider doesn't affect DevSage auth. |
 | Stolen refresh token | Refresh tokens are hashed (SHA-256) in the database. Even if D1 is compromised, raw tokens cannot be extracted. Combined with single-use rotation, a stolen token from network interception is detectable on reuse. |
 | Privilege escalation | Roles are resolved per-request from D1, never from the token. Even if an attacker modifies the JWT payload, they cannot escalate roles — `sub` is validated and roles are fetched from the source of truth. |
@@ -968,7 +832,7 @@ DevSage does not store the GitHub OAuth access token from login beyond the callb
 
 ### Cookie Domain Mismatch (Local Development)
 
-Production cookies use `domain: .devsage.org`. In local development, the `domain` field is omitted entirely, which causes the cookie to default to the exact host (`localhost`). This prevents cookies from being rejected due to domain mismatch.
+Production cookies use the app's specific subdomain (e.g., `platform.devsage.org`, `hackathon-a.devsage.org`). They are never set to `.devsage.org` to prevent cross-subdomain leakage. In local development, the `domain` field is omitted entirely, which causes the cookie to default to the exact host (`localhost`). This prevents cookies from being rejected due to domain mismatch.
 
 ### Refresh Token Race Condition
 
@@ -976,14 +840,16 @@ Multiple tabs may detect an expired access token simultaneously and all attempt 
 - The refresh endpoint uses a short grace period (5 seconds) after `used_at` is set. If the same token hash is presented within 5 seconds of being consumed, the request receives the same new token pair (idempotent refresh).
 - After the grace period, it triggers full family revocation (true replay detection).
 
-### Account with Only Google (No GitHub)
+### Participant Logged in via Google (No GitHub Linked)
 
-A user who signs in with Google and never links GitHub has limited functionality:
-- Can browse public hackathon pages
-- Can view leaderboards
-- Cannot join teams, submit, or participate in judging
-- Sees a persistent banner: "Link your GitHub account to participate"
+On participant sites (`{slug}.devsage.org`), a user who signs in with Google but has not yet linked GitHub:
+- Can see the hackathon landing page and their invite details
+- Cannot join teams, submit code, or access any hackathon features
+- Is immediately prompted to link a GitHub account (blocking modal, not just a banner)
+- If they do not have a GitHub account, they are directed to create one at github.com first
 - Their `ghid` field in the access token is `0` and `ghu` is `""`
+
+**Note:** On the organizer/judge platform (`platform.devsage.org`) and admin panel (`shikdd.devsage.org`), Google is the only login method — no GitHub linking is needed since these users don't submit code.
 
 ---
 
@@ -1003,7 +869,7 @@ All tables use `TEXT` primary keys (UUIDs generated via `crypto.randomUUID()`). 
 | `display_name` | TEXT | From OAuth provider, editable |
 | `avatar_url` | TEXT | From OAuth provider |
 | `github_elevated_token` | TEXT | AES-256-GCM encrypted. Nullable. Only set after scope elevation |
-| `has_mfa` | INTEGER | 0 or 1. Denormalized for fast middleware checks |
+
 | `last_login_at` | TEXT | ISO-8601 |
 | `created_at` | TEXT | ISO-8601 |
 | `updated_at` | TEXT | ISO-8601 |
@@ -1017,7 +883,7 @@ All tables use `TEXT` primary keys (UUIDs generated via `crypto.randomUUID()`). 
 | `token_hash` | TEXT | SHA-256 hash of the current (latest) refresh token |
 | `device` | TEXT | Parsed User-Agent string |
 | `location` | TEXT | Country code from `cf-ipcountry` |
-| `mfa_verified_at` | TEXT | ISO-8601. Nullable. When MFA was last verified in this session |
+
 | `expires_at` | TEXT | ISO-8601. 30 days from most recent refresh |
 | `used_at` | TEXT | ISO-8601. Set when this specific token is consumed during refresh |
 | `revoked_at` | TEXT | ISO-8601. Set on logout, session revocation, or replay detection |
@@ -1025,46 +891,7 @@ All tables use `TEXT` primary keys (UUIDs generated via `crypto.randomUUID()`). 
 
 **Indexes:** `user_id` (for session listing), `token_hash` (for refresh lookup).
 
-### `user_credentials` (new — passkeys)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | TEXT PK | UUID |
-| `user_id` | TEXT FK → users.id | Owner |
-| `credential_id` | BLOB | WebAuthn credential ID (binary) |
-| `public_key` | BLOB | COSE public key (binary) |
-| `sign_count` | INTEGER | Incremented on each use — cloning detection |
-| `transports` | TEXT | JSON array: `["internal", "usb", "ble", "nfc"]` |
-| `name` | TEXT | User-provided label: "MacBook Pro", "YubiKey 5" |
-| `created_at` | TEXT | ISO-8601 |
-| `last_used_at` | TEXT | ISO-8601 |
-
-**Indexes:** `user_id`, `credential_id` (unique).
-
-### `user_mfa` (new)
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | TEXT PK | UUID |
-| `user_id` | TEXT FK → users.id | Unique — one MFA config per user |
-| `encrypted_secret` | TEXT | AES-256-GCM encrypted TOTP secret |
-| `encryption_iv` | TEXT | Initialization vector for AES-GCM (base64) |
-| `status` | TEXT | `pending` (during enrollment) or `active` |
-| `created_at` | TEXT | ISO-8601 |
-
-**Indexes:** `user_id` (unique).
-
-### `recovery_codes` (new)
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | TEXT PK | UUID |
-| `user_id` | TEXT FK → users.id | Owner |
-| `code_hash` | TEXT | bcrypt hash of the recovery code |
-| `used_at` | TEXT | ISO-8601. Nullable. Set when consumed |
-| `created_at` | TEXT | ISO-8601 |
-
-**Indexes:** `user_id`.
 
 ### `deletion_requests` (new)
 
@@ -1080,18 +907,7 @@ All tables use `TEXT` primary keys (UUIDs generated via `crypto.randomUUID()`). 
 
 **Indexes:** `user_id`, `token_hash`.
 
-### `webauthn_challenges` (new)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | TEXT PK | UUID |
-| `user_id` | TEXT | Nullable — null for login challenges (discoverable credential) |
-| `challenge` | TEXT | Base64-encoded 32-byte challenge |
-| `type` | TEXT | `registration` or `authentication` |
-| `expires_at` | TEXT | ISO-8601. 5 minutes from creation |
-| `created_at` | TEXT | ISO-8601 |
-
-**Indexes:** `challenge` (unique), `expires_at` (for cleanup).
 
 ---
 
@@ -1101,7 +917,7 @@ The transition from v2 (single long-lived JWT) to v3 (dual-token with refresh ro
 
 ### Phase 1: Deploy Dual-Token Infrastructure
 
-- Deploy all new tables (`token_families`, `user_credentials`, `user_mfa`, etc.)
+- Deploy all new tables (`token_families`, `deletion_requests`)
 - Deploy the new auth middleware that accepts BOTH formats:
   - Old format: single `session` cookie containing a 7-day JWT → treat as valid access token, no refresh capability
   - New format: `access_token` + `refresh_token` cookies → full v3 flow
@@ -1126,9 +942,7 @@ The transition from v2 (single long-lived JWT) to v3 (dual-token with refresh ro
 
 **Duration:** 1 deploy. Any user who hasn't logged in for 7+ days simply re-authenticates.
 
-### Passkeys and MFA
 
-These are purely additive. No migration needed — users opt in from settings. Organizer-mandated MFA for admin+ roles only takes effect after the organizer enables it in hackathon settings; it doesn't retroactively lock out existing admins (they get a grace period prompt to set up MFA).
 
 ---
 
@@ -1140,16 +954,12 @@ graph TD
     A --> C[Account Deletion / GDPR]
     
     D[Rate Limiting] -.->|independent| A
-    E[Passkey / WebAuthn] -.->|independent| A
-    F[MFA / TOTP] -.->|independent| A
     G[OAuth Scope Expansion] -.->|independent| A
 
     B --> H["All-Device Logout (uses session list)"]
     
     style A fill:#ef4444,color:#fff
     style D fill:#f59e0b,color:#fff
-    style E fill:#3b82f6,color:#fff
-    style F fill:#3b82f6,color:#fff
     style G fill:#6b7280,color:#fff
     style B fill:#10b981,color:#fff
     style C fill:#10b981,color:#fff
@@ -1161,17 +971,14 @@ graph TD
 | Refresh token rotation | **High** | Medium | Nothing (first) | `token_families` |
 | Rate limiting | **High** | Low | Nothing (Cloudflare config) | None |
 | Session management | Medium | Medium | Refresh token rotation | None (uses `token_families`) |
-| Passkey / WebAuthn | Medium | High | Nothing | `user_credentials`, `webauthn_challenges` |
-| MFA (TOTP) | Medium | Medium | Nothing | `user_mfa`, `recovery_codes` |
 | OAuth scope expansion | Medium | Low | Nothing | Column on `users` |
 | Account deletion / GDPR | Medium | High | Refresh token rotation | `deletion_requests` |
 
 **Recommended implementation order:**
 1. Refresh token rotation + rate limiting (parallel — no overlap)
-2. MFA + passkeys (parallel — independent features)
-3. Session management (needs token families from step 1)
-4. OAuth scope expansion (independent, low effort)
-5. Account deletion / GDPR (needs token families, high effort, do last)
+2. Session management (needs token families from step 1)
+3. OAuth scope expansion (independent, low effort)
+4. Account deletion / GDPR (needs token families, high effort, do last)
 
 ---
 
@@ -1186,11 +993,11 @@ Key architectural decisions and their rationale.
 | 15-minute access token expiry | Short-lived stateless | Limits blast radius of stolen tokens. Long enough that typical user sessions rarely hit refresh. | 5 min (too aggressive, constant refreshing), 1 hour (too long exposure), 7 days (v2 — no revocability) |
 | 30-day refresh token expiry | Long session continuity | Matches user expectation of staying logged in. Monthly re-auth is acceptable UX. | 7 days (too frequent re-auth), 90 days (too long, increases risk) |
 | Opaque refresh tokens (not JWTs) | Must be revocable server-side | Session management requires server-side revocation. JWTs are stateless by design — adding a revocation list defeats the purpose. | JWT refresh tokens with revocation list — more complex, same result |
-| `SameSite=Strict` in prod | Maximum CSRF protection | Both frontend and API share `.devsage.org` domain. OAuth redirects from GitHub/Google back to our callback are same-site. No cross-site cookie sending needed. | `Lax` — weaker CSRF protection, not needed since our setup allows `Strict` |
+| `SameSite=Strict` in prod | Maximum CSRF protection | Each app's frontend and API share the same subdomain. OAuth redirects from GitHub/Google back to our callback are same-site. No cross-site cookie sending needed. | `Lax` — weaker CSRF protection, not needed since our setup allows `Strict` |
 | `SameSite=Lax` in dev | OAuth redirect compatibility | GitHub/Google redirect to `localhost`, which is cross-site. `Strict` blocks cookies on cross-site navigation. `Lax` allows cookies on top-level navigations (GET redirects). | `None` + `Secure` — requires HTTPS in dev, unnecessary |
 | GitHub ID as primary identity | Required for bot features | DevSage's core features (commit tracking, PR comments, tag-based submissions) all require GitHub integration. Google is a convenience login. | Email as primary key — unreliable (users change emails), doesn't map to GitHub API |
 | Roles NOT in JWT | Per-request resolution | A user's role varies by hackathon and can change mid-session (promoted to admin, invited as judge). Baking into JWT would require re-issuance on every role change. | Role in JWT with short expiry — still has staleness window, more complex |
-| TOTP AND WebAuthn (not just one) | Maximum device coverage | WebAuthn requires platform support (not all devices/browsers). TOTP works on any phone with an authenticator app. Offering both maximizes coverage for security-conscious users. | WebAuthn only — excludes users without compatible devices. TOTP only — misses phishing resistance of WebAuthn |
+| OAuth-only (no MFA/passkeys) | Reduced complexity | OAuth providers (GitHub, Google) already handle credential security including 2FA. Adding MFA/passkeys to DevSage adds significant complexity for minimal security gain in a hackathon platform. | TOTP + WebAuthn — over-engineered for this use case |
 | No `@hono/oauth-providers` | Broken on Workers | The library has known issues with Cloudflare Workers runtime (missing Node.js APIs, incorrect fetch behavior). Manual OAuth is ~50 lines of code per provider. | Fix upstream — out of our control, manual impl is trivial |
 | No password auth | Reduced attack surface | No password database = no credential stuffing, no password reset flow, no bcrypt at scale. OAuth providers handle credential management. | Email + password as fallback — massive increase in security surface area |
 | 5-second refresh grace period | Handles concurrent tabs | Multiple tabs detecting expiry simultaneously is common. Without grace, the second tab triggers false replay detection and revokes the family. | Mutex in frontend only — doesn't handle multiple browser windows. Longer grace — increases replay detection window |
