@@ -1063,7 +1063,7 @@ interface BuildConfig {
 
 | Environment | URL | Deploy Trigger | Purpose |
 |-------------|-----|---------------|---------|
-| Preview | `{branch}.devsage.workers.dev` | Every PR push | Review changes in isolation |
+| Preview | `web.devsage-org.workers.dev` | Every PR push | Review changes in isolation |
 | Staging | `staging.devsage.org` | Merge to `staging` branch | Pre-production validation |
 | Production | `devsage.org` | Merge to `main` branch | Live traffic |
 
