@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count } from 'drizzle-orm';
 import { createDbClient, workspaceInvites, workspaces, platformAdmins, users } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -43,13 +43,16 @@ admin.post('/invites', async (c) => {
   }
 
   const existing = await db
-    .select({ id: workspaceInvites.id })
+    .select({ id: workspaceInvites.id, status: workspaceInvites.status })
     .from(workspaceInvites)
-    .where(eq(workspaceInvites.email, email))
+    .where(and(
+      eq(workspaceInvites.email, email),
+      eq(workspaceInvites.status, 'pending'),
+    ))
     .get();
 
   if (existing) {
-    return errorResponse(c, 409, 'INVITE_EXISTS', 'An invite for this email already exists');
+    return errorResponse(c, 409, 'INVITE_ALREADY_PENDING', 'A pending invite already exists for this email');
   }
 
   const now = new Date();

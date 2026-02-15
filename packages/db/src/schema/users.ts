@@ -2,9 +2,10 @@ import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
-  github_id: integer('github_id').notNull().unique(),
+  github_id: integer('github_id').unique(),
   google_id: text('google_id').unique(),
-  github_username: text('github_username').notNull(),
+  github_username: text('github_username'),
+  github_elevated_token: text('github_elevated_token'),
   display_name: text('display_name').notNull(),
   email: text('email'),
   avatar_url: text('avatar_url'),

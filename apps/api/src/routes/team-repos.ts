@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and } from 'drizzle-orm';
-import { createDbClient, teamRepos, teams, teamMembers } from '@devsage/db';
+import { createDbClient, teamRepos, teams, teamMembers, users } from '@devsage/db';
 import { ConnectTeamRepoRequestSchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -31,6 +31,22 @@ teamReposRouter.post(
     const hackathon = c.get('hackathon');
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
+
+    if (!user.ghid) {
+      return errorResponse(c, 403, 'GITHUB_LINK_REQUIRED', 'Please link your GitHub account to use this feature.');
+    }
+
+    const userRecord = await db
+      .select({ github_elevated_token: users.github_elevated_token })
+      .from(users)
+      .where(eq(users.id, user.sub))
+      .get();
+
+    if (!userRecord?.github_elevated_token) {
+      return errorResponse(c, 403, 'GITHUB_SCOPE_REQUIRED', 'Additional GitHub permissions required.', {
+        redirect_url: '/auth/github/elevate',
+      });
+    }
 
     const team = await db
       .select({ id: teams.id })

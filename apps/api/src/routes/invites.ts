@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
-import { createDbClient, workspaceInvites, workspaceMembers } from '@devsage/db';
+import { createDbClient, workspaceInvites, workspaceMembers, users } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { successResponse, errorResponse } from '../lib/response.js';
@@ -48,16 +48,19 @@ invites.post('/:code/accept', authMiddleware, async (c) => {
   const invite = await db
     .select()
     .from(workspaceInvites)
-    .where(
-      and(
-        eq(workspaceInvites.code, code),
-        eq(workspaceInvites.status, 'pending'),
-      ),
-    )
+    .where(eq(workspaceInvites.code, code))
     .get();
 
   if (!invite) {
-    return errorResponse(c, 404, 'INVITE_NOT_FOUND', 'Invite not found or already used');
+    return errorResponse(c, 404, 'INVITE_NOT_FOUND', 'Invite not found');
+  }
+
+  if (invite.status === 'accepted') {
+    return errorResponse(c, 409, 'INVITE_ALREADY_ACCEPTED', 'This invite has already been accepted');
+  }
+
+  if (invite.status !== 'pending') {
+    return errorResponse(c, 400, 'INVITE_NOT_PENDING', 'Invite is no longer pending');
   }
 
   const now = new Date();
@@ -67,6 +70,16 @@ invites.post('/:code/accept', authMiddleware, async (c) => {
       .set({ status: 'expired' })
       .where(eq(workspaceInvites.id, invite.id));
     return errorResponse(c, 410, 'INVITE_EXPIRED', 'This invite has expired');
+  }
+
+  const userRecord = await db
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, user.sub))
+    .get();
+
+  if (invite.email && userRecord?.email && invite.email.toLowerCase() !== userRecord.email.toLowerCase()) {
+    return errorResponse(c, 403, 'INVITE_EMAIL_MISMATCH', 'Your email does not match the invite email');
   }
 
   await db

@@ -1,21 +1,17 @@
-const TRUSTED_DOMAIN = '.devsage.org';
-
 const DEV_ORIGINS = new Set([
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
+  'http://localhost:5173', // Vite dev (web)
+  'http://localhost:5174', // Vite dev (admin)
+  'http://localhost:5175', // Vite dev (platform)
 ]);
 
-export function isAllowedOrigin(origin: string): boolean {
+export function isAllowedOrigin(
+  origin: string,
+  envUrls?: { frontendUrl?: string; platformUrl?: string; adminUrl?: string },
+): boolean {
   if (DEV_ORIGINS.has(origin)) return true;
 
-  try {
-    const url = new URL(origin);
-    return (
-      url.protocol === 'https:' &&
-      (url.hostname === 'devsage.org' || url.hostname.endsWith(TRUSTED_DOMAIN))
-    );
-  } catch {
-    return false;
-  }
+  if (!envUrls) return false;
+
+  const allowed = [envUrls.frontendUrl, envUrls.platformUrl, envUrls.adminUrl].filter(Boolean);
+  return allowed.includes(origin);
 }

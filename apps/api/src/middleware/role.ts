@@ -126,7 +126,7 @@ export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
         .get();
 
       if (!hackathon) {
-        return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+        return errorResponse(c, 404, 'HACKATHON_NOT_FOUND', 'Hackathon not found');
       }
 
       const user = c.get('user');

@@ -7,6 +7,7 @@ import { isRecord } from '../lib/utils.js';
 
 interface HackathonConfig {
   startsAt: string | null;
+  submissionDeadline: string | null;
   judgingStarts: string | null;
   judgingEnds: string | null;
   maxTeams: number | null;
@@ -67,6 +68,7 @@ function parseInitializeRequest(value: unknown): InitializeRequest | null {
 
   const {
     startsAt,
+    submissionDeadline,
     judgingStarts,
     judgingEnds,
     maxTeams,
@@ -78,6 +80,7 @@ function parseInitializeRequest(value: unknown): InitializeRequest | null {
 
   // Nullable date fields: must be valid date string or null/undefined
   if (startsAt !== null && startsAt !== undefined && (typeof startsAt !== 'string' || !isValidDateString(startsAt))) return null;
+  if (submissionDeadline !== null && submissionDeadline !== undefined && (typeof submissionDeadline !== 'string' || !isValidDateString(submissionDeadline))) return null;
   if (judgingStarts !== null && judgingStarts !== undefined && (typeof judgingStarts !== 'string' || !isValidDateString(judgingStarts))) return null;
   if (judgingEnds !== null && judgingEnds !== undefined && (typeof judgingEnds !== 'string' || !isValidDateString(judgingEnds))) return null;
 
@@ -93,6 +96,7 @@ function parseInitializeRequest(value: unknown): InitializeRequest | null {
     hackathonId,
     config: {
       startsAt: (typeof startsAt === 'string' ? startsAt : null),
+      submissionDeadline: (typeof submissionDeadline === 'string' ? submissionDeadline : null),
       judgingStarts: (typeof judgingStarts === 'string' ? judgingStarts : null),
       judgingEnds: (typeof judgingEnds === 'string' ? judgingEnds : null),
       maxTeams: (typeof maxTeams === 'number' ? maxTeams : null),
@@ -208,7 +212,23 @@ export class HackathonStateMachine extends DurableObject<Env> {
     const state = this.getState();
     if (!state) return;
 
-    // In judging state with judgingEnds set: notify but do NOT auto-transition
+    // Active state with submission deadline passed: auto-transition to judging
+    if (state.status === 'active' && state.config.submissionDeadline) {
+      const deadline = Date.parse(state.config.submissionDeadline);
+      if (Number.isFinite(deadline) && Date.now() >= deadline) {
+        const success = this.performTransition(state, 'judging');
+        if (success) {
+          console.warn(
+            `[HackathonStateMachine] Auto-transitioned hackathon ${state.hackathonId} from active to judging (submission deadline passed)`,
+          );
+        }
+        const updated = this.getState();
+        if (updated) await this.scheduleNextAlarm(updated);
+        return;
+      }
+    }
+
+    // Judging state with judging window ended: notify only, do NOT auto-transition
     if (state.status === 'judging' && state.config.judgingEnds) {
       const judgingEnds = Date.parse(state.config.judgingEnds);
       if (Number.isFinite(judgingEnds) && Date.now() >= judgingEnds) {
@@ -290,8 +310,15 @@ export class HackathonStateMachine extends DurableObject<Env> {
   private async scheduleNextAlarm(state: HackathonState): Promise<void> {
     const now = Date.now();
 
-    // Only schedule alarm for judgingEnds when in active or judging state
-    if ((state.status === 'active' || state.status === 'judging') && state.config.judgingEnds) {
+    if (state.status === 'active' && state.config.submissionDeadline) {
+      const t = Date.parse(state.config.submissionDeadline);
+      if (Number.isFinite(t) && t > now) {
+        await this.ctx.storage.setAlarm(t);
+        return;
+      }
+    }
+
+    if (state.status === 'judging' && state.config.judgingEnds) {
       const t = Date.parse(state.config.judgingEnds);
       if (Number.isFinite(t) && t > now) {
         await this.ctx.storage.setAlarm(t);
@@ -419,6 +446,23 @@ export class HackathonStateMachine extends DurableObject<Env> {
       );
     }
 
+    // Precondition checks for specific transitions
+    if (state.status === 'draft' && payload.targetStatus === 'active') {
+      if (!state.config.submissionDeadline) {
+        return Response.json(
+          { error: 'submission_deadline must be set before starting the hackathon', code: 'PRECONDITION_FAILED' },
+          { status: 400 },
+        );
+      }
+      const deadline = Date.parse(state.config.submissionDeadline);
+      if (!Number.isFinite(deadline) || Date.now() >= deadline) {
+        return Response.json(
+          { error: 'submission_deadline must be in the future', code: 'PRECONDITION_FAILED' },
+          { status: 400 },
+        );
+      }
+    }
+
     const success = this.performTransition(state, payload.targetStatus);
     if (!success) {
       return Response.json(
@@ -490,6 +534,13 @@ export class HackathonStateMachine extends DurableObject<Env> {
         return Response.json({ error: 'Invalid startsAt', code: 'INVALID_BODY' }, { status: 400 });
       }
       merged.startsAt = typeof partialConfig.startsAt === 'string' ? partialConfig.startsAt : null;
+    }
+
+    if ('submissionDeadline' in partialConfig) {
+      if (partialConfig.submissionDeadline !== null && (typeof partialConfig.submissionDeadline !== 'string' || !isValidDateString(partialConfig.submissionDeadline))) {
+        return Response.json({ error: 'Invalid submissionDeadline', code: 'INVALID_BODY' }, { status: 400 });
+      }
+      merged.submissionDeadline = typeof partialConfig.submissionDeadline === 'string' ? partialConfig.submissionDeadline : null;
     }
 
     if ('judgingStarts' in partialConfig) {

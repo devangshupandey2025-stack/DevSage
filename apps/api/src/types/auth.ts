@@ -14,5 +14,6 @@ export interface AuthAppEnv {
     user: AuthenticatedUser;
     role: Role;
     hackathon: HackathonRecord;
+    platformRole: 'super_admin' | 'platform_admin';
   };
 }

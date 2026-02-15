@@ -1,13 +1,23 @@
 import { eq } from 'drizzle-orm';
-import { createDbClient, users } from '@devsage/db';
+import { createDbClient, users, teamMembers } from '@devsage/db';
 import type { Env } from '../types/env.js';
 import type { GitHubOAuthProfile, GoogleOAuthProfile } from './oauth.js';
+
+export class AccountMergeConflictError extends Error {
+  readonly code = 'ACCOUNT_MERGE_CONFLICT' as const;
+  readonly status = 409 as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AccountMergeConflictError';
+  }
+}
 
 /** Minimal user identity returned after upsert/link operations. */
 export interface UserIdentity {
   id: string;
-  github_id: number;
-  github_username: string;
+  github_id: number | null;
+  github_username: string | null;
 }
 
 /**
@@ -92,6 +102,32 @@ export async function linkGoogleToUser(
 
   if (!existing) {
     return null;
+  }
+
+  if (existing.google_id && existing.google_id !== profile.googleId) {
+    const conflictingUser = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.google_id, profile.googleId))
+      .get();
+
+    if (conflictingUser) {
+      const sharedTeam = await db
+        .select({ team_id: teamMembers.team_id })
+        .from(teamMembers)
+        .where(eq(teamMembers.user_id, conflictingUser.id))
+        .get();
+
+      if (sharedTeam) {
+        throw new AccountMergeConflictError(
+          'Cannot link this Google account — it belongs to another user with active team memberships.',
+        );
+      }
+    }
+
+    throw new AccountMergeConflictError(
+      'This account is already linked to a different Google account.',
+    );
   }
 
   await db

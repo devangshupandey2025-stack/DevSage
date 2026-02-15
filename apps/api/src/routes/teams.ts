@@ -29,6 +29,9 @@ teamsRouter.post(
     if (!user) {
       return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
     }
+    if (!user.ghid) {
+      return errorResponse(c, 403, 'GITHUB_LINK_REQUIRED', 'Please link your GitHub account to use this feature.');
+    }
     const hackathon = c.get('hackathon');
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);

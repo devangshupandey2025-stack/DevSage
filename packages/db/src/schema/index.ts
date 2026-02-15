@@ -1,6 +1,7 @@
 // Identity & Access
 export { users } from './users.js';
 export { refreshTokens } from './refresh-tokens.js';
+export { deletionRequests } from './deletion-requests.js';
 export { platformAdmins } from './platform-admins.js';
 export { workspaceInvites } from './workspace-invites.js';
 
@@ -11,6 +12,8 @@ export { workspaceMembers } from './workspace-members.js';
 // Hackathon Lifecycle
 export { hackathons } from './hackathons.js';
 export { hackathonTemplates } from './hackathon-templates.js';
+export { hackathonTracks } from './hackathon-tracks.js';
+export { customPhases } from './custom-phases.js';
 export { hackathonSponsors } from './hackathon-sponsors.js';
 export { hackathonRounds } from './hackathon-rounds.js';
 export { roundResults } from './round-results.js';

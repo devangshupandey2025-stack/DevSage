@@ -78,7 +78,7 @@ hackathons.get('/:slug', optionalAuth, async (c) => {
     .get();
 
   if (!hackathon) {
-    return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+    return errorResponse(c, 404, 'HACKATHON_NOT_FOUND', 'Hackathon not found');
   }
 
   if (hackathon.status === 'draft') {
@@ -119,6 +119,7 @@ hackathons.post(
       return errorResponse(c, 409, 'SLUG_TAKEN', `Slug "${slug}" is already in use`);
     }
 
+    const ext = body as Record<string, unknown>;
     await db.insert(hackathonsTable).values({
       id,
       workspace_id: body.workspaceId,
@@ -129,19 +130,34 @@ hackathons.post(
       rules_md: body.rulesMd ?? null,
       status: 'draft',
       starts_at: body.startsAt ?? null,
+      submission_deadline: (ext.submissionDeadline as string) ?? null,
       judging_starts: body.judgingStarts ?? null,
       judging_ends: body.judgingEnds ?? null,
       min_team_size: body.minTeamSize ?? DEFAULT_MIN_TEAM_SIZE,
       max_team_size: body.maxTeamSize ?? DEFAULT_MAX_TEAM_SIZE,
       max_teams: body.maxTeams ?? null,
+      allow_solo: (ext.allowSolo as number) ?? 1,
       submission_tag_pattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
+      max_submissions_per_team: (ext.maxSubmissionsPerTeam as number) ?? null,
       allow_resubmission: body.allowResubmission ?? 0,
+      allow_late_submissions: (ext.allowLateSubmissions as number) ?? 0,
+      require_readme: (ext.requireReadme as number) ?? 0,
+      require_demo_url: (ext.requireDemoUrl as number) ?? 0,
       allow_registration_during_active: body.allowRegistrationDuringActive ?? 0,
+      judges_per_submission: (ext.judgesPerSubmission as number) ?? 2,
+      enable_ai_reviews: (ext.enableAiReviews as number) ?? 1,
+      blind_judging: (ext.blindJudging as number) ?? 0,
+      enable_audience_voting: (ext.enableAudienceVoting as number) ?? 0,
       registration_mode: body.registrationMode ?? 'open',
       allowed_email_domains: body.allowedEmailDomains ?? '[]',
       require_repo: body.requireRepo ?? 1,
       timezone: body.timezone ?? 'UTC',
       template_id: body.templateId ?? null,
+      track_assignment_mode: ((ext.trackAssignmentMode as string) ?? 'team_choice') as 'organizer_assigned' | 'team_choice',
+      landing_page_public: (ext.landingPagePublic as number) ?? 1,
+      primary_color: (ext.primaryColor as string) ?? '#6366f1',
+      secondary_color: (ext.secondaryColor as string) ?? null,
+      custom_css: (ext.customCss as string) ?? null,
       tracks: body.tracks ?? '[]',
       prizes: body.prizes ?? '[]',
       settings: body.settings ?? '{}',
@@ -156,6 +172,7 @@ hackathons.post(
       user_id: user.sub,
       role: 'organizer',
       created_at: now,
+      updated_at: now,
     });
 
     const smStub = getStateMachineStub(c.env, id);
@@ -165,10 +182,14 @@ hackathons.post(
         hackathonId: id,
         config: {
           startsAt: body.startsAt ?? null,
+          submissionDeadline: (ext.submissionDeadline as string) ?? null,
           judgingStarts: body.judgingStarts ?? null,
           judgingEnds: body.judgingEnds ?? null,
           maxTeams: body.maxTeams ?? null,
+          maxSubmissionsPerTeam: (ext.maxSubmissionsPerTeam as number) ?? null,
+          allowResubmission: body.allowResubmission ?? 0,
           submissionTagPattern: body.submissionTagPattern ?? DEFAULT_SUBMISSION_TAG_PATTERN,
+          allowRegistrationDuringActive: body.allowRegistrationDuringActive ?? 0,
         },
       },
     });
@@ -213,8 +234,43 @@ hackathons.put(
     const body = c.req.valid('json');
     const db = createDbClient(c.env.DB);
 
+    const draftOnlyKeys = new Set([
+      'title', 'tagline', 'startsAt', 'submissionDeadline', 'judgingStarts', 'judgingEnds',
+      'minTeamSize', 'maxTeamSize', 'maxTeams', 'allowSolo', 'submissionTagPattern',
+      'maxSubmissionsPerTeam', 'allowResubmission', 'allowLateSubmissions', 'requireReadme',
+      'requireDemoUrl', 'allowRegistrationDuringActive', 'judgesPerSubmission', 'enableAiReviews',
+      'blindJudging', 'enableAudienceVoting', 'trackAssignmentMode', 'landingPagePublic',
+      'primaryColor', 'secondaryColor', 'customCss', 'notifyAllOnDeadline',
+      'showJudgeCommentsToParticipants', 'registrationMode', 'allowedEmailDomains',
+      'requireRepo', 'timezone', 'tracks', 'prizes', 'settings',
+    ]);
+    const dateKeys = new Set(['startsAt', 'submissionDeadline', 'judgingStarts', 'judgingEnds']);
+
     if (hackathon.status !== 'draft') {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only modify hackathons in draft status');
+      const bodyKeys = Object.keys(body) as string[];
+      const blockedKeys = bodyKeys.filter((k) => draftOnlyKeys.has(k));
+      if (blockedKeys.length > 0) {
+        const blockedDates = blockedKeys.filter((k) => dateKeys.has(k));
+        if (blockedDates.length > 0) {
+          return errorResponse(c, 400, 'DEADLINE_IMMUTABLE', `Cannot modify dates after draft: ${blockedDates.join(', ')}`);
+        }
+        return errorResponse(c, 400, 'INVALID_STATUS', `Can only modify these fields in draft status: ${blockedKeys.join(', ')}`);
+      }
+    }
+
+    const effectiveStartsAt = (body as Record<string, unknown>).startsAt as string | undefined ?? hackathon.starts_at;
+    const effectiveDeadline = (body as Record<string, unknown>).submissionDeadline as string | undefined ?? hackathon.submission_deadline;
+    const effectiveJudgingStarts = (body as Record<string, unknown>).judgingStarts as string | undefined ?? hackathon.judging_starts;
+    const effectiveJudgingEnds = (body as Record<string, unknown>).judgingEnds as string | undefined ?? hackathon.judging_ends;
+
+    if (effectiveStartsAt && effectiveDeadline && effectiveStartsAt >= effectiveDeadline) {
+      return errorResponse(c, 400, 'INVALID_DATE_ORDER', 'starts_at must be before submission_deadline');
+    }
+    if (effectiveDeadline && effectiveJudgingStarts && effectiveDeadline > effectiveJudgingStarts) {
+      return errorResponse(c, 400, 'INVALID_DATE_ORDER', 'submission_deadline must be <= judging_starts');
+    }
+    if (effectiveJudgingStarts && effectiveJudgingEnds && effectiveJudgingStarts >= effectiveJudgingEnds) {
+      return errorResponse(c, 400, 'INVALID_DATE_ORDER', 'judging_starts must be before judging_ends');
     }
 
     const updateData: Record<string, unknown> = {
@@ -226,14 +282,29 @@ hackathons.put(
     if (body.description !== undefined) updateData.description = body.description;
     if (body.rulesMd !== undefined) updateData.rules_md = body.rulesMd;
     if (body.startsAt !== undefined) updateData.starts_at = body.startsAt;
+    if ((body as Record<string, unknown>).submissionDeadline !== undefined) updateData.submission_deadline = (body as Record<string, unknown>).submissionDeadline;
     if (body.judgingStarts !== undefined) updateData.judging_starts = body.judgingStarts;
     if (body.judgingEnds !== undefined) updateData.judging_ends = body.judgingEnds;
     if (body.minTeamSize !== undefined) updateData.min_team_size = body.minTeamSize;
     if (body.maxTeamSize !== undefined) updateData.max_team_size = body.maxTeamSize;
     if (body.maxTeams !== undefined) updateData.max_teams = body.maxTeams;
+    if ((body as Record<string, unknown>).allowSolo !== undefined) updateData.allow_solo = (body as Record<string, unknown>).allowSolo;
     if (body.submissionTagPattern !== undefined) updateData.submission_tag_pattern = body.submissionTagPattern;
+    if ((body as Record<string, unknown>).maxSubmissionsPerTeam !== undefined) updateData.max_submissions_per_team = (body as Record<string, unknown>).maxSubmissionsPerTeam;
     if (body.allowResubmission !== undefined) updateData.allow_resubmission = body.allowResubmission;
+    if ((body as Record<string, unknown>).allowLateSubmissions !== undefined) updateData.allow_late_submissions = (body as Record<string, unknown>).allowLateSubmissions;
+    if ((body as Record<string, unknown>).requireReadme !== undefined) updateData.require_readme = (body as Record<string, unknown>).requireReadme;
+    if ((body as Record<string, unknown>).requireDemoUrl !== undefined) updateData.require_demo_url = (body as Record<string, unknown>).requireDemoUrl;
     if (body.allowRegistrationDuringActive !== undefined) updateData.allow_registration_during_active = body.allowRegistrationDuringActive;
+    if ((body as Record<string, unknown>).judgesPerSubmission !== undefined) updateData.judges_per_submission = (body as Record<string, unknown>).judgesPerSubmission;
+    if ((body as Record<string, unknown>).enableAiReviews !== undefined) updateData.enable_ai_reviews = (body as Record<string, unknown>).enableAiReviews;
+    if ((body as Record<string, unknown>).blindJudging !== undefined) updateData.blind_judging = (body as Record<string, unknown>).blindJudging;
+    if ((body as Record<string, unknown>).enableAudienceVoting !== undefined) updateData.enable_audience_voting = (body as Record<string, unknown>).enableAudienceVoting;
+    if ((body as Record<string, unknown>).primaryColor !== undefined) updateData.primary_color = (body as Record<string, unknown>).primaryColor;
+    if ((body as Record<string, unknown>).secondaryColor !== undefined) updateData.secondary_color = (body as Record<string, unknown>).secondaryColor;
+    if ((body as Record<string, unknown>).customCss !== undefined) updateData.custom_css = (body as Record<string, unknown>).customCss;
+    if ((body as Record<string, unknown>).trackAssignmentMode !== undefined) updateData.track_assignment_mode = (body as Record<string, unknown>).trackAssignmentMode;
+    if ((body as Record<string, unknown>).landingPagePublic !== undefined) updateData.landing_page_public = (body as Record<string, unknown>).landingPagePublic;
     if (body.notifyAllOnDeadline !== undefined) updateData.notify_all_on_deadline = body.notifyAllOnDeadline;
     if (body.showJudgeCommentsToParticipants !== undefined) updateData.show_judge_comments_to_participants = body.showJudgeCommentsToParticipants;
     if (body.registrationMode !== undefined) updateData.registration_mode = body.registrationMode;
@@ -335,7 +406,7 @@ hackathons.delete(
     const db = createDbClient(c.env.DB);
 
     if (hackathon.status !== 'draft') {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only delete hackathons in draft status');
+      return errorResponse(c, 400, 'DELETION_NOT_ALLOWED', 'Can only delete hackathons in draft status');
     }
 
     await db.delete(hackathonsTable).where(eq(hackathonsTable.id, hackathon.id));
@@ -401,15 +472,34 @@ hackathons.post(
       min_team_size: hackathon.min_team_size,
       max_team_size: hackathon.max_team_size,
       max_teams: hackathon.max_teams,
+      allow_solo: hackathon.allow_solo,
       submission_tag_pattern: hackathon.submission_tag_pattern,
+      max_submissions_per_team: hackathon.max_submissions_per_team,
       allow_resubmission: hackathon.allow_resubmission,
+      allow_late_submissions: hackathon.allow_late_submissions,
+      require_readme: hackathon.require_readme,
+      require_demo_url: hackathon.require_demo_url,
       allow_registration_during_active: hackathon.allow_registration_during_active,
+      judges_per_submission: hackathon.judges_per_submission,
+      enable_ai_reviews: hackathon.enable_ai_reviews,
+      blind_judging: hackathon.blind_judging,
+      enable_audience_voting: hackathon.enable_audience_voting,
       notify_all_on_deadline: hackathon.notify_all_on_deadline,
       show_judge_comments_to_participants: hackathon.show_judge_comments_to_participants,
       registration_mode: hackathon.registration_mode,
       allowed_email_domains: hackathon.allowed_email_domains,
       require_repo: hackathon.require_repo,
       timezone: hackathon.timezone,
+      template_id: hackathon.template_id,
+      cloned_from_id: hackathon.id,
+      track_assignment_mode: hackathon.track_assignment_mode,
+      landing_page_public: hackathon.landing_page_public,
+      primary_color: hackathon.primary_color,
+      secondary_color: hackathon.secondary_color,
+      logo_r2_key: hackathon.logo_r2_key,
+      banner_r2_key: hackathon.banner_r2_key,
+      favicon_r2_key: hackathon.favicon_r2_key,
+      custom_css: hackathon.custom_css,
       tracks: hackathon.tracks,
       prizes: hackathon.prizes,
       settings: hackathon.settings,
@@ -418,13 +508,13 @@ hackathons.post(
       updated_at: now,
     });
 
-    // Copy the organizer role for the current user
     await db.insert(organizerRoles).values({
       id: crypto.randomUUID(),
       hackathon_id: newId,
       user_id: user.sub,
       role: 'organizer',
       created_at: now,
+      updated_at: now,
     });
 
     await insertAuditEvent(db, {
@@ -476,7 +566,7 @@ hackathons.post(
       .get();
 
     if (!targetRole) {
-      return errorResponse(c, 400, 'INVALID_TARGET', 'Target user must be a co_organizer of this hackathon');
+      return errorResponse(c, 400, 'TRANSFER_TARGET_NOT_CO_ORGANIZER', 'Transfer target must be a co-organizer');
     }
 
     const now = new Date().toISOString();
@@ -513,6 +603,88 @@ hackathons.post(
     });
 
     return successResponse(c, { message: 'Ownership transferred' });
+  },
+);
+
+/**
+ * POST /:slug/assets — Upload hackathon branding asset (logo, banner, favicon)
+ */
+hackathons.post(
+  '/:slug/assets',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
+
+    if (!c.env.R2) {
+      return errorResponse(c, 503, 'R2_NOT_CONFIGURED', 'Asset storage is not configured');
+    }
+
+    const formData = await c.req.formData();
+    const file = formData.get('file');
+    const assetType = formData.get('type');
+
+    if (!(file instanceof File)) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'File is required');
+    }
+
+    if (typeof assetType !== 'string' || !['logo', 'banner', 'favicon'].includes(assetType)) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'type must be one of: logo, banner, favicon');
+    }
+
+    const constraints: Record<string, { maxSize: number; allowedTypes: string[] }> = {
+      logo: { maxSize: 2 * 1024 * 1024, allowedTypes: ['image/png', 'image/svg+xml', 'image/webp'] },
+      banner: { maxSize: 5 * 1024 * 1024, allowedTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+      favicon: { maxSize: 256 * 1024, allowedTypes: ['image/png', 'image/x-icon'] },
+    };
+
+    const constraint = constraints[assetType];
+    if (file.size > constraint.maxSize) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR',
+        `${assetType} must be under ${Math.round(constraint.maxSize / 1024)}KB`);
+    }
+
+    if (!constraint.allowedTypes.includes(file.type)) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR',
+        `${assetType} must be one of: ${constraint.allowedTypes.join(', ')}`);
+    }
+
+    const ext = file.name.split('.').pop() || 'bin';
+    const r2Key = `hackathons/${hackathon.id}/${assetType}/${crypto.randomUUID()}.${ext}`;
+
+    await c.env.R2.put(r2Key, file.stream(), {
+      httpMetadata: { contentType: file.type },
+    });
+
+    const columnMap: Record<string, string> = {
+      logo: 'logo_r2_key',
+      banner: 'banner_r2_key',
+      favicon: 'favicon_r2_key',
+    };
+
+    const updateData: Record<string, unknown> = {
+      [columnMap[assetType]]: r2Key,
+      updated_at: new Date().toISOString(),
+    };
+
+    await db
+      .update(hackathonsTable)
+      .set(updateData)
+      .where(eq(hackathonsTable.id, hackathon.id));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      action: 'hackathon.asset_upload',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+      details: { assetType, r2Key, fileName: file.name, fileSize: file.size },
+    });
+
+    return successResponse(c, { type: assetType, r2_key: r2Key }, undefined, 201);
   },
 );
 

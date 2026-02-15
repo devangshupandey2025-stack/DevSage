@@ -21,6 +21,8 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
 
+  GITHUB_TOKEN_ENCRYPTION_KEY?: string;
+
   // ─── GitHub App (for webhook/repo integration, NOT login) ──
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;

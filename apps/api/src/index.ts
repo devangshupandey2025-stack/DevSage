@@ -5,6 +5,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { rateLimitMiddleware } from './middleware/rate-limit.js';
+import { optionalAuth } from './middleware/auth.js';
 import { DEADLINE_REMINDER_WINDOW_MS } from './lib/constants.js';
 import { isNotificationMessage } from './lib/queue-utils.js';
 import auth from './routes/auth.js';
@@ -19,6 +20,7 @@ import invites from './routes/invites.js';
 import workspaces from './routes/workspaces.js';
 import notifications from './routes/notifications.js';
 import audit from './routes/audit.js';
+import organizers from './routes/organizers.js';
 import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 import type { NotificationMessage } from './queue/notification-handler.js';
@@ -27,10 +29,11 @@ export { HackathonStateMachine } from './durable-objects/hackathon-state-machine
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Middleware chain: CORS → Request ID → Rate Limiter → Error Handler → Auth → Role → Handler
+// Middleware chain: CORS → Request ID → Auth (optional) → Rate Limiter → [Role per-route] → Handler
 app.onError(errorHandler);
 app.use('*', corsMiddleware);
 app.use('*', requestIdMiddleware);
+app.use('*', optionalAuth);
 app.use('*', rateLimitMiddleware);
 
 app.route('/auth', auth);
@@ -45,6 +48,7 @@ app.route('/api/v1/admin', admin);
 app.route('/api/v1/invites', invites);
 app.route('/api/v1/notifications', notifications);
 app.route('/api/v1/hackathons', audit);
+app.route('/api/v1/hackathons', organizers);
 
 app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });
@@ -63,19 +67,82 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const now = new Date();
+
+    // ── Part 1: Auto-transition overdue hackathons (safety net for missed DO alarms) ──
     try {
-      const now = new Date();
+      const overdue = await env.DB.prepare(`
+        SELECT id, slug, title, submission_deadline
+        FROM hackathons
+        WHERE status = 'active'
+        AND submission_deadline IS NOT NULL
+        AND submission_deadline <= ?
+      `).bind(now.toISOString()).all();
+
+      for (const row of overdue.results || []) {
+        try {
+          const hackathonId = row.id as string;
+          const doId = env.HACKATHON_SM.idFromName(hackathonId);
+          const stub = env.HACKATHON_SM.get(doId);
+
+          const stateRes = await stub.fetch('http://do/state');
+          const stateData = (await stateRes.json()) as { status?: string };
+
+          if (stateData.status !== 'active') {
+            continue;
+          }
+
+          const transitionRes = await stub.fetch('http://do/transition', {
+            method: 'POST',
+            body: JSON.stringify({ targetStatus: 'judging' }),
+            headers: { 'Content-Type': 'application/json' },
+          });
+
+          if (transitionRes.ok) {
+            await env.DB.prepare(`
+              UPDATE hackathons SET status = 'judging', updated_at = ? WHERE id = ?
+            `).bind(now.toISOString(), hackathonId).run();
+
+            await env.DB.prepare(`
+              INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, details, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              crypto.randomUUID(),
+              hackathonId,
+              'cron',
+              'hackathon.transition',
+              'hackathon',
+              hackathonId,
+              JSON.stringify({ from: 'active', to: 'judging', trigger: 'cron_safety_net' }),
+              now.toISOString(),
+            ).run();
+          }
+        } catch (error) {
+          console.error('Cron auto-transition failed for hackathon:', {
+            hackathonId: row.id,
+            slug: row.slug,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Cron auto-transition query failed:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+
+    // ── Part 2: Deadline reminders (24h look-ahead) ──
+    try {
       const twentyFourHoursFromNow = new Date(now.getTime() + DEADLINE_REMINDER_WINDOW_MS);
 
       const approaching = await env.DB.prepare(`
-        SELECT hr.hackathon_id, hr.submission_deadline, h.id, h.slug, h.title
-        FROM hackathon_rounds hr
-        INNER JOIN hackathons h ON h.id = hr.hackathon_id
-        WHERE h.status = 'active'
-        AND hr.status = 'active'
-        AND hr.submission_deadline IS NOT NULL
-        AND hr.submission_deadline > ?
-        AND hr.submission_deadline <= ?
+        SELECT id, slug, title, submission_deadline
+        FROM hackathons
+        WHERE status = 'active'
+        AND submission_deadline IS NOT NULL
+        AND submission_deadline > ?
+        AND submission_deadline <= ?
       `).bind(now.toISOString(), twentyFourHoursFromNow.toISOString()).all();
 
       for (const row of approaching.results || []) {
@@ -102,7 +169,7 @@ export default {
             action,
             'hackathon',
             row.id,
-            now.toISOString()
+            now.toISOString(),
           ).run();
 
           await env.NOTIFICATION_QUEUE.send({
@@ -113,7 +180,7 @@ export default {
         }
       }
     } catch (error) {
-      console.error('Cron scheduled handler failed:', {
+      console.error('Cron deadline reminder failed:', {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });

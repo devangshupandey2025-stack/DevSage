@@ -12,6 +12,9 @@ export const refreshTokens = sqliteTable('refresh_tokens', {
   replaced_by: text('replaced_by'),
   ip_address: text('ip_address'),
   user_agent: text('user_agent'),
+  device: text('device'),
+  location: text('location'),
+  used_at: text('used_at'),
   created_at: text('created_at').notNull(),
 }, (table) => ({
   userIdx: index('refresh_tokens_user_idx').on(table.user_id),

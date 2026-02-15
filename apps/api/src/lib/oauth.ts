@@ -5,6 +5,10 @@ export interface OAuthStateRecord {
   redirectUri: string;
   frontendOrigin: string;
   createdAt: string;
+  elevate?: boolean;
+  scope?: string;
+  return_to?: string;
+  user_id?: string;
 }
 
 interface GoogleTokenResponse {
@@ -101,11 +105,11 @@ export function buildGoogleAuthorizationUrl(clientId: string, redirectUri: strin
   return url.toString();
 }
 
-export function buildGitHubAuthorizationUrl(clientId: string, redirectUri: string, state: string): string {
+export function buildGitHubAuthorizationUrl(clientId: string, redirectUri: string, state: string, scope?: string): string {
   const url = new URL('https://github.com/login/oauth/authorize');
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
-  url.searchParams.set('scope', 'read:user user:email');
+  url.searchParams.set('scope', scope ?? 'read:user user:email');
   url.searchParams.set('state', state);
   return url.toString();
 }

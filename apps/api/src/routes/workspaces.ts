@@ -157,7 +157,7 @@ workspacesRouter.get('/:slug', authMiddleware, async (c) => {
     return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
   }
   if (!access.member) {
-    return errorResponse(c, 403, 'NOT_MEMBER', 'You are not a member of this workspace');
+    return errorResponse(c, 403, 'NOT_WORKSPACE_MEMBER', 'You are not a member of this workspace');
   }
 
   return successResponse(c, access.workspace);
@@ -325,7 +325,7 @@ workspacesRouter.get('/:slug/members', authMiddleware, async (c) => {
     return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
   }
   if (!access.member) {
-    return errorResponse(c, 403, 'NOT_MEMBER', 'You are not a member of this workspace');
+    return errorResponse(c, 403, 'NOT_WORKSPACE_MEMBER', 'You are not a member of this workspace');
   }
 
   const members = await db
@@ -367,7 +367,7 @@ workspacesRouter.delete('/:slug/members/:userId', authMiddleware, async (c) => {
   }
 
   if (targetMember.role === 'workspace_owner') {
-    return errorResponse(c, 403, 'CANNOT_REMOVE_OWNER', 'Cannot remove workspace owner');
+    return errorResponse(c, 403, 'CANNOT_LEAVE_AS_OWNER', 'Cannot remove workspace owner');
   }
 
   await db
@@ -401,7 +401,7 @@ workspacesRouter.get('/:slug/hackathons', authMiddleware, async (c) => {
     return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
   }
   if (!access.member) {
-    return errorResponse(c, 403, 'NOT_MEMBER', 'You are not a member of this workspace');
+    return errorResponse(c, 403, 'NOT_WORKSPACE_MEMBER', 'You are not a member of this workspace');
   }
 
   const data = await db

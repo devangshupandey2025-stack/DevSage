@@ -4,7 +4,11 @@ import { isAllowedOrigin } from '../lib/allowed-origin.js';
 
 export const corsMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   const origin = c.req.header('Origin');
-  if (origin && isAllowedOrigin(origin)) {
+  if (origin && isAllowedOrigin(origin, {
+    frontendUrl: c.env.FRONTEND_URL,
+    platformUrl: c.env.PLATFORM_URL,
+    adminUrl: c.env.ADMIN_URL,
+  })) {
     c.header('Access-Control-Allow-Origin', origin);
     c.header('Access-Control-Allow-Credentials', 'true');
     c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, Last-Event-ID');

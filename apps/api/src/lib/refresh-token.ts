@@ -39,6 +39,8 @@ export async function createRefreshToken(
   familyId?: string,
   ipAddress?: string,
   userAgent?: string,
+  device?: string,
+  location?: string,
 ): Promise<RefreshTokenResult> {
   const rawToken = generateOpaqueToken();
   const tokenHash = await hashToken(rawToken);
@@ -55,6 +57,8 @@ export async function createRefreshToken(
     revoked: 0,
     ip_address: ipAddress ?? null,
     user_agent: userAgent?.substring(0, 256) ?? null,
+    device: device ?? null,
+    location: location ?? null,
     created_at: now.toISOString(),
   });
 
@@ -120,6 +124,8 @@ export async function rotateRefreshToken(
     existing.family_id,
     ipAddress,
     userAgent,
+    existing.device ?? undefined,
+    existing.location ?? undefined,
   );
 
   await db
@@ -128,6 +134,7 @@ export async function rotateRefreshToken(
       revoked: 1,
       revoked_at: now.toISOString(),
       replaced_by: newToken.tokenHash,
+      used_at: now.toISOString(),
     })
     .where(eq(refreshTokens.id, existing.id));
 

@@ -19,7 +19,7 @@ export const requirePlatformAdmin: MiddlewareHandler<AuthAppEnv> = async (c, nex
 
   const db = createDbClient(c.env.DB);
   const admin = await db
-    .select({ id: platformAdmins.id })
+    .select({ id: platformAdmins.id, role: platformAdmins.role })
     .from(platformAdmins)
     .where(eq(platformAdmins.user_id, user.sub))
     .get();
@@ -28,5 +28,6 @@ export const requirePlatformAdmin: MiddlewareHandler<AuthAppEnv> = async (c, nex
     return errorResponse(c, 403, 'NOT_PLATFORM_ADMIN', 'Platform admin access required');
   }
 
+  c.set('platformRole', admin.role);
   await next();
 };
