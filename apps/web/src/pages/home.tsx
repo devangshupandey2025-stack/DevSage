@@ -30,6 +30,7 @@ import {
   Linkedin,
   Instagram,
   ExternalLink,
+  Mail,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -1114,7 +1115,7 @@ const CTASection = () => {
    ───────────────────────────────────────────── */
 const Footer = () => {
   const socialLinks: { icon: LucideIcon; href: string }[] = [
-    { icon: Github, href: '#' },
+    { icon: Mail, href: 'https://mail.google.com/mail/?view=cm&fs=1&to=admin@devsage.org&su=Project%20Inquiry' },
     { icon: Twitter, href: '#' },
     { icon: Linkedin, href: '#' },
     { icon: Instagram, href: '#' },
@@ -1136,13 +1137,24 @@ const Footer = () => {
             <div className="flex items-center gap-3 mt-6">
               {socialLinks.map((social) => {
                 const Icon = social.icon;
-                return (
-                  <span
+                return social.href.startsWith('mailto:') ? (
+                  <a
                     key={Icon.displayName ?? Icon.name}
+                    href={social.href}
                     className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/[0.06] hover:border-[#CCFF00]/30"
                   >
                     <Icon className="w-4 h-4 text-white/35 group-hover:text-[#CCFF00] transition-colors" />
-                  </span>
+                  </a>
+                ) : (
+                  <a
+                    key={Icon.displayName ?? Icon.name}
+                    href={social.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/[0.06] hover:border-[#CCFF00]/30"
+                  >
+                    <Icon className="w-4 h-4 text-white/35 group-hover:text-[#CCFF00] transition-colors" />
+                  </a>
                 );
               })}
             </div>
