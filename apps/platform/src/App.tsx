@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/protected-route';
 import { AppLayout } from '@/components/layout';
 import { LoginPage } from '@/pages/login';
@@ -8,46 +8,64 @@ import { InviteAcceptPage } from '@/pages/invite-accept';
 import { AuthCallbackPage } from '@/pages/auth-callback';
 import { HackathonOverviewPage } from '@/pages/hackathon-overview';
 import { TeamsPage } from '@/pages/teams';
+import { TeamDetailPage } from '@/pages/team-detail';
 import { SubmissionsPage } from '@/pages/submissions';
 import { JudgingPage } from '@/pages/judging';
+import { LeaderboardPage } from '@/pages/leaderboard';
 import { RoundsPage } from '@/pages/rounds';
 import { AnnouncementsPage } from '@/pages/announcements';
 import { ActivityPage } from '@/pages/activity';
 import { AnalyticsPage } from '@/pages/analytics';
 import { SettingsPage } from '@/pages/settings';
 import { JudgeScoringPage } from '@/pages/judge-scoring';
+import { JudgeAssignmentsPage } from '@/pages/judge-assignments';
+import { JudgeInviteAcceptPage } from '@/pages/judge-invite-accept';
+
+const router = createBrowserRouter([
+  // Public routes
+  { path: '/login', element: <LoginPage /> },
+  { path: '/auth/callback', element: <AuthCallbackPage /> },
+  { path: '/invite/:code', element: <InviteAcceptPage /> },
+  { path: '/invite/judge/:token', element: <JudgeInviteAcceptPage /> },
+
+  // Protected routes with app shell
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          { path: '/dashboard', element: <DashboardPage /> },
+          { path: '/profile', element: <ProfilePage /> },
+
+          // Hackathon management
+          { path: '/hackathons/:slug', element: <HackathonOverviewPage /> },
+          { path: '/hackathons/:slug/teams', element: <TeamsPage /> },
+          { path: '/hackathons/:slug/teams/:id', element: <TeamDetailPage /> },
+          { path: '/hackathons/:slug/submissions', element: <SubmissionsPage /> },
+          { path: '/hackathons/:slug/judging', element: <JudgingPage /> },
+          { path: '/hackathons/:slug/leaderboard', element: <LeaderboardPage /> },
+          { path: '/hackathons/:slug/rounds', element: <RoundsPage /> },
+          { path: '/hackathons/:slug/announcements', element: <AnnouncementsPage /> },
+          { path: '/hackathons/:slug/activity', element: <ActivityPage /> },
+          { path: '/hackathons/:slug/audit', element: <ActivityPage /> },
+          { path: '/hackathons/:slug/analytics', element: <AnalyticsPage /> },
+          { path: '/hackathons/:slug/settings', element: <SettingsPage /> },
+          { path: '/hackathons/:slug/judge', element: <JudgeScoringPage /> },
+
+          // Judge-specific routes
+          { path: '/judge/assignments', element: <JudgeAssignmentsPage /> },
+          { path: '/judge/score/:teamId', element: <JudgeScoringPage /> },
+        ],
+      },
+    ],
+  },
+
+  // Redirects
+  { path: '/', element: <Navigate to="/dashboard" replace /> },
+  { path: '*', element: <Navigate to="/dashboard" replace /> },
+]);
 
 export default function App() {
-  return (
-    <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route path="/invite/:code" element={<InviteAcceptPage />} />
-
-      {/* Protected routes with app shell */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-
-          {/* Hackathon management */}
-          <Route path="/hackathons/:slug" element={<HackathonOverviewPage />} />
-          <Route path="/hackathons/:slug/teams" element={<TeamsPage />} />
-          <Route path="/hackathons/:slug/submissions" element={<SubmissionsPage />} />
-          <Route path="/hackathons/:slug/judging" element={<JudgingPage />} />
-          <Route path="/hackathons/:slug/rounds" element={<RoundsPage />} />
-          <Route path="/hackathons/:slug/announcements" element={<AnnouncementsPage />} />
-          <Route path="/hackathons/:slug/activity" element={<ActivityPage />} />
-          <Route path="/hackathons/:slug/analytics" element={<AnalyticsPage />} />
-          <Route path="/hackathons/:slug/settings" element={<SettingsPage />} />
-          <Route path="/hackathons/:slug/judge" element={<JudgeScoringPage />} />
-        </Route>
-      </Route>
-
-      {/* Redirects */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
-  );
+  return <RouterProvider router={router} />;
 }

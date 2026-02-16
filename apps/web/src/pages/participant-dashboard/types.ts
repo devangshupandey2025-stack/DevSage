@@ -158,6 +158,8 @@ export interface ChecklistItem {
 }
 
 export type DashboardPhase =
+  | 'pre_registration'    // registration hasn't opened
+  | 'registration'        // registration is open
   | 'pre_hacking'         // draft — waiting for activation
   | 'hacking'             // active — main dashboard state
   | 'submission_locked'   // active but past deadline

@@ -1,30 +1,37 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { ProtectedRoute } from '@/components/protected-route';
 import { LoginPage } from '@/pages/login';
+import { AdminDashboardPage } from '@/pages/dashboard';
 import { InvitesPage } from '@/pages/invites';
 import { AdminsPage } from '@/pages/admins';
 import { ProfilePage } from '@/pages/profile';
+import { WorkspacesPage } from '@/pages/workspaces';
+import { WorkspaceDetailPage } from '@/pages/workspace-detail';
+
+const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <DashboardLayout />,
+        children: [
+          { path: '/', element: <AdminDashboardPage /> },
+          { path: '/invites', element: <InvitesPage /> },
+          { path: '/admins', element: <AdminsPage /> },
+          { path: '/workspaces', element: <WorkspacesPage /> },
+          { path: '/workspaces/:id', element: <WorkspaceDetailPage /> },
+          { path: '/profile', element: <ProfilePage /> },
+        ],
+      },
+    ],
+  },
+
+  { path: '*', element: <Navigate to="/" replace /> },
+]);
 
 export default function App() {
-  return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      
-      <Route
-        element={
-          <ProtectedRoute>
-            <DashboardLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="/" element={<Navigate to="/invites" replace />} />
-        <Route path="/invites" element={<InvitesPage />} />
-        <Route path="/admins" element={<AdminsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-      </Route>
-
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+  return <RouterProvider router={router} />;
 }

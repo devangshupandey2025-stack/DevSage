@@ -50,11 +50,17 @@ export function DashboardLayout() {
             </Link>
 
             <nav className="hidden items-center gap-6 text-sm sm:flex">
+              <Link to="/" className={`transition ${navLinkClass('/')}`}>
+                Dashboard
+              </Link>
               <Link to="/invites" className={`transition ${navLinkClass('/invites')}`}>
                 Invites
               </Link>
               <Link to="/admins" className={`transition ${navLinkClass('/admins')}`}>
                 Admins
+              </Link>
+              <Link to="/workspaces" className={`transition ${navLinkClass('/workspaces')}`}>
+                Workspaces
               </Link>
             </nav>
           </div>

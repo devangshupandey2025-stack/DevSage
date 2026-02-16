@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/auth-context';
 import { Loader2, ShieldX, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ function AccessDenied() {
   );
 }
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export function ProtectedRoute() {
   const { isAuthenticated, isPlatformAdmin, isLoading } = useAuth();
   const location = useLocation();
 
@@ -53,5 +53,5 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <AccessDenied />;
   }
 
-  return <>{children}</>;
+  return <Outlet />;
 }

@@ -209,11 +209,13 @@ export function HackathonOverviewPage() {
           <MetricCard label="Judges" value={0} icon={Scale} />
         </motion.div>
         <motion.div variants={item}>
+          {hackathon.submission_deadline && (
           <CountdownTimer
             targetDate={hackathon.submission_deadline}
             label="Deadline"
             className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5"
           />
+          )}
         </motion.div>
       </motion.div>
 

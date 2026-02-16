@@ -333,7 +333,7 @@ export function DashboardPage() {
                   <p className="text-xs text-white/30 line-clamp-2 mb-4 leading-relaxed">{hackathon.description || 'No description provided'}</p>
                   <div className="flex items-center gap-4 text-xs text-white/25 mb-4">
                     <span className="flex items-center gap-1.5"><Users className="h-3 w-3" /> Max {hackathon.max_team_size}</span>
-                    <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {new Date(hackathon.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {hackathon.submission_deadline ? new Date(hackathon.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No deadline'}</span>
                   </div>
                   <div className="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
                     <Link to={`/hackathons/${hackathon.slug}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/60 transition hover:bg-white/[0.08] hover:text-white">
