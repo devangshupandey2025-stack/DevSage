@@ -1,89 +1,57 @@
 import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { AppEnv } from '../types/env.js';
 
-interface SuccessMeta {
-  etag?: string;
-  cached?: boolean;
-  timestamp?: string;
+interface SuccessResponseOptions {
+  status?: ContentfulStatusCode;
+  meta?: Record<string, unknown>;
 }
 
-interface PaginationMeta extends SuccessMeta {
-  total: number;
-  limit: number;
-  offset: number;
-  has_more: boolean;
-}
-
-interface CursorPaginationMeta extends SuccessMeta {
-  limit: number;
-  cursor: string | null;
-  has_more: boolean;
-}
-
-export function successResponse<T>(
-  c: Context,
-  data: T,
-  meta?: SuccessMeta,
-  status = 200
-) {
-  return c.json({ ok: true, data, meta: meta ?? {} }, status as never);
+export function successResponse<T>(c: Context<AppEnv>, data: T, options: SuccessResponseOptions = {}) {
+  const { status = 200, meta } = options;
+  return c.json({ ok: true as const, data, ...(meta ? { meta } : {}) }, status);
 }
 
 export function errorResponse(
-  c: Context,
-  status: number,
+  c: Context<AppEnv>,
+  status: ContentfulStatusCode,
   code: string,
   message: string,
   details?: Record<string, unknown>
 ) {
-  return c.json(
-    {
-      ok: false,
-      error: {
-        code,
-        message,
-        ...(details ? { details } : {}),
-      },
-    },
-    status as never
-  );
+  return c.json({ ok: false as const, error: { code, message, ...(details ? { details } : {}) } }, status);
 }
 
 export function paginatedResponse<T>(
-  c: Context,
+  c: Context<AppEnv>,
   data: T[],
   total: number,
   limit: number,
-  offset: number,
-  meta?: SuccessMeta
+  offset: number
 ) {
-  const paginationMeta: PaginationMeta = {
-    total,
-    limit,
-    offset,
-    has_more: offset + data.length < total,
-    timestamp: new Date().toISOString(),
-    ...meta,
-  };
-  return c.json({ ok: true, data, meta: paginationMeta }, 200);
+  return c.json({
+    ok: true,
+    data,
+    meta: {
+      total,
+      limit,
+      offset,
+      has_more: offset + data.length < total,
+    },
+  });
 }
 
 export function cursorPaginatedResponse<T>(
-  c: Context,
+  c: Context<AppEnv>,
   data: T[],
-  limit: number,
-  nextCursor: string | null,
-  meta?: SuccessMeta
+  nextCursor: string | null
 ) {
-  const cursorMeta: CursorPaginationMeta = {
-    limit,
-    cursor: nextCursor,
-    has_more: nextCursor !== null,
-    timestamp: new Date().toISOString(),
-    ...meta,
-  };
-  return c.json({ ok: true, data, meta: cursorMeta }, 200);
-}
-
-export function noContentResponse(c: Context) {
-  return c.body(null, 204);
+  return c.json({
+    ok: true,
+    data,
+    meta: {
+      next_cursor: nextCursor,
+      has_more: nextCursor !== null,
+    },
+  });
 }

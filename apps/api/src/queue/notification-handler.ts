@@ -1,136 +1,120 @@
-import { createDbClient } from '@devsage/db';
-import { insertAuditEvent } from '../lib/audit.js';
-import { sendEmail } from '../services/smtp.js';
-import type { Env } from '../types/env.js';
-import {
-  resolveRecipients,
-  renderEmailTemplate,
-  notificationIdempotencyKey,
-} from './notification-logic.js';
+import { sendEmail } from '../services/email.js';
+import { resolveNotificationRecipients } from './notification-logic.js';
 
-/**
- * Notification message types for the notification queue.
- * Each type has specific fields and recipient resolution logic.
- */
-export type NotificationMessage =
-  | {
-      type: 'submission_received';
-      hackathonId: string;
-      teamId: string;
-      tagName: string;
-      commitSha: string;
-    }
-  | {
-      type: 'submission_invalid';
-      hackathonId: string;
-      teamId: string;
-      tagName: string;
-      reason: string;
-    }
-  | {
-      type: 'force_push_alert';
-      hackathonId: string;
-      teamId: string;
-      forcePushId: string;
-      affectedSubmissionCount: number;
-    }
-  | {
-      type: 'phase_transition';
-      hackathonId: string;
-      fromPhase: string;
-      toPhase: string;
-    }
-  | {
-      type: 'judge_invited';
-      hackathonId: string;
-      judgeId: string;
-    }
-  | {
-      type: 'judge_assignment';
-      hackathonId: string;
-      judgeId: string;
-      submissionCount: number;
-    }
-  | {
-      type: 'scores_finalized';
-      hackathonId: string;
-      teamId: string;
-    }
-  | {
-      type: 'deadline_reminder';
-      hackathonId: string;
-      hoursRemaining: number;
-    }
-  | {
-      type: 'workspace_invited';
-      inviteId: string;
-      email: string;
-      inviteCode: string;
-      workspaceName: string;
-    };
+interface NotificationEnv {
+  DB: D1Database;
+  RESEND_API_KEY: string;
+  EMAIL_FROM: string;
+  FRONTEND_URL: string;
+  PLATFORM_URL: string;
+}
 
-/**
- * Handle a single notification queue message.
- *
- * Processing flow:
- * 1. Idempotency check via audit_events
- * 2. Resolve recipients based on notification type
- * 3. Render plain-text email template
- * 4. Send emails via SMTP (serialized, one at a time)
- * 5. Log each send attempt to audit_events
- *
- * SMTP calls are serialized — no concurrent connections within a batch.
- * Failures are logged but do not throw (fail-open).
- */
-export async function handleNotification(message: NotificationMessage, env: Env): Promise<void> {
-  const db = createDbClient(env.DB);
-  const idempotencyKey = notificationIdempotencyKey(message);
+export async function handleNotificationMessage(
+  body: { type: string; hackathon_id?: string; actor_id?: string; data?: Record<string, unknown> },
+  env: NotificationEnv
+): Promise<void> {
+  const { type, hackathon_id, data } = body;
 
-  // Idempotency check: skip if already processed
-  const alreadySent = await env.DB.prepare(`
-    SELECT 1 FROM audit_events
-    WHERE action = 'notification.sent' AND entity_type = 'notification' AND entity_id = ?
-    LIMIT 1
-  `).bind(idempotencyKey).first();
+  // Idempotency check
+  const idempotencyKey = `${type}:${hackathon_id}:${JSON.stringify(data ?? {})}`;
+  const idempotencyId = crypto.randomUUID();
 
-  if (alreadySent) {
-    console.warn('handleNotification: duplicate, skipping', { type: message.type, key: idempotencyKey });
-    return;
-  }
+  const inserted = await env.DB.prepare(
+    'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key) VALUES (?, ?)'
+  ).bind(idempotencyId, idempotencyKey).run();
 
-  // 1. Resolve recipients based on type
-  const recipients = await resolveRecipients(message, env);
+  if (inserted.meta.rows_written === 0) return; // Already processed
 
-  if (recipients.length === 0) {
-    console.warn('handleNotification: no recipients found', { type: message.type });
-    return;
-  }
+  // Resolve recipients
+  const recipients = await resolveNotificationRecipients(env.DB, type, hackathon_id, data);
 
-  // 2. Render email template
-  const { subject, body } = await renderEmailTemplate(message, env);
-
-  // 3. Send via SMTP (serialized, no concurrent connections)
+  // Fan-out: send to each recipient
   for (const recipient of recipients) {
-    const result = await sendEmail(env, {
-      to: recipient.email,
-      subject,
-      body,
-    });
+    // In-app notification
+    const notifId = crypto.randomUUID();
+    const { title, body: notifBody, link } = generateNotificationContent(type, data, env);
 
-    // 4. Log send status to audit_events
-    const eventAction = result.success ? 'notification.sent' : 'notification.failed';
-    await insertAuditEvent(db, {
-      hackathonId: 'hackathonId' in message ? message.hackathonId : undefined,
-      actorType: 'system',
-      eventType: eventAction,
-      entityType: 'notification',
-      entityId: idempotencyKey,
-      metadata: {
-        recipient: recipient.email,
-        type: message.type,
-        success: result.success,
-        error: result.error,
-      },
-    });
+    await env.DB.prepare(
+      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, link) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(notifId, recipient.user_id, hackathon_id ?? null, type, title, notifBody, link).run();
+
+    // Email (if recipient has email and hasn't disabled it)
+    if (recipient.email) {
+      const emailSent = await sendEmail(env.RESEND_API_KEY, {
+        to: recipient.email,
+        subject: title,
+        html: `<p>${notifBody}</p>${link ? `<p><a href="${link}">View Details</a></p>` : ''}`,
+        from: env.EMAIL_FROM,
+      });
+
+      // Record delivery
+      const deliveryId = crypto.randomUUID();
+      await env.DB.prepare(
+        `INSERT INTO notification_deliveries (id, notification_type, channel, recipient_id, recipient_email, status) VALUES (?, ?, 'email', ?, ?, ?)`
+      ).bind(deliveryId, type, recipient.user_id, recipient.email, emailSent ? 'sent' : 'failed').run();
+    }
+  }
+}
+
+function generateNotificationContent(
+  type: string,
+  data: Record<string, unknown> | undefined,
+  env: { FRONTEND_URL: string; PLATFORM_URL: string }
+): { title: string; body: string; link: string | null } {
+  switch (type) {
+    case 'submission.received':
+      return {
+        title: 'Submission Received',
+        body: `Your team's submission (tag: ${data?.tag_name ?? 'unknown'}) has been received.`,
+        link: data?.hackathon_id ? `${env.FRONTEND_URL}/hackathons/${data.hackathon_id}` : null,
+      };
+    case 'submission.validated':
+      return {
+        title: 'Submission Validated',
+        body: 'Your submission has passed validation.',
+        link: null,
+      };
+    case 'submission.tag_deleted':
+      return {
+        title: 'Submission Tag Deleted',
+        body: `Warning: The submission tag "${data?.tag_name ?? ''}" was deleted from the repository.`,
+        link: null,
+      };
+    case 'hackathon.judging_started':
+      return {
+        title: 'Judging Has Started',
+        body: 'The submission period has ended and judging has begun.',
+        link: null,
+      };
+    case 'force_push_detected':
+      return {
+        title: 'Force Push Detected',
+        body: `A force push was detected by ${data?.pusher_login ?? 'unknown'}.`,
+        link: null,
+      };
+    case 'team_joined':
+      return {
+        title: 'New Team Member',
+        body: 'A new member has joined your team.',
+        link: null,
+      };
+    case 'deadline_reminder':
+      return {
+        title: 'Deadline Approaching',
+        body: `Submission deadline is in ${data?.hours_remaining ?? '?'} hour(s).`,
+        link: null,
+      };
+    case 'results.published':
+      return {
+        title: 'Results Published',
+        body: 'The hackathon results have been published!',
+        link: null,
+      };
+    default:
+      return {
+        title: type.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        body: `Notification: ${type}`,
+        link: null,
+      };
   }
 }

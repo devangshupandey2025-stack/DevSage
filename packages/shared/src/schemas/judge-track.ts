@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
-export const JudgeTrackSchema = z.object({
-  id: z.string(),
-  judgeId: z.string(),
-  trackId: z.string(),
+export const assignJudgeTrackSchema = z.object({
+  track_ids: z.array(z.string().uuid()).min(1),
 });
 
-export type JudgeTrack = z.infer<typeof JudgeTrackSchema>;
+export type AssignJudgeTrack = z.infer<typeof assignJudgeTrackSchema>;

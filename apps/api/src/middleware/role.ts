@@ -1,159 +1,135 @@
 import type { MiddlewareHandler } from 'hono';
-import type { DbClient } from '@devsage/db';
-import { hackathons, organizerRoles, judges, teams, teamMembers, workspaceMembers } from '@devsage/db';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient } from '@devsage/db';
-import { errorResponse } from '../lib/response.js';
-import type { AuthAppEnv } from '../types/auth.js';
+import type { AppEnv, HackathonRole } from '../types/env.js';
+import { ROLE_HIERARCHY } from '../lib/constants.js';
 
-export const ROLE_HIERARCHY = [
-  'organizer',
-  'co_organizer',
-  'judge',
-  'team_lead',
-  'team_member',
-  'anonymous',
-] as const;
-
-export type Role = (typeof ROLE_HIERARCHY)[number];
-
-const ROLE_INDEX: Record<Role, number> = {
-  organizer: 0,
-  co_organizer: 1,
-  judge: 2,
-  team_lead: 3,
-  team_member: 4,
-  anonymous: 5,
-};
-
-export function isRoleAtLeast(actual: Role, minimum: Role): boolean {
-  return ROLE_INDEX[actual] <= ROLE_INDEX[minimum];
-}
-
-const WORKSPACE_ROLE_DEFAULTS: Record<string, Role | null> = {
-  workspace_owner: 'organizer',
-  workspace_admin: 'co_organizer',
-  workspace_member: null,
-};
-
+/**
+ * Resolves the user's role within the current hackathon context.
+ * MUST be used after optionalAuth and hackathonContext middleware.
+ * Uses single UNION ALL query (not 4 sequential queries).
+ * Optional KV cache with 60s TTL.
+ */
 export async function resolveRole(
-  userId: string,
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string | undefined,
   hackathonId: string,
-  db: DbClient,
-  workspaceId?: string | null,
-): Promise<Role> {
-  const orgRole = await db
-    .select({ role: organizerRoles.role })
-    .from(organizerRoles)
-    .where(
-      and(
-        eq(organizerRoles.hackathon_id, hackathonId),
-        eq(organizerRoles.user_id, userId),
-      ),
-    )
-    .get();
+  workspaceId: string
+): Promise<HackathonRole> {
+  if (!userId) return 'anonymous';
 
-  if (orgRole) {
-    return orgRole.role as Role;
-  }
+  // Check KV cache
+  const cacheKey = `role:${userId}:${hackathonId}`;
+  const cached = await kv.get(cacheKey);
+  if (cached) return cached as HackathonRole;
 
-  const judgeRecord = await db
-    .select({ id: judges.id })
-    .from(judges)
-    .where(
-      and(
-        eq(judges.hackathon_id, hackathonId),
-        eq(judges.user_id, userId),
-        eq(judges.invite_status, 'accepted'),
-      ),
-    )
-    .get();
+  // Single UNION ALL query for role resolution
+  const result = await db.prepare(`
+    SELECT role, priority FROM (
+      SELECT role, 1 as priority FROM organizer_roles WHERE hackathon_id = ? AND user_id = ? AND role = 'organizer'
+      UNION ALL
+      SELECT role, 2 as priority FROM organizer_roles WHERE hackathon_id = ? AND user_id = ? AND role = 'co_organizer'
+      UNION ALL
+      SELECT 'judge' as role, 3 as priority FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = 'accepted'
+      UNION ALL
+      SELECT tm.role, CASE WHEN tm.role = 'team_lead' THEN 4 ELSE 5 END as priority
+        FROM team_members tm
+        JOIN teams t ON tm.team_id = t.id
+        WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+      UNION ALL
+      SELECT CASE WHEN wm.role IN ('owner', 'admin') THEN 'organizer' ELSE 'co_organizer' END as role,
+             CASE WHEN wm.role IN ('owner', 'admin') THEN 6 ELSE 7 END as priority
+        FROM workspace_members wm
+        WHERE wm.workspace_id = ? AND wm.user_id = ?
+    ) ORDER BY priority ASC LIMIT 1
+  `).bind(
+    hackathonId, userId,
+    hackathonId, userId,
+    hackathonId, userId,
+    hackathonId, userId,
+    workspaceId, userId
+  ).first<{ role: HackathonRole; priority: number }>();
 
-  if (judgeRecord) {
-    return 'judge';
-  }
+  const role: HackathonRole = result?.role ?? 'anonymous';
 
-  const membership = await db
-    .select({ role: teamMembers.role })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.team_id, teams.id))
-    .where(
-      and(
-        eq(teams.hackathon_id, hackathonId),
-        eq(teamMembers.user_id, userId),
-      ),
-    )
-    .get();
+  // Cache in KV (60s TTL, fire-and-forget)
+  await kv.put(cacheKey, role, { expirationTtl: 60 }).catch(() => {});
 
-  if (membership) {
-    return membership.role === 'leader' ? 'team_lead' : 'team_member';
-  }
-
-  if (workspaceId) {
-    const wsMember = await db
-      .select({ role: workspaceMembers.role })
-      .from(workspaceMembers)
-      .where(
-        and(
-          eq(workspaceMembers.workspace_id, workspaceId),
-          eq(workspaceMembers.user_id, userId),
-        ),
-      )
-      .get();
-
-    if (wsMember) {
-      const defaultRole = WORKSPACE_ROLE_DEFAULTS[wsMember.role];
-      if (defaultRole) return defaultRole;
-    }
-  }
-
-  return 'anonymous';
+  return role;
 }
 
-export const requireRole = (minRole: Role): MiddlewareHandler<AuthAppEnv> => {
+/**
+ * Middleware that requires minimum role level (hierarchy-based).
+ * MUST be used after hackathonContext middleware has set hackathon context.
+ */
+export function requireRole(minRole: HackathonRole): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    try {
-      const slug = c.req.param('slug');
-      if (!slug) {
-        return errorResponse(c, 400, 'BAD_REQUEST', 'Missing hackathon slug');
-      }
-      const db = createDbClient(c.env.DB);
+    const user = c.get('user');
+    const hackathon = c.get('hackathon');
 
-      const hackathon = await db
-        .select()
-        .from(hackathons)
-        .where(eq(hackathons.slug, slug))
-        .get();
-
-      if (!hackathon) {
-        return errorResponse(c, 404, 'HACKATHON_NOT_FOUND', 'Hackathon not found');
-      }
-
-      const user = c.get('user');
-
-      if (!user) {
-        if (minRole === 'anonymous') {
-          c.set('role', 'anonymous' as Role);
-          c.set('hackathon', hackathon);
-          await next();
-          return;
-        }
-        return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
-      }
-
-      const resolvedRole = await resolveRole(user.sub, hackathon.id, db, hackathon.workspace_id);
-
-      c.set('role', resolvedRole);
-      c.set('hackathon', hackathon);
-
-      if (!isRoleAtLeast(resolvedRole, minRole)) {
-        return errorResponse(c, 403, 'INSUFFICIENT_ROLE', `Requires ${minRole} role or higher`);
-      }
-
-      await next();
-    } catch (err) {
-      console.error('requireRole middleware error:', err instanceof Error ? err.message : String(err));
-      return errorResponse(c, 500, 'ROLE_RESOLUTION_ERROR', 'Failed to resolve role');
+    if (!hackathon) {
+      return c.json(
+        { ok: false, error: { code: 'HACKATHON_NOT_FOUND', message: 'Hackathon context required' } },
+        404
+      );
     }
+
+    const role = await resolveRole(
+      c.env.DB,
+      c.env.KV,
+      user?.id,
+      hackathon.id,
+      hackathon.workspace_id
+    );
+
+    c.set('role', role);
+
+    const userLevel = ROLE_HIERARCHY[role] ?? 999;
+    const requiredLevel = ROLE_HIERARCHY[minRole] ?? 999;
+
+    if (userLevel > requiredLevel) {
+      return c.json(
+        { ok: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        403
+      );
+    }
+
+    return next();
   };
-};
+}
+
+/**
+ * Middleware that requires an exact role (not hierarchy-based).
+ * E.g., only judges can score submissions.
+ */
+export function requireExactRole(...roles: HackathonRole[]): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const user = c.get('user');
+    const hackathon = c.get('hackathon');
+
+    if (!hackathon) {
+      return c.json(
+        { ok: false, error: { code: 'HACKATHON_NOT_FOUND', message: 'Hackathon context required' } },
+        404
+      );
+    }
+
+    const role = await resolveRole(
+      c.env.DB,
+      c.env.KV,
+      user?.id,
+      hackathon.id,
+      hackathon.workspace_id
+    );
+
+    c.set('role', role);
+
+    if (!roles.includes(role)) {
+      return c.json(
+        { ok: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        403
+      );
+    }
+
+    return next();
+  };
+}

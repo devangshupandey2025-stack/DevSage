@@ -1,175 +1,104 @@
-import { eq, and } from 'drizzle-orm';
-import { refreshTokens } from '@devsage/db';
-import type { DbClient } from '@devsage/db';
-import { REFRESH_TOKEN_BYTE_LENGTH, REFRESH_TOKEN_EXPIRY_SECONDS } from './constants.js';
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+const GRACE_PERIOD_MS = 2000; // 2s grace for concurrent requests
 
-const encoder = new TextEncoder();
-
-async function hashToken(token: string): Promise<string> {
-  const data = encoder.encode(token);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = new Uint8Array(hashBuffer);
-  let hex = '';
-  for (const byte of hashArray) {
-    hex += byte.toString(16).padStart(2, '0');
-  }
-  return hex;
-}
-
-function generateOpaqueToken(): string {
-  const bytes = new Uint8Array(REFRESH_TOKEN_BYTE_LENGTH);
+export function generateRefreshToken(): string {
+  const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  let token = '';
-  for (const byte of bytes) {
-    token += byte.toString(16).padStart(2, '0');
-  }
-  return token;
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export interface RefreshTokenResult {
-  rawToken: string;
-  tokenHash: string;
-  familyId: string;
-  expiresAt: string;
+export function generateFamilyId(): string {
+  return crypto.randomUUID();
+}
+
+export async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(token));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function getRefreshTokenExpiry(): string {
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+  return expiry.toISOString();
 }
 
 export async function createRefreshToken(
-  db: DbClient,
+  db: D1Database,
   userId: string,
-  familyId?: string,
-  ipAddress?: string,
-  userAgent?: string,
-  device?: string,
-  location?: string,
-): Promise<RefreshTokenResult> {
-  const rawToken = generateOpaqueToken();
-  const tokenHash = await hashToken(rawToken);
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_EXPIRY_SECONDS * 1000).toISOString();
-  const newFamilyId = familyId ?? crypto.randomUUID();
+  familyId: string
+): Promise<string> {
+  const token = generateRefreshToken();
+  const tokenHash = await hashToken(token);
+  const id = crypto.randomUUID();
+  const expiresAt = getRefreshTokenExpiry();
 
-  await db.insert(refreshTokens).values({
-    id: crypto.randomUUID(),
-    user_id: userId,
-    token_hash: tokenHash,
-    family_id: newFamilyId,
-    expires_at: expiresAt,
-    revoked: 0,
-    ip_address: ipAddress ?? null,
-    user_agent: userAgent?.substring(0, 256) ?? null,
-    device: device ?? null,
-    location: location ?? null,
-    created_at: now.toISOString(),
-  });
+  await db.prepare(
+    `INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)`
+  ).bind(id, userId, familyId, tokenHash, expiresAt).run();
 
-  return { rawToken, tokenHash, familyId: newFamilyId, expiresAt };
+  return token;
 }
-
-export type RotateResult =
-  | { ok: true; userId: string; familyId: string; newToken: RefreshTokenResult }
-  | { ok: false; code: 'INVALID_REFRESH_TOKEN' | 'REFRESH_TOKEN_EXPIRED' | 'REFRESH_TOKEN_REUSED' | 'SESSION_REVOKED' };
-
-const GRACE_PERIOD_MS = 5_000;
 
 export async function rotateRefreshToken(
-  db: DbClient,
-  oldTokenRaw: string,
-  ipAddress?: string,
-  userAgent?: string,
-): Promise<RotateResult> {
-  const oldHash = await hashToken(oldTokenRaw);
+  db: D1Database,
+  oldToken: string,
+  userId: string
+): Promise<{ token: string; familyId: string } | null> {
+  const oldHash = await hashToken(oldToken);
 
-  const existing = await db
-    .select()
-    .from(refreshTokens)
-    .where(eq(refreshTokens.token_hash, oldHash))
-    .get();
+  // Find the existing token
+  const existing = await db.prepare(
+    `SELECT id, user_id, family_id, revoked_at, expires_at, created_at FROM refresh_tokens WHERE token_hash = ?`
+  ).bind(oldHash).first<{
+    id: string;
+    user_id: string;
+    family_id: string;
+    revoked_at: string | null;
+    expires_at: string;
+    created_at: string;
+  }>();
 
-  if (!existing) {
-    return { ok: false, code: 'INVALID_REFRESH_TOKEN' };
-  }
+  if (!existing) return null;
+  if (existing.user_id !== userId) return null;
 
-  if (existing.revoked === 1 && !existing.replaced_by) {
-    return { ok: false, code: 'SESSION_REVOKED' };
-  }
+  // Check if expired
+  if (new Date(existing.expires_at) < new Date()) return null;
 
-  const now = new Date();
-
-  if (new Date(existing.expires_at) <= now) {
-    return { ok: false, code: 'REFRESH_TOKEN_EXPIRED' };
-  }
-
-  if (existing.replaced_by) {
-    const replacedAt = existing.revoked_at ? new Date(existing.revoked_at).getTime() : 0;
-    if (now.getTime() - replacedAt < GRACE_PERIOD_MS) {
-      return {
-        ok: true,
-        userId: existing.user_id,
-        familyId: existing.family_id,
-        newToken: { rawToken: oldTokenRaw, tokenHash: oldHash, familyId: existing.family_id, expiresAt: existing.expires_at },
-      };
+  // Replay detection: if already revoked, revoke entire family
+  if (existing.revoked_at) {
+    // Check grace period
+    const revokedAt = new Date(existing.revoked_at).getTime();
+    const now = Date.now();
+    if (now - revokedAt > GRACE_PERIOD_MS) {
+      // Revoke entire family — replay attack
+      await db.prepare(
+        `UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL`
+      ).bind(new Date().toISOString(), existing.family_id).run();
+      return null;
     }
-
-    await revokeTokenFamily(db, existing.family_id);
-    console.warn('Refresh token reuse detected — revoked entire family', {
-      familyId: existing.family_id,
-      userId: existing.user_id,
-    });
-    return { ok: false, code: 'REFRESH_TOKEN_REUSED' };
+    // Within grace period — allow (concurrent request)
   }
 
-  const newToken = await createRefreshToken(
-    db,
-    existing.user_id,
-    existing.family_id,
-    ipAddress,
-    userAgent,
-    existing.device ?? undefined,
-    existing.location ?? undefined,
-  );
+  // Revoke old token
+  await db.prepare(
+    `UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`
+  ).bind(new Date().toISOString(), existing.id).run();
 
-  await db
-    .update(refreshTokens)
-    .set({
-      revoked: 1,
-      revoked_at: now.toISOString(),
-      replaced_by: newToken.tokenHash,
-      used_at: now.toISOString(),
-    })
-    .where(eq(refreshTokens.id, existing.id));
+  // Issue new token in same family
+  const newToken = await createRefreshToken(db, userId, existing.family_id);
 
-  return {
-    ok: true,
-    userId: existing.user_id,
-    familyId: existing.family_id,
-    newToken,
-  };
+  return { token: newToken, familyId: existing.family_id };
 }
 
-export async function revokeTokenFamily(db: DbClient, familyId: string): Promise<void> {
-  const now = new Date().toISOString();
-
-  await db
-    .update(refreshTokens)
-    .set({ revoked: 1, revoked_at: now })
-    .where(
-      and(
-        eq(refreshTokens.family_id, familyId),
-        eq(refreshTokens.revoked, 0),
-      ),
-    );
+export async function revokeTokenFamily(db: D1Database, familyId: string): Promise<void> {
+  await db.prepare(
+    `UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL`
+  ).bind(new Date().toISOString(), familyId).run();
 }
 
-export async function revokeAllUserTokens(db: DbClient, userId: string): Promise<void> {
-  const now = new Date().toISOString();
-
-  await db
-    .update(refreshTokens)
-    .set({ revoked: 1, revoked_at: now })
-    .where(
-      and(
-        eq(refreshTokens.user_id, userId),
-        eq(refreshTokens.revoked, 0),
-      ),
-    );
+export async function revokeAllUserTokens(db: D1Database, userId: string): Promise<void> {
+  await db.prepare(
+    `UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`
+  ).bind(new Date().toISOString(), userId).run();
 }

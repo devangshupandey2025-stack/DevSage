@@ -1,31 +1,32 @@
 import { z } from 'zod';
+import { workspaceTypeSchema, workspaceRoleSchema } from './constants.js';
 
-export const WorkspaceTypeEnum = z.enum(['club', 'individual']);
+export const createWorkspaceSchema = z.object({
+  name: z.string().min(1).max(200),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+  description: z.string().max(2000).optional(),
+  type: workspaceTypeSchema,
+});
 
-export type WorkspaceType = z.infer<typeof WorkspaceTypeEnum>;
+export const updateWorkspaceSchema = createWorkspaceSchema.partial().omit({ slug: true, type: true });
 
-export const WorkspaceSchema = z.object({
-  id: z.string(),
+export const inviteWorkspaceMemberSchema = z.object({
+  email: z.string().email(),
+  role: workspaceRoleSchema.exclude(['owner']),
+});
+
+export const workspaceResponseSchema = z.object({
+  id: z.string().uuid(),
   name: z.string(),
   slug: z.string(),
-  type: WorkspaceTypeEnum,
-  description: z.string(),
-  logoUrl: z.string().nullable().optional(),
-  website: z.string().nullable().optional(),
-  settings: z.string(),
-  createdBy: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  description: z.string().nullable(),
+  type: workspaceTypeSchema,
+  created_by: z.string().uuid().nullable(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
 });
 
-export type Workspace = z.infer<typeof WorkspaceSchema>;
-
-export const CreateWorkspaceRequestSchema = z.object({
-  name: z.string().min(2).max(100),
-  slug: z.string().min(3).max(60),
-  type: WorkspaceTypeEnum.optional().default('individual'),
-  description: z.string().max(500).optional(),
-  website: z.string().url().optional(),
-});
-
-export type CreateWorkspaceRequest = z.infer<typeof CreateWorkspaceRequestSchema>;
+export type CreateWorkspace = z.infer<typeof createWorkspaceSchema>;
+export type UpdateWorkspace = z.infer<typeof updateWorkspaceSchema>;
+export type InviteWorkspaceMember = z.infer<typeof inviteWorkspaceMemberSchema>;
+export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;

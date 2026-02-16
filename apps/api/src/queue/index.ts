@@ -1,120 +1,68 @@
-import type { NormalizedGitHubEvent } from '../lib/webhook-normalize.js';
-import type { Env } from '../types/env.js';
-import { handlePush } from './push-handler.js';
-import { handleTagCreate } from './tag-create-handler.js';
-import { handleTagDelete } from './tag-delete-handler.js';
-import { handleInstallation } from './installation-handler.js';
-import type { NotificationMessage } from './notification-handler.js';
-import { handleNotification } from './notification-handler.js';
-import {
-  MAX_QUEUE_RETRIES,
-  MAX_RETRY_DELAY_SECONDS,
-  RETRY_BACKOFF_BASE_SECONDS,
-} from '../lib/constants.js';
+import type { MessageBatch } from '@cloudflare/workers-types';
+import { handlePushEvent } from './push-handler.js';
+import { handleTagCreateEvent } from './tag-create-handler.js';
+import { handleTagDeleteEvent } from './tag-delete-handler.js';
+import { handleInstallationEvent } from './installation-handler.js';
+import { handleNotificationMessage } from './notification-handler.js';
 
-function isValidWebhookEvent(body: unknown): body is NormalizedGitHubEvent {
-  if (!body || typeof body !== 'object') return false;
-  const event = body as Record<string, unknown>;
-  return typeof event.type === 'string' && typeof event.deliveryId === 'string';
+// The Env type — just use the bindings directly
+interface QueueEnv {
+  DB: D1Database;
+  KV: KVNamespace;
+  HACKATHON_SM: DurableObjectNamespace;
+  WEBHOOK_QUEUE: Queue;
+  NOTIFICATION_QUEUE: Queue;
+  RESEND_API_KEY: string;
+  EMAIL_FROM: string;
+  FRONTEND_URL: string;
+  PLATFORM_URL: string;
 }
 
-function isValidNotificationMessage(body: unknown): body is NotificationMessage {
-  if (!body || typeof body !== 'object') return false;
-  const msg = body as Record<string, unknown>;
-  return typeof msg.type === 'string' && typeof msg.hackathonId === 'string';
-}
-
-async function logDeadLetter(env: Env, queue: string, body: unknown, error: string): Promise<void> {
-  try {
-    await env.DB.prepare(`
-      INSERT INTO audit_events (id, actor_type, event_type, entity_type, entity_id, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      crypto.randomUUID(),
-      'system',
-      'queue.dead_letter',
-      'queue',
-      queue,
-      JSON.stringify({ error, body: typeof body === 'object' ? body : String(body) }),
-      new Date().toISOString(),
-    ).run();
-  } catch {
-    console.error('Failed to log dead letter event');
-  }
-}
-
-export async function processWebhookBatch(
-  batch: MessageBatch<NormalizedGitHubEvent>,
-  env: Env
+export async function queueHandler(
+  batch: MessageBatch,
+  env: QueueEnv,
+  ctx: ExecutionContext
 ): Promise<void> {
   for (const message of batch.messages) {
     try {
-      const event = message.body;
+      const body = message.body as { type: string; payload?: unknown; [key: string]: unknown };
 
-      if (!isValidWebhookEvent(event)) {
-        console.warn('Malformed webhook message, discarding', { body: event });
-        message.ack();
-        continue;
+      if (batch.queue === 'github-webhooks') {
+        await dispatchWebhookMessage(body, env);
+      } else if (batch.queue === 'devsage-notifications') {
+        await handleNotificationMessage(body, env);
       }
 
-      switch (event.type) {
-        case 'push':
-          await handlePush(event, env);
-          break;
-        case 'tag_created':
-          await handleTagCreate(event, env);
-          break;
-        case 'tag_deleted':
-          await handleTagDelete(event, env);
-          break;
-        case 'installation':
-          await handleInstallation(event, env);
-          break;
-        default: {
-          const _exhaustive: never = event;
-          console.warn('Unknown webhook event type, discarding', { event: _exhaustive });
-          break;
-        }
-      }
       message.ack();
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('Queue handler error', { type: (message.body as unknown as Record<string, unknown>)?.type, error: errorMsg, attempt: message.attempts });
-
-      if (message.attempts >= MAX_QUEUE_RETRIES) {
-        await logDeadLetter(env, 'github-webhooks', message.body, errorMsg);
-        message.ack();
-      } else {
-        message.retry({ delaySeconds: Math.min(MAX_RETRY_DELAY_SECONDS, RETRY_BACKOFF_BASE_SECONDS * message.attempts) });
-      }
+    } catch (err) {
+      console.error(`Queue message failed: ${err instanceof Error ? err.message : err}`);
+      message.retry();
     }
   }
 }
 
-export async function processNotificationBatch(
-  batch: MessageBatch<NotificationMessage>,
-  env: Env,
+async function dispatchWebhookMessage(
+  body: { type: string; payload?: unknown; [key: string]: unknown },
+  env: QueueEnv
 ): Promise<void> {
-  for (const message of batch.messages) {
-    try {
-      if (!isValidNotificationMessage(message.body)) {
-        console.warn('Malformed notification message, discarding', { body: message.body });
-        message.ack();
-        continue;
-      }
+  const { type, payload } = body;
 
-      await handleNotification(message.body, env);
-      message.ack();
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('Notification handler error', { type: (message.body as Record<string, unknown>)?.type, error: errorMsg, attempt: message.attempts });
-
-      if (message.attempts >= MAX_QUEUE_RETRIES) {
-        await logDeadLetter(env, 'devsage-notifications', message.body, errorMsg);
-        message.ack();
-      } else {
-        message.retry({ delaySeconds: Math.min(MAX_RETRY_DELAY_SECONDS, RETRY_BACKOFF_BASE_SECONDS * message.attempts) });
-      }
-    }
+  switch (type) {
+    case 'github_push':
+      await handlePushEvent(payload as Record<string, unknown>, env);
+      break;
+    case 'github_tag_created':
+      await handleTagCreateEvent(payload as Record<string, unknown>, body as Record<string, unknown>, env);
+      break;
+    case 'github_tag_deleted':
+      await handleTagDeleteEvent(payload as Record<string, unknown>, env);
+      break;
+    case 'github_installation':
+    case 'github_installation_repos_added':
+    case 'github_installation_repos_removed':
+      await handleInstallationEvent(type, payload as Record<string, unknown>, env);
+      break;
+    default:
+      console.warn(`Unknown webhook message type: ${type}`);
   }
 }

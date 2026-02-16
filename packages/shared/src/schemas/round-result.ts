@@ -1,19 +1,13 @@
 import { z } from 'zod';
 
-export const RoundResultStatusEnum = z.enum(['advanced', 'eliminated']);
-
-export type RoundResultStatus = z.infer<typeof RoundResultStatusEnum>;
-
-export const RoundResultSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  roundId: z.string(),
-  teamId: z.string(),
-  status: RoundResultStatusEnum,
-  rank: z.number().int().nullable().optional(),
-  totalScore: z.number().nullable().optional(),
-  decidedBy: z.string().nullable().optional(),
-  createdAt: z.string(),
+export const roundResultResponseSchema = z.object({
+  id: z.string().uuid(),
+  round_id: z.string().uuid(),
+  team_id: z.string().uuid(),
+  rank: z.number().int(),
+  total_score: z.number(),
+  advanced: z.boolean(),
+  created_at: z.string().datetime(),
 });
 
-export type RoundResult = z.infer<typeof RoundResultSchema>;
+export type RoundResultResponse = z.infer<typeof roundResultResponseSchema>;

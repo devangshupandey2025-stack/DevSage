@@ -1,19 +1,18 @@
-import type { InferSelectModel } from 'drizzle-orm';
-import type { hackathons } from '@devsage/db';
-import type { JWTPayload } from '../lib/jwt.js';
-import type { Env } from './env.js';
-import type { Role } from '../middleware/role.js';
+export interface JWTPayload {
+  sub: string;       // user ID
+  ghid: number | null;  // GitHub user ID
+  ghu: string | null;   // GitHub username
+  fam: string;       // refresh token family ID
+  iat: number;       // issued at (seconds)
+  exp: number;       // expires at (seconds)
+}
 
-export type AuthenticatedUser = Pick<JWTPayload, 'sub' | 'ghid' | 'ghu' | 'fam'>;
-
-export type HackathonRecord = InferSelectModel<typeof hackathons>;
-
-export interface AuthAppEnv {
-  Bindings: Env;
-  Variables: {
-    user: AuthenticatedUser;
-    role: Role;
-    hackathon: HackathonRecord;
-    platformRole: 'super_admin' | 'platform_admin';
-  };
+export interface OAuthUserInfo {
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  github_id?: number;
+  github_username?: string;
+  google_id?: string;
+  auth_provider: 'github' | 'google';
 }

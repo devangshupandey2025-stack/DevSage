@@ -1,15 +1,16 @@
 import { z } from 'zod';
 
-export const HackathonTemplateSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string().nullable().optional(),
-  name: z.string(),
-  description: z.string(),
-  configSnapshot: z.string(),
-  rubricSnapshot: z.string(),
-  createdBy: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+export const createTemplateSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  settings: z.record(z.unknown()).default({}),
+  tracks: z.array(z.record(z.unknown())).default([]),
+  rounds: z.array(z.record(z.unknown())).default([]),
+  rubric: z.array(z.record(z.unknown())).default([]),
+  is_platform_default: z.boolean().default(false),
 });
 
-export type HackathonTemplate = z.infer<typeof HackathonTemplateSchema>;
+export const updateTemplateSchema = createTemplateSchema.partial();
+
+export type CreateTemplate = z.infer<typeof createTemplateSchema>;
+export type UpdateTemplate = z.infer<typeof updateTemplateSchema>;

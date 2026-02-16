@@ -1,27 +1,17 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
-import { teams } from './teams.js';
-import { hackathons } from './hackathons.js';
-import { webhookDeliveries } from './webhook-deliveries.js';
+import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { teamRepos } from './team-repos.js';
 
 export const commitLog = sqliteTable('commit_log', {
   id: text('id').primaryKey(),
-  hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id),
-  team_id: text('team_id').notNull().references(() => teams.id),
-  delivery_id: text('delivery_id').references(() => webhookDeliveries.id),
-  sha: text('sha').notNull(),
-  message: text('message').notNull(),
-  author_name: text('author_name').notNull(),
-  author_email: text('author_email').notNull(),
+  team_repo_id: text('team_repo_id').notNull().references(() => teamRepos.id, { onDelete: 'cascade' }),
+  commit_sha: text('commit_sha').notNull(),
+  commit_message: text('commit_message').notNull(),
+  author_login: text('author_login'),
+  author_email: text('author_email'),
   committed_at: text('committed_at').notNull(),
-  url: text('url').notNull(),
-  branch: text('branch').notNull(),
-  files_added: integer('files_added').notNull().default(0),
-  files_modified: integer('files_modified').notNull().default(0),
-  files_removed: integer('files_removed').notNull().default(0),
-  provider: text('provider').notNull().default('github'),
-  created_at: text('created_at').notNull(),
+  pushed_at: text('pushed_at').notNull(),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
-  idxCommitLogTeamTime: index('idx_commit_log_team_time').on(table.hackathon_id, table.team_id, table.committed_at),
-  idxCommitLogSha: index('idx_commit_log_sha').on(table.sha),
-  idxCommitLogDelivery: index('idx_commit_log_delivery').on(table.delivery_id),
+  repoTimeIdx: index('idx_commit_log_repo_time').on(table.team_repo_id, table.committed_at),
 }));

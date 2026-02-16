@@ -1,125 +1,67 @@
-import { eq, desc, isNull } from 'drizzle-orm';
-import { auditEvents } from '@devsage/db';
-import type { DbClient } from '@devsage/db';
-
-const encoder = new TextEncoder();
-
-interface HashableEvent {
-  id: string;
-  hackathon_id: string | null;
-  actor_id: string | null;
-  actor_type: string;
+interface AuditEventInput {
+  hackathon_id?: string | null;
+  actor_id?: string | null;
+  actor_type: 'user' | 'system' | 'bot' | 'cron';
   event_type: string;
   entity_type: string;
   entity_id: string;
-  metadata: string;
-  created_at: string;
+  metadata?: Record<string, unknown> | null;
+  changes?: Record<string, unknown> | null;
 }
 
-async function computeEventHash(
-  event: HashableEvent,
-  prevHash: string | null,
+export async function insertAuditEvent(
+  db: D1Database,
+  input: AuditEventInput
 ): Promise<string> {
-  const payload = [
-    event.id,
-    event.hackathon_id ?? '',
-    event.actor_id ?? '',
-    event.actor_type,
-    event.event_type,
-    event.entity_type,
-    event.entity_id,
-    event.metadata,
-    event.created_at,
-    prevHash ?? 'GENESIS',
-  ].join('|');
-
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
-  const hashArray = new Uint8Array(hashBuffer);
-  let hex = '';
-  for (const byte of hashArray) {
-    hex += byte.toString(16).padStart(2, '0');
-  }
-  return hex;
+  const id = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO audit_events (id, hackathon_id, actor_id, actor_type, event_type, entity_type, entity_id, metadata, changes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id,
+    input.hackathon_id ?? null,
+    input.actor_id ?? null,
+    input.actor_type,
+    input.event_type,
+    input.entity_type,
+    input.entity_id,
+    input.metadata ? JSON.stringify(input.metadata) : null,
+    input.changes ? JSON.stringify(input.changes) : null
+  ).run();
+  return id;
 }
 
-export interface AuditEventInput {
-  hackathonId?: string;
-  actorId?: string;
-  actorType: 'user' | 'system' | 'bot' | 'cron';
-  actorIp?: string;
-  actorUserAgent?: string;
-  eventType: string;
-  entityType: string;
-  entityId: string;
-  teamId?: string;
-  metadata?: Record<string, unknown>;
-  changes?: { before: Record<string, unknown>; after: Record<string, unknown> };
-}
+export async function backfillAuditHashes(db: D1Database, limit: number = 100): Promise<number> {
+  // Find unhashed events using rowid ordering
+  const unhashed = await db.prepare(
+    `SELECT rowid, id, hackathon_id FROM audit_events WHERE hash IS NULL ORDER BY rowid ASC LIMIT ?`
+  ).bind(limit).all<{ rowid: number; id: string; hackathon_id: string | null }>();
 
-export async function insertAuditEvent(db: DbClient, input: AuditEventInput): Promise<void> {
-  try {
-    const hackathonId = input.hackathonId ?? null;
+  if (!unhashed.results || unhashed.results.length === 0) return 0;
 
-    const lastEvent = hackathonId
-      ? await db
-          .select({ sequence: auditEvents.sequence, hash: auditEvents.hash })
-          .from(auditEvents)
-          .where(eq(auditEvents.hackathon_id, hackathonId))
-          .orderBy(desc(auditEvents.sequence))
-          .limit(1)
-          .get()
-      : await db
-          .select({ sequence: auditEvents.sequence, hash: auditEvents.hash })
-          .from(auditEvents)
-          .where(isNull(auditEvents.hackathon_id))
-          .orderBy(desc(auditEvents.sequence))
-          .limit(1)
-          .get();
+  let processed = 0;
+  for (const event of unhashed.results) {
+    // Get prev_hash for this hackathon's chain
+    const prev = await db.prepare(
+      `SELECT hash FROM audit_events
+       WHERE hackathon_id IS ? AND hash IS NOT NULL AND rowid < ?
+       ORDER BY rowid DESC LIMIT 1`
+    ).bind(event.hackathon_id, event.rowid).first<{ hash: string }>();
 
-    const sequence = (lastEvent?.sequence ?? 0) + 1;
-    const prevHash = lastEvent?.hash ?? null;
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-    const metadata = input.metadata ? JSON.stringify(input.metadata) : '{}';
+    const prevHash = prev?.hash ?? null;
 
-    const hash = await computeEventHash(
-      {
-        id,
-        hackathon_id: hackathonId,
-        actor_id: input.actorId ?? null,
-        actor_type: input.actorType,
-        event_type: input.eventType,
-        entity_type: input.entityType,
-        entity_id: input.entityId,
-        metadata,
-        created_at: now,
-      },
-      prevHash,
-    );
+    // Compute hash: SHA-256(id + prev_hash + hackathon_id)
+    const encoder = new TextEncoder();
+    const hashInput = `${event.id}:${prevHash ?? 'genesis'}:${event.hackathon_id ?? 'global'}`;
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(hashInput));
+    const hash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-    await db.insert(auditEvents).values({
-      id,
-      sequence,
-      hackathon_id: hackathonId,
-      actor_id: input.actorId ?? null,
-      actor_type: input.actorType,
-      actor_ip: input.actorIp ?? null,
-      actor_user_agent: input.actorUserAgent?.substring(0, 256) ?? null,
-      event_type: input.eventType,
-      entity_type: input.entityType,
-      entity_id: input.entityId,
-      team_id: input.teamId ?? null,
-      metadata,
-      changes: input.changes ? JSON.stringify(input.changes) : null,
-      hash,
-      prev_hash: prevHash,
-      created_at: now,
-    });
-  } catch (error) {
-    console.warn('insertAuditEvent failed (non-fatal):', {
-      eventType: input.eventType,
-      entityType: input.entityType,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    await db.prepare(
+      `UPDATE audit_events SET hash = ?, prev_hash = ? WHERE id = ?`
+    ).bind(hash, prevHash, event.id).run();
+
+    processed++;
   }
+
+  return processed;
 }

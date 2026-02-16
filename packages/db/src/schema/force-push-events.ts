@@ -1,30 +1,16 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
-import { teams } from './teams.js';
-import { hackathons } from './hackathons.js';
-import { users } from './users.js';
-import { webhookDeliveries } from './webhook-deliveries.js';
+import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { teamRepos } from './team-repos.js';
 
 export const forcePushEvents = sqliteTable('force_push_events', {
   id: text('id').primaryKey(),
-  hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id),
-  team_id: text('team_id').notNull().references(() => teams.id),
-  delivery_id: text('delivery_id').references(() => webhookDeliveries.id),
-  repo_full_name: text('repo_full_name').notNull(),
-  branch: text('branch').notNull(),
+  team_repo_id: text('team_repo_id').notNull().references(() => teamRepos.id, { onDelete: 'cascade' }),
   before_sha: text('before_sha').notNull(),
   after_sha: text('after_sha').notNull(),
-  estimated_lost_commits: integer('estimated_lost_commits').notNull().default(0),
-  severity: text('severity', { enum: ['info', 'warning', 'critical'] }).notNull().default('info'),
-  affected_submission_ids: text('affected_submission_ids').notNull().default('[]'),
-  resolved: integer('resolved').notNull().default(0),
-  resolved_by: text('resolved_by').references(() => users.id),
-  resolved_at: text('resolved_at'),
-  resolution_note: text('resolution_note'),
-  provider: text('provider').notNull().default('github'),
+  ref: text('ref').notNull(),
   pusher_login: text('pusher_login').notNull(),
-  created_at: text('created_at').notNull(),
+  detected_at: text('detected_at').notNull(),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
-  idxForcePushHackathonTime: index('idx_force_push_hackathon_time').on(table.hackathon_id, table.created_at),
-  idxForcePushTeam: index('idx_force_push_team').on(table.team_id),
-  idxForcePushResolved: index('idx_force_push_resolved').on(table.resolved),
+  repoIdx: index('idx_force_push_repo').on(table.team_repo_id),
 }));

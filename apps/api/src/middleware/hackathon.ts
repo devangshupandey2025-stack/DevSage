@@ -1,31 +1,31 @@
 import type { MiddlewareHandler } from 'hono';
-import { createDbClient, hackathons } from '@devsage/db';
-import { eq } from 'drizzle-orm';
-import { errorResponse } from '../lib/response.js';
-import type { AuthAppEnv } from '../types/auth.js';
+import type { AppEnv } from '../types/env.js';
 
-export const hackathonMiddleware: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
+/**
+ * Resolves hackathon from :slug param and sets hackathon context.
+ */
+export const hackathonContext: MiddlewareHandler<AppEnv> = async (c, next) => {
   const slug = c.req.param('slug');
   if (!slug) {
-    return errorResponse(c, 400, 'BAD_REQUEST', 'Missing hackathon slug');
+    return c.json(
+      { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Hackathon slug is required' } },
+      400
+    );
   }
 
-  const db = createDbClient(c.env.DB);
-  try {
-    const hackathon = await db
-      .select()
-      .from(hackathons)
-      .where(eq(hackathons.slug, slug))
-      .get();
+  const hackathon = await c.env.DB.prepare(
+    'SELECT id, workspace_id, slug, status FROM hackathons WHERE slug = ?'
+  ).bind(slug).first<{
+    id: string; workspace_id: string; slug: string; status: string;
+  }>();
 
-    if (!hackathon) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
-    }
-
-    c.set('hackathon', hackathon);
-    await next();
-  } catch (err) {
-    console.error('hackathonMiddleware error:', err instanceof Error ? err.message : String(err));
-    return errorResponse(c, 500, 'DB_ERROR', 'Failed to load hackathon');
+  if (!hackathon) {
+    return c.json(
+      { ok: false, error: { code: 'HACKATHON_NOT_FOUND', message: 'Hackathon not found' } },
+      404
+    );
   }
+
+  c.set('hackathon', hackathon);
+  return next();
 };

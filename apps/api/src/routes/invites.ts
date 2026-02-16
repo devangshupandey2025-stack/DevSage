@@ -1,116 +1,106 @@
 import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient, workspaceInvites, workspaceMembers, users } from '@devsage/db';
-import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware } from '../middleware/auth.js';
+import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { insertAuditEvent } from '../lib/audit.js';
 
-const invites = new Hono<AuthAppEnv>();
+const invites = new Hono<AppEnv>();
 
-invites.get('/:code', async (c) => {
-  const code = c.req.param('code');
-  const db = createDbClient(c.env.DB);
+// Accept team invite
+invites.post('/team/:token', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const token = c.req.param('token');
 
-  const invite = await db
-    .select({
-      id: workspaceInvites.id,
-      email: workspaceInvites.email,
-      workspace_id: workspaceInvites.workspace_id,
-      status: workspaceInvites.status,
-      expires_at: workspaceInvites.expires_at,
+  const invite = await c.env.DB.prepare(
+    `SELECT ti.id, ti.team_id, ti.email, ti.status, ti.expires_at, t.hackathon_id, t.status as team_status
+     FROM team_invites ti
+     JOIN teams t ON ti.team_id = t.id
+     WHERE ti.invite_token = ?`
+  ).bind(token).first<{
+    id: string; team_id: string; email: string; status: string;
+    expires_at: string; hackathon_id: string; team_status: string;
+  }>();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Invite already used');
+  if (new Date(invite.expires_at) < new Date()) return errorResponse(c, 410, 'INVITE_EXPIRED', 'Invite has expired');
+  if (invite.team_status === 'dissolved') return errorResponse(c, 409, 'TEAM_DISSOLVED', 'Team has been dissolved');
+
+  // Check if already on a team
+  const existing = await c.env.DB.prepare(`
+    SELECT t.id FROM teams t JOIN team_members tm ON tm.team_id = t.id
+    WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+  `).bind(invite.hackathon_id, user.id).first();
+
+  if (existing) return errorResponse(c, 409, 'ALREADY_ON_TEAM', 'Already on a team');
+
+  // Accept
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE team_invites SET status = ? WHERE id = ?').bind('accepted', invite.id),
+    c.env.DB.prepare('INSERT INTO team_members (id, team_id, user_id, role) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), invite.team_id, user.id, 'team_member'),
+  ]);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: invite.hackathon_id,
+      actor_id: user.id,
+      actor_type: 'user',
+      event_type: 'team.invite_accepted',
+      entity_type: 'team',
+      entity_id: invite.team_id,
     })
-    .from(workspaceInvites)
-    .where(eq(workspaceInvites.code, code))
-    .get();
+  );
 
-  if (!invite) {
-    return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
-  }
-
-  const now = new Date();
-  const expired = new Date(invite.expires_at) < now;
-
-  return successResponse(c, {
-    id: invite.id,
-    email: invite.email,
-    workspace_id: invite.workspace_id,
-    status: expired && invite.status === 'pending' ? 'expired' : invite.status,
-    expires_at: invite.expires_at,
-  });
+  return successResponse(c, { accepted: true, team_id: invite.team_id });
 });
 
-invites.post('/:code/accept', authMiddleware, async (c) => {
-  const code = c.req.param('code');
-  const user = c.get('user');
-  const db = createDbClient(c.env.DB);
+// Accept judge invite
+invites.post('/judge/:token', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const token = c.req.param('token');
 
-  const invite = await db
-    .select()
-    .from(workspaceInvites)
-    .where(eq(workspaceInvites.code, code))
-    .get();
+  const invite = await c.env.DB.prepare(
+    'SELECT id, hackathon_id, email, invite_status FROM judges WHERE invite_token = ?'
+  ).bind(token).first<{ id: string; hackathon_id: string; email: string; invite_status: string }>();
 
-  if (!invite) {
-    return errorResponse(c, 404, 'INVITE_NOT_FOUND', 'Invite not found');
-  }
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');
 
-  if (invite.status === 'accepted') {
-    return errorResponse(c, 409, 'INVITE_ALREADY_ACCEPTED', 'This invite has already been accepted');
-  }
+  await c.env.DB.prepare(
+    'UPDATE judges SET user_id = ?, invite_status = ?, accepted_at = ? WHERE id = ?'
+  ).bind(user.id, 'accepted', new Date().toISOString(), invite.id).run();
 
-  if (invite.status !== 'pending') {
-    return errorResponse(c, 400, 'INVITE_NOT_PENDING', 'Invite is no longer pending');
-  }
-
-  const now = new Date();
-  if (new Date(invite.expires_at) < now) {
-    await db
-      .update(workspaceInvites)
-      .set({ status: 'expired' })
-      .where(eq(workspaceInvites.id, invite.id));
-    return errorResponse(c, 410, 'INVITE_EXPIRED', 'This invite has expired');
-  }
-
-  const userRecord = await db
-    .select({ email: users.email })
-    .from(users)
-    .where(eq(users.id, user.sub))
-    .get();
-
-  if (invite.email && userRecord?.email && invite.email.toLowerCase() !== userRecord.email.toLowerCase()) {
-    return errorResponse(c, 403, 'INVITE_EMAIL_MISMATCH', 'Your email does not match the invite email');
-  }
-
-  await db
-    .update(workspaceInvites)
-    .set({
-      status: 'accepted',
-      accepted_by: user.sub,
-      accepted_at: now.toISOString(),
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: invite.hackathon_id,
+      actor_id: user.id,
+      actor_type: 'user',
+      event_type: 'judge.invite_accepted',
+      entity_type: 'judge',
+      entity_id: invite.id,
     })
-    .where(eq(workspaceInvites.id, invite.id));
+  );
 
-  await db.insert(workspaceMembers).values({
-    id: crypto.randomUUID(),
-    workspace_id: invite.workspace_id,
-    user_id: user.sub,
-    role: 'workspace_member',
-    invited_by: invite.created_by,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  });
+  return successResponse(c, { accepted: true, hackathon_id: invite.hackathon_id });
+});
 
-  await insertAuditEvent(db, {
-    actorId: user.sub,
-    actorType: 'user',
-    eventType: 'workspace.invite_accepted',
-    entityType: 'workspace_invite',
-    entityId: invite.id,
-    metadata: { email: invite.email, workspace_id: invite.workspace_id, invite_code: code },
-  });
+// Decline judge invite
+invites.post('/judge/:token/decline', async (c) => {
+  const token = c.req.param('token');
 
-  return successResponse(c, { message: 'Invite accepted. You are now a workspace member.' });
+  const invite = await c.env.DB.prepare(
+    'SELECT id, invite_status FROM judges WHERE invite_token = ?'
+  ).bind(token).first<{ id: string; invite_status: string }>();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');
+
+  await c.env.DB.prepare(
+    'UPDATE judges SET invite_status = ? WHERE id = ?'
+  ).bind('declined', invite.id).run();
+
+  return successResponse(c, { declined: true });
 });
 
 export default invites;

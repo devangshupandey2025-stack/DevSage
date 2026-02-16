@@ -1,17 +1,8 @@
 import { z } from 'zod';
+import { workspaceRoleSchema } from './constants.js';
 
-export const WorkspaceRoleEnum = z.enum(['workspace_owner', 'workspace_admin', 'workspace_member']);
-
-export type WorkspaceRole = z.infer<typeof WorkspaceRoleEnum>;
-
-export const WorkspaceMemberSchema = z.object({
-  id: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  role: WorkspaceRoleEnum,
-  invitedBy: z.string().nullable().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+export const updateWorkspaceMemberRoleSchema = z.object({
+  role: workspaceRoleSchema,
 });
 
-export type WorkspaceMember = z.infer<typeof WorkspaceMemberSchema>;
+export type UpdateWorkspaceMemberRole = z.infer<typeof updateWorkspaceMemberRoleSchema>;

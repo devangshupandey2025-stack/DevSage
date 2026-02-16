@@ -1,22 +1,11 @@
 import { z } from 'zod';
 
-export const CommitLogSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  teamId: z.string(),
-  deliveryId: z.string().nullable().optional(),
-  sha: z.string(),
-  message: z.string(),
-  authorName: z.string(),
-  authorEmail: z.string(),
-  committedAt: z.string(),
-  url: z.string(),
-  branch: z.string(),
-  filesAdded: z.number().int(),
-  filesModified: z.number().int(),
-  filesRemoved: z.number().int(),
-  provider: z.string(),
-  createdAt: z.string(),
+export const commitLogResponseSchema = z.object({
+  id: z.string().uuid(),
+  commit_sha: z.string(),
+  commit_message: z.string(),
+  author_login: z.string().nullable(),
+  committed_at: z.string().datetime(),
 });
 
-export type CommitLog = z.infer<typeof CommitLogSchema>;
+export type CommitLogResponse = z.infer<typeof commitLogResponseSchema>;

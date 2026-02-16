@@ -1,24 +1,33 @@
-export interface TagMatchResult {
-  matches: boolean;
-  version?: number;
+// Default tag pattern (configurable per hackathon via settings)
+const DEFAULT_TAG_PATTERN = 'submission-v*';
+
+export function globToRegex(pattern: string): RegExp {
+  let regex = '^';
+  for (const char of pattern) {
+    switch (char) {
+      case '*': regex += '.*'; break;
+      case '?': regex += '.'; break;
+      case '.': regex += '\\.'; break;
+      case '(': regex += '\\('; break;
+      case ')': regex += '\\)'; break;
+      case '[': regex += '\\['; break;
+      case ']': regex += '\\]'; break;
+      case '{': regex += '\\{'; break;
+      case '}': regex += '\\}'; break;
+      case '+': regex += '\\+'; break;
+      case '^': regex += '\\^'; break;
+      case '$': regex += '\\$'; break;
+      case '|': regex += '\\|'; break;
+      case '\\': regex += '\\\\'; break;
+      default: regex += char;
+    }
+  }
+  regex += '$';
+  return new RegExp(regex);
 }
 
-/**
- * Match a tag against a pattern where `%` is the version-number wildcard.
- * `matchSubmissionTag('submission_v3', 'submission_v%')` → `{ matches: true, version: 3 }`
- */
-export function matchSubmissionTag(tagName: string, pattern: string): TagMatchResult {
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // `%` → `(\d+)` capture group for version extraction
-  const regexStr = `^${escaped.replace(/%/g, '(\\d+)')}$`;
-
-  const match = new RegExp(regexStr).exec(tagName);
-  if (!match) {
-    return { matches: false };
-  }
-
-  const versionStr = match[1];
-  const version = versionStr !== undefined ? Number.parseInt(versionStr, 10) : undefined;
-
-  return { matches: true, version };
+export function matchesTagPattern(tagName: string, pattern?: string): boolean {
+  const pat = pattern || DEFAULT_TAG_PATTERN;
+  const regex = globToRegex(pat);
+  return regex.test(tagName);
 }

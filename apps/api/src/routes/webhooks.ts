@@ -1,87 +1,118 @@
 import { Hono } from 'hono';
-import type { Env } from '../types/env.js';
-import { errorResponse, successResponse } from '../lib/response.js';
+import type { AppEnv } from '../types/env.js';
 import { normalizeGitHubEvent } from '../lib/webhook-normalize.js';
+import type { WebhookQueueMessage } from '../lib/queue-utils.js';
 
-const webhooks = new Hono<{ Bindings: Env }>();
+const webhooks = new Hono<AppEnv>();
 
-function toHex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function timingSafeEqual(left: string, right: string): boolean {
-  const encoder = new TextEncoder();
-  const leftBytes = encoder.encode(left);
-  const rightBytes = encoder.encode(right);
-  const maxLength = Math.max(leftBytes.length, rightBytes.length);
-
-  let diff = leftBytes.length ^ rightBytes.length;
-  for (let index = 0; index < maxLength; index++) {
-    const leftByte = leftBytes[index] ?? 0;
-    const rightByte = rightBytes[index] ?? 0;
-    diff |= leftByte ^ rightByte;
-  }
-
-  return diff === 0;
-}
-
+// GitHub webhook receiver
 webhooks.post('/github', async (c) => {
-  const body = await c.req.text();
   const signature = c.req.header('X-Hub-Signature-256');
-  const deliveryId = c.req.header('X-GitHub-Delivery');
   const eventType = c.req.header('X-GitHub-Event');
+  const deliveryId = c.req.header('X-GitHub-Delivery');
 
-  if (!signature || !deliveryId || !eventType) {
-    return errorResponse(
-      c,
-      400,
-      'MISSING_WEBHOOK_HEADERS',
-      'Missing required GitHub webhook headers'
-    );
+  if (!signature || !eventType || !deliveryId) {
+    return c.json({ error: 'Missing headers' }, 400);
   }
 
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(c.env.GITHUB_WEBHOOK_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const signedBody = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
-  const expected = `sha256=${toHex(signedBody)}`;
-
-  if (!timingSafeEqual(signature, expected)) {
-    return errorResponse(c, 401, 'INVALID_SIGNATURE', 'Invalid webhook signature');
+  // HMAC verification (constant-time via double-HMAC)
+  const body = await c.req.text();
+  const isValid = await verifyWebhookSignature(body, signature, c.env.GITHUB_WEBHOOK_SECRET);
+  if (!isValid) {
+    return c.json({ error: 'Invalid signature' }, 401);
   }
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    return errorResponse(c, 400, 'INVALID_BODY', 'Invalid JSON body');
+  const payload = JSON.parse(body) as Record<string, unknown>;
+
+  // Normalize event
+  const normalized = normalizeGitHubEvent(eventType, payload);
+  if (!normalized) {
+    // Event type not handled — acknowledge and ignore
+    c.executionCtx.waitUntil(recordDelivery(c.env.DB, deliveryId, eventType, 'ignored'));
+    return c.json({ received: true, action: 'ignored' });
   }
 
-  const normalizedEvent = normalizeGitHubEvent(eventType, payload, deliveryId);
+  // Enqueue for async processing
+  const message: WebhookQueueMessage = {
+    type: `github_${normalized.type}`,
+    payload: normalized.data,
+    received_at: new Date().toISOString(),
+    delivery_id: deliveryId,
+  };
 
-  if (!normalizedEvent) {
-    return successResponse(
-      c,
-      { message: 'Event acknowledged but not processed (unknown or irrelevant event type)' },
-      {},
-      200
-    );
-  }
+  await c.env.WEBHOOK_QUEUE.send(message);
 
-  await c.env.WEBHOOK_QUEUE.send(normalizedEvent);
+  // Record delivery (non-blocking)
+  c.executionCtx.waitUntil(recordDelivery(c.env.DB, deliveryId, eventType, 'queued'));
 
-  return successResponse(
-    c,
-    { message: `Event accepted and enqueued: ${normalizedEvent.type}` },
-    {},
-    202
-  );
+  return c.json({ received: true, action: 'queued' });
 });
+
+/**
+ * Constant-time HMAC verification via double-HMAC comparison.
+ * Workers don't have timingSafeEqual, so we HMAC both values
+ * and compare the HMACs (any timing leak reveals nothing useful).
+ */
+async function verifyWebhookSignature(
+  body: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    // Compute expected signature
+    const expectedSig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+    const expectedHex = 'sha256=' + Array.from(new Uint8Array(expectedSig))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Double-HMAC comparison for constant-time
+    const comparisonKey = await crypto.subtle.importKey(
+      'raw',
+      crypto.getRandomValues(new Uint8Array(32)),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const hmac1 = await crypto.subtle.sign('HMAC', comparisonKey, encoder.encode(expectedHex));
+    const hmac2 = await crypto.subtle.sign('HMAC', comparisonKey, encoder.encode(signature));
+
+    const a = new Uint8Array(hmac1);
+    const b = new Uint8Array(hmac2);
+    if (a.length !== b.length) return false;
+
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+      result |= a[i] ^ b[i];
+    }
+    return result === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function recordDelivery(
+  db: D1Database,
+  deliveryId: string,
+  eventType: string,
+  status: string
+): Promise<void> {
+  try {
+    await db.prepare(
+      `INSERT OR IGNORE INTO webhook_deliveries (id, github_delivery_id, event_type, status, received_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(crypto.randomUUID(), deliveryId, eventType, status, new Date().toISOString()).run();
+  } catch (err) {
+    console.warn('Failed to record webhook delivery:', err instanceof Error ? err.message : err);
+  }
+}
 
 export default webhooks;

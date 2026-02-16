@@ -1,43 +1,45 @@
-import { HackathonStatus } from './hackathon.js';
+import { z } from 'zod';
 
-export const HACKATHON_STATUSES = [
-  'draft',
-  'active',
-  'judging',
-  'completed',
-  'archived',
-] as const;
+export const hackathonStatusSchema = z.enum(['draft', 'active', 'judging', 'completed', 'archived']);
+export type HackathonStatus = z.infer<typeof hackathonStatusSchema>;
 
-export const HACKATHON_STATUS_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
-  draft: ['active'],
-  active: ['judging'],
-  judging: ['completed'],
-  completed: ['archived'],
-  archived: ['completed'],
-};
+export const organizerRoleSchema = z.enum(['organizer', 'co_organizer']);
+export type OrganizerRole = z.infer<typeof organizerRoleSchema>;
 
-export const ORGANIZER_ROLES = ['organizer', 'co_organizer'] as const;
-export const TEAM_MEMBER_ROLES = ['leader', 'member'] as const;
-export const SUBMISSION_STATUSES = [
-  'received',
-  'validated',
-  'validation_failed',
-  'locked',
-  'under_review',
-  'scored',
-  'invalid',
-  'superseded',
-] as const;
-export const ACTOR_TYPES = ['user', 'system', 'bot', 'cron'] as const;
-export const ROLES = ['anonymous', 'team_member', 'team_lead', 'judge', 'co_organizer', 'organizer'] as const;
+export const hackathonRoleSchema = z.enum(['organizer', 'co_organizer', 'judge', 'team_lead', 'team_member', 'anonymous']);
+export type HackathonRole = z.infer<typeof hackathonRoleSchema>;
 
-export const JUDGE_INVITE_STATUSES = ['pending', 'accepted', 'declined', 'removed'] as const;
-export const REGISTRATION_MODES = ['open', 'domain_restricted', 'approval_based'] as const;
-export const ROUND_STATUSES = ['pending', 'active', 'judging', 'completed'] as const;
-export const ROUND_RESULT_STATUSES = ['advanced', 'eliminated'] as const;
-export const WORKSPACE_ROLES = ['workspace_owner', 'workspace_admin', 'workspace_member'] as const;
-export const PLATFORM_ADMIN_ROLES = ['super_admin', 'platform_admin'] as const;
-export const FORCE_PUSH_SEVERITIES = ['info', 'warning', 'critical'] as const;
+export const teamStatusSchema = z.enum(['forming', 'ready', 'submitted', 'dissolved']);
+export type TeamStatus = z.infer<typeof teamStatusSchema>;
 
-export const MAX_TEAM_NAME_LENGTH = 50;
-export const JOIN_CODE_LENGTH = 8;
+export const submissionStatusSchema = z.enum(['pending_validation', 'validated', 'failed_validation', 'tag_deleted']);
+export type SubmissionStatus = z.infer<typeof submissionStatusSchema>;
+
+export const judgeInviteStatusSchema = z.enum(['pending', 'accepted', 'declined']);
+export type JudgeInviteStatus = z.infer<typeof judgeInviteStatusSchema>;
+
+export const teamMemberRoleSchema = z.enum(['team_lead', 'team_member']);
+export type TeamMemberRole = z.infer<typeof teamMemberRoleSchema>;
+
+export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member']);
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+
+export const workspaceTypeSchema = z.enum(['club', 'individual']);
+export type WorkspaceType = z.infer<typeof workspaceTypeSchema>;
+
+export const auditActorTypeSchema = z.enum(['user', 'system', 'bot', 'cron']);
+export type AuditActorType = z.infer<typeof auditActorTypeSchema>;
+
+export const authProviderSchema = z.enum(['github', 'google']);
+export type AuthProvider = z.infer<typeof authProviderSchema>;
+
+export const sponsorTierSchema = z.enum(['platinum', 'gold', 'silver', 'bronze']);
+export type SponsorTier = z.infer<typeof sponsorTierSchema>;
+
+export const webhookDeliveryStatusSchema = z.enum(['queued', 'processed', 'failed', 'ignored']);
+export const notificationChannelSchema = z.enum(['email', 'in_app']);
+export const notificationDeliveryStatusSchema = z.enum(['sent', 'failed', 'bounced']);
+export const teamInviteStatusSchema = z.enum(['pending', 'accepted', 'declined', 'expired']);
+export const workspaceInviteStatusSchema = z.enum(['pending', 'accepted', 'expired']);
+export const deletionRequestStatusSchema = z.enum(['pending', 'confirmed', 'completed', 'cancelled']);
+export const assignmentStatusSchema = z.enum(['pending', 'scored', 'skipped']);

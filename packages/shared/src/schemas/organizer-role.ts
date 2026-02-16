@@ -1,15 +1,9 @@
 import { z } from 'zod';
+import { organizerRoleSchema } from './constants.js';
 
-export const OrganizerRoleEnum = z.enum(['organizer', 'co_organizer']);
-
-export type OrganizerRoleType = z.infer<typeof OrganizerRoleEnum>;
-
-export const OrganizerRoleSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  userId: z.string(),
-  role: OrganizerRoleEnum,
-  createdAt: z.string(),
+export const addOrganizerSchema = z.object({
+  user_id: z.string().uuid(),
+  role: organizerRoleSchema,
 });
 
-export type OrganizerRole = z.infer<typeof OrganizerRoleSchema>;
+export type AddOrganizer = z.infer<typeof addOrganizerSchema>;

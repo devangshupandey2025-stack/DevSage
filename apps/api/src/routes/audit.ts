@@ -1,209 +1,49 @@
 import { Hono } from 'hono';
-import { eq, and, desc, lt, sql } from 'drizzle-orm';
-import { createDbClient, auditEvents } from '@devsage/db';
-import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { requireRole } from '../middleware/role.js';
+import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, cursorPaginatedResponse } from '../lib/response.js';
+import { authMiddleware } from '../middleware/auth.js';
+import { hackathonContext } from '../middleware/hackathon.js';
+import { requireRole } from '../middleware/role.js';
 
-const audit = new Hono<AuthAppEnv>();
+const audit = new Hono<AppEnv>();
 
-/**
- * GET /:slug/audit — Query audit trail for a hackathon (cursor-paginated)
- * Requires co_organizer role. Cursor is based on created_at.
- * Query params: limit (1-100, default 20), cursor (ISO timestamp), action, entity_type, entity_id, actor_id
- */
-audit.get(
-  '/:slug/audit',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const db = createDbClient(c.env.DB);
+// Query audit events for a hackathon (organizer+)
+audit.get('/', hackathonContext, authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
+  const cursor = c.req.query('cursor');
+  const eventType = c.req.query('event_type');
+  const entityType = c.req.query('entity_type');
+  const entityId = c.req.query('entity_id');
+  const actorId = c.req.query('actor_id');
 
-    const limitParam = c.req.query('limit');
-    const cursor = c.req.query('cursor');
-    const actionFilter = c.req.query('action') || c.req.query('event_type');
-    const entityTypeFilter = c.req.query('entity_type');
-    const entityIdFilter = c.req.query('entity_id');
-    const actorIdFilter = c.req.query('actor_id');
+  let query = 'SELECT rowid, * FROM audit_events WHERE hackathon_id = ?';
+  const params: unknown[] = [hackathon.id];
 
-    const limit = Math.min(Math.max(parseInt(limitParam || '20', 10) || 20, 1), 100);
+  if (cursor) { query += ' AND rowid > ?'; params.push(parseInt(cursor)); }
+  if (eventType) { query += ' AND event_type = ?'; params.push(eventType); }
+  if (entityType) { query += ' AND entity_type = ?'; params.push(entityType); }
+  if (entityId) { query += ' AND entity_id = ?'; params.push(entityId); }
+  if (actorId) { query += ' AND actor_id = ?'; params.push(actorId); }
 
-    const conditions: ReturnType<typeof eq>[] = [sql`${auditEvents.hackathon_id} = ${hackathon.id}`];
-    if (cursor) {
-      conditions.push(lt(auditEvents.created_at, cursor));
-    }
-    if (actionFilter) {
-      conditions.push(eq(auditEvents.event_type, actionFilter));
-    }
-    if (entityTypeFilter) {
-      conditions.push(eq(auditEvents.entity_type, entityTypeFilter));
-    }
-    if (entityIdFilter) {
-      conditions.push(eq(auditEvents.entity_id, entityIdFilter));
-    }
-    if (actorIdFilter) {
-      conditions.push(sql`${auditEvents.actor_id} = ${actorIdFilter}`);
-    }
+  query += ' ORDER BY rowid ASC LIMIT ?';
+  params.push(limit + 1); // Fetch one extra for cursor
 
-    const rows = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      .orderBy(desc(auditEvents.created_at))
-      .limit(limit + 1)
-      .all();
+  const rows = await c.env.DB.prepare(query).bind(...params).all<{ rowid: number } & Record<string, unknown>>();
+  const results = rows.results || [];
 
-    const hasMore = rows.length > limit;
-    const data = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore && data.length > 0
-      ? data[data.length - 1].created_at
-      : null;
+  const hasMore = results.length > limit;
+  const data = hasMore ? results.slice(0, limit) : results;
+  const nextCursor = hasMore && data.length > 0 ? String(data[data.length - 1].rowid) : null;
 
-    return cursorPaginatedResponse(c, data, limit, nextCursor);
-  },
-);
+  // Parse JSON fields
+  const parsed = data.map(row => ({
+    ...row,
+    metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
+    changes: row.changes ? JSON.parse(row.changes as string) : null,
+  }));
 
-/**
- * GET /:slug/audit/:eventId — Get a single audit event
- */
-audit.get(
-  '/:slug/audit/:eventId',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const eventId = c.req.param('eventId');
-    const db = createDbClient(c.env.DB);
-
-    const event = await db
-      .select()
-      .from(auditEvents)
-      .where(and(
-        eq(auditEvents.id, eventId),
-        sql`${auditEvents.hackathon_id} = ${hackathon.id}`,
-      ))
-      .get();
-
-    if (!event) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Audit event not found');
-    }
-
-    return successResponse(c, event);
-  },
-);
-
-/**
- * GET /:slug/audit/entity/:type/:entityId — Get audit events for a specific entity
- */
-audit.get(
-  '/:slug/audit/entity/:type/:entityId',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const entityType = c.req.param('type');
-    const entityId = c.req.param('entityId');
-    const db = createDbClient(c.env.DB);
-
-    const limitParam = c.req.query('limit');
-    const cursor = c.req.query('cursor');
-    const limit = Math.min(Math.max(parseInt(limitParam || '20', 10) || 20, 1), 100);
-
-    const conditions: ReturnType<typeof eq>[] = [
-      sql`${auditEvents.hackathon_id} = ${hackathon.id}`,
-      eq(auditEvents.entity_type, entityType),
-      eq(auditEvents.entity_id, entityId),
-    ];
-    if (cursor) {
-      conditions.push(lt(auditEvents.created_at, cursor));
-    }
-
-    const rows = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      .orderBy(desc(auditEvents.created_at))
-      .limit(limit + 1)
-      .all();
-
-    const hasMore = rows.length > limit;
-    const data = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore && data.length > 0
-      ? data[data.length - 1].created_at
-      : null;
-
-    return cursorPaginatedResponse(c, data, limit, nextCursor);
-  },
-);
-
-/**
- * GET /:slug/audit/actor/:actorId — Get audit events by a specific actor
- */
-audit.get(
-  '/:slug/audit/actor/:actorId',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const actorId = c.req.param('actorId');
-    const db = createDbClient(c.env.DB);
-
-    const limitParam = c.req.query('limit');
-    const cursor = c.req.query('cursor');
-    const limit = Math.min(Math.max(parseInt(limitParam || '20', 10) || 20, 1), 100);
-
-    const conditions: ReturnType<typeof eq>[] = [
-      sql`${auditEvents.hackathon_id} = ${hackathon.id}`,
-      sql`${auditEvents.actor_id} = ${actorId}`,
-    ];
-    if (cursor) {
-      conditions.push(lt(auditEvents.created_at, cursor));
-    }
-
-    const rows = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      .orderBy(desc(auditEvents.created_at))
-      .limit(limit + 1)
-      .all();
-
-    const hasMore = rows.length > limit;
-    const data = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore && data.length > 0
-      ? data[data.length - 1].created_at
-      : null;
-
-    return cursorPaginatedResponse(c, data, limit, nextCursor);
-  },
-);
-
-/**
- * GET /:slug/audit/export — Export audit data as JSON (all events, no pagination)
- * Requires co_organizer role. Streams all audit events for the hackathon.
- */
-audit.get(
-  '/:slug/audit/export',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const db = createDbClient(c.env.DB);
-
-    const data = await db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.hackathon_id, hackathon.id))
-      .orderBy(desc(auditEvents.created_at))
-      .all();
-
-    c.header('Content-Type', 'application/json');
-    c.header('Content-Disposition', `attachment; filename="audit-${hackathon.slug}-${new Date().toISOString().split('T')[0]}.json"`);
-
-    return c.json({ ok: true, data, meta: { total: data.length, hackathonId: hackathon.id, exportedAt: new Date().toISOString() } });
-  },
-);
+  return cursorPaginatedResponse(c, parsed, nextCursor);
+});
 
 export default audit;

@@ -1,33 +1,25 @@
 import type { MiddlewareHandler } from 'hono';
-import { eq } from 'drizzle-orm';
-import { createDbClient, platformAdmins } from '@devsage/db';
-import { errorResponse } from '../lib/response.js';
-import type { AuthAppEnv } from '../types/auth.js';
+import type { AppEnv } from '../types/env.js';
 
-/**
- * Middleware that verifies the authenticated user is a platform admin.
- * Must be used AFTER `authMiddleware` in the middleware chain.
- *
- * Checks the `platform_admins` table for the user's ID.
- * Returns 403 if the user is not a platform admin.
- */
-export const requirePlatformAdmin: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
+export const requirePlatformAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   const user = c.get('user');
   if (!user) {
-    return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required');
+    return c.json(
+      { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } },
+      401
+    );
   }
 
-  const db = createDbClient(c.env.DB);
-  const admin = await db
-    .select({ id: platformAdmins.id, role: platformAdmins.role })
-    .from(platformAdmins)
-    .where(eq(platformAdmins.user_id, user.sub))
-    .get();
+  const admin = await c.env.DB.prepare(
+    'SELECT id FROM platform_admins WHERE user_id = ?'
+  ).bind(user.id).first();
 
   if (!admin) {
-    return errorResponse(c, 403, 'NOT_PLATFORM_ADMIN', 'Platform admin access required');
+    return c.json(
+      { ok: false, error: { code: 'FORBIDDEN', message: 'Platform admin access required' } },
+      403
+    );
   }
 
-  c.set('platformRole', admin.role);
-  await next();
+  return next();
 };

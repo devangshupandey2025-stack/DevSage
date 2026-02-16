@@ -1,27 +1,27 @@
 import { z } from 'zod';
+import { auditActorTypeSchema } from './constants.js';
 
-export const ActorTypeEnum = z.enum(['user', 'system', 'bot', 'cron']);
-
-export type ActorType = z.infer<typeof ActorTypeEnum>;
-
-export const AuditEventSchema = z.object({
-  id: z.string(),
-  sequence: z.number().int(),
-  hackathonId: z.string().nullable().optional(),
-  actorId: z.string().nullable().optional(),
-  actorType: ActorTypeEnum,
-  actorIp: z.string().nullable().optional(),
-  actorUserAgent: z.string().nullable().optional(),
-  eventType: z.string(),
-  entityType: z.string(),
-  entityId: z.string(),
-  teamId: z.string().nullable().optional(),
-  metadata: z.string(),
-  changes: z.string().nullable().optional(),
-  hash: z.string(),
-  prevHash: z.string().nullable().optional(),
-  anonymizedAt: z.string().nullable().optional(),
-  createdAt: z.string(),
+export const auditEventResponseSchema = z.object({
+  id: z.string().uuid(),
+  hackathon_id: z.string().uuid().nullable(),
+  actor_id: z.string().uuid().nullable(),
+  actor_type: auditActorTypeSchema,
+  event_type: z.string(),
+  entity_type: z.string(),
+  entity_id: z.string(),
+  metadata: z.record(z.unknown()).nullable(),
+  changes: z.record(z.unknown()).nullable(),
+  created_at: z.string().datetime(),
 });
 
-export type AuditEvent = z.infer<typeof AuditEventSchema>;
+export const auditQuerySchema = z.object({
+  event_type: z.string().optional(),
+  entity_type: z.string().optional(),
+  entity_id: z.string().optional(),
+  actor_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+export type AuditEventResponse = z.infer<typeof auditEventResponseSchema>;
+export type AuditQuery = z.infer<typeof auditQuerySchema>;

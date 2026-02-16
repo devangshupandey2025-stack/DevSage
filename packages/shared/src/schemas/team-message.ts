@@ -1,17 +1,11 @@
 import { z } from 'zod';
 
-export const TeamMessageSchema = z.object({
-  id: z.string(),
-  teamId: z.string(),
-  userId: z.string(),
-  content: z.string().min(1).max(2000),
-  createdAt: z.string(),
+export const teamMessageResponseSchema = z.object({
+  id: z.string().uuid(),
+  team_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  content: z.string(),
+  created_at: z.string().datetime(),
 });
 
-export type TeamMessage = z.infer<typeof TeamMessageSchema>;
-
-export const CreateTeamMessageRequestSchema = z.object({
-  content: z.string().min(1).max(2000),
-});
-
-export type CreateTeamMessageRequest = z.infer<typeof CreateTeamMessageRequestSchema>;
+export type TeamMessageResponse = z.infer<typeof teamMessageResponseSchema>;

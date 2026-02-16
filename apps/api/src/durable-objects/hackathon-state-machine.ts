@@ -1,731 +1,275 @@
 import { DurableObject } from 'cloudflare:workers';
-import { HACKATHON_STATUS_TRANSITIONS, type HackathonStatus } from '@devsage/shared';
-import type { Env } from '../types/env.js';
-import { isRecord } from '../lib/utils.js';
 
-// ─── Interfaces ──────────────────────────────────────────────
-
-interface HackathonConfig {
-  startsAt: string | null;
-  submissionDeadline: string | null;
-  judgingStarts: string | null;
-  judgingEnds: string | null;
-  maxTeams: number | null;
-  maxSubmissionsPerTeam: number | null;
-  allowResubmission: number; // SQLite 0/1
-  submissionTagPattern: string;
-  allowRegistrationDuringActive: number; // SQLite 0/1
+interface DOEnv {
+  DB: D1Database;
+  KV: KVNamespace;
+  NOTIFICATION_QUEUE: Queue;
+  WEBHOOK_QUEUE: Queue;
 }
 
-interface HackathonState {
-  hackathonId: string;
-  status: HackathonStatus;
-  config: HackathonConfig;
-  version: number;
-  transitionedAt: string;
-}
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  draft: ['active'],
+  active: ['judging'],
+  judging: ['completed'],
+  completed: ['archived'],
+  archived: ['completed'],
+};
 
-interface InitializeRequest {
-  hackathonId: string;
-  config: HackathonConfig;
-}
+export class HackathonStateMachine extends DurableObject<DOEnv> {
+  private initialized = false;
 
-interface TransitionRequest {
-  targetStatus: HackathonStatus;
-  expectedVersion?: number;
-}
-
-interface AcceptSubmissionRequest {
-  teamId: string;
-  submissionId: string;
-  tagName: string;
-  commitSha: string;
-  timestamp: string;
-  webhookDeliveryId: string;
-}
-
-interface SubmissionResult {
-  accepted: boolean;
-  reason?: string;
-  submissionId?: string;
-}
-
-// ─── Type Guards ─────────────────────────────────────────────
-
-function isHackathonStatus(value: string): value is HackathonStatus {
-  return Object.prototype.hasOwnProperty.call(HACKATHON_STATUS_TRANSITIONS, value);
-}
-
-function isValidDateString(value: string): boolean {
-  return Number.isFinite(Date.parse(value));
-}
-
-function parseInitializeRequest(value: unknown): InitializeRequest | null {
-  if (!isRecord(value)) return null;
-
-  const { hackathonId, config } = value;
-  if (typeof hackathonId !== 'string' || !isRecord(config)) return null;
-
-  const {
-    startsAt,
-    submissionDeadline,
-    judgingStarts,
-    judgingEnds,
-    maxTeams,
-    maxSubmissionsPerTeam,
-    allowResubmission,
-    submissionTagPattern,
-    allowRegistrationDuringActive,
-  } = config;
-
-  // Nullable date fields: must be valid date string or null/undefined
-  if (startsAt !== null && startsAt !== undefined && (typeof startsAt !== 'string' || !isValidDateString(startsAt))) return null;
-  if (submissionDeadline !== null && submissionDeadline !== undefined && (typeof submissionDeadline !== 'string' || !isValidDateString(submissionDeadline))) return null;
-  if (judgingStarts !== null && judgingStarts !== undefined && (typeof judgingStarts !== 'string' || !isValidDateString(judgingStarts))) return null;
-  if (judgingEnds !== null && judgingEnds !== undefined && (typeof judgingEnds !== 'string' || !isValidDateString(judgingEnds))) return null;
-
-  // Nullable number fields
-  if (maxTeams !== null && maxTeams !== undefined && (typeof maxTeams !== 'number' || !Number.isInteger(maxTeams))) return null;
-  if (maxSubmissionsPerTeam !== null && maxSubmissionsPerTeam !== undefined && (typeof maxSubmissionsPerTeam !== 'number' || !Number.isInteger(maxSubmissionsPerTeam))) return null;
-
-  const parsedAllowResubmission = typeof allowResubmission === 'number' ? allowResubmission : (allowResubmission ? 1 : 0);
-  const parsedTagPattern = typeof submissionTagPattern === 'string' ? submissionTagPattern : 'submission_v%';
-  const parsedAllowRegistrationDuringActive = typeof allowRegistrationDuringActive === 'number' ? allowRegistrationDuringActive : (allowRegistrationDuringActive ? 1 : 0);
-
-  return {
-    hackathonId,
-    config: {
-      startsAt: (typeof startsAt === 'string' ? startsAt : null),
-      submissionDeadline: (typeof submissionDeadline === 'string' ? submissionDeadline : null),
-      judgingStarts: (typeof judgingStarts === 'string' ? judgingStarts : null),
-      judgingEnds: (typeof judgingEnds === 'string' ? judgingEnds : null),
-      maxTeams: (typeof maxTeams === 'number' ? maxTeams : null),
-      maxSubmissionsPerTeam: (typeof maxSubmissionsPerTeam === 'number' ? maxSubmissionsPerTeam : null),
-      allowResubmission: parsedAllowResubmission,
-      submissionTagPattern: parsedTagPattern,
-      allowRegistrationDuringActive: parsedAllowRegistrationDuringActive,
-    },
-  };
-}
-
-function parseTransitionRequest(value: unknown): TransitionRequest | null {
-  if (!isRecord(value)) return null;
-  const { targetStatus, expectedVersion } = value;
-  if (typeof targetStatus !== 'string' || !isHackathonStatus(targetStatus)) return null;
-  if (expectedVersion !== undefined && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
-  return { targetStatus, expectedVersion: expectedVersion as number | undefined };
-}
-
-function parseAcceptSubmissionRequest(value: unknown): AcceptSubmissionRequest | null {
-  if (!isRecord(value)) return null;
-  const { teamId, submissionId, tagName, commitSha, timestamp, webhookDeliveryId } = value;
-  if (
-    typeof teamId !== 'string' ||
-    typeof submissionId !== 'string' ||
-    typeof tagName !== 'string' ||
-    typeof commitSha !== 'string' ||
-    typeof timestamp !== 'string' ||
-    typeof webhookDeliveryId !== 'string'
-  ) return null;
-  return { teamId, submissionId, tagName, commitSha, timestamp, webhookDeliveryId };
-}
-
-// ─── Durable Object ──────────────────────────────────────────
-
-export class HackathonStateMachine extends DurableObject<Env> {
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: DurableObjectState, env: DOEnv) {
     super(ctx, env);
-
-    this.ctx.blockConcurrencyWhile(async () => {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS lifecycle_state (
-          hackathon_id TEXT PRIMARY KEY,
-          status TEXT NOT NULL,
-          config TEXT NOT NULL,
-          version INTEGER NOT NULL DEFAULT 0,
-          transitioned_at TEXT NOT NULL
-        )
-      `);
-
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS submission_locks (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          team_id TEXT NOT NULL,
-          tag_name TEXT NOT NULL,
-          submission_id TEXT NOT NULL,
-          commit_sha TEXT NOT NULL,
-          webhook_delivery_id TEXT NOT NULL UNIQUE,
-          locked_at TEXT NOT NULL
-        )
-      `);
-
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS team_submissions (
-          team_id TEXT PRIMARY KEY,
-          submission_count INTEGER NOT NULL DEFAULT 0
-        )
-      `);
-    });
   }
 
-  async fetch(request: Request): Promise<Response> {
+  private ensureTables(): void {
+    if (this.initialized) return;
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS lifecycle_state (
+        hackathon_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS submission_locks (
+        submission_key TEXT PRIMARY KEY,
+        submission_id TEXT NOT NULL,
+        locked_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS team_submissions (
+        team_id TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    this.initialized = true;
+  }
+
+  override async fetch(request: Request): Promise<Response> {
+    this.ensureTables();
     const url = new URL(request.url);
+    const path = url.pathname;
 
-    if (request.method === 'POST' && url.pathname === '/initialize') {
-      return this.handleInitialize(request);
-    }
-
-    if (request.method === 'POST' && url.pathname === '/transition') {
-      return this.handleTransition(request);
-    }
-
-    if (request.method === 'POST' && url.pathname === '/update-config') {
-      return this.handleUpdateConfig(request);
-    }
-
-    if (request.method === 'GET' && url.pathname === '/state') {
-      const state = this.getState();
-      if (!state) {
-        return Response.json({ error: 'State machine not initialized', code: 'NOT_INITIALIZED' }, { status: 404 });
-      }
-      return Response.json({
-        hackathonId: state.hackathonId,
-        status: state.status,
-        config: state.config,
-        version: state.version,
-        transitionedAt: state.transitionedAt,
-      });
-    }
-
-    if (request.method === 'POST' && url.pathname === '/accept-submission') {
-      return this.handleAcceptSubmission(request);
-    }
-
-    if (request.method === 'GET' && url.pathname === '/can-accept-submissions') {
-      return this.handleCanAcceptSubmissions();
-    }
-
-    return Response.json({ error: 'Not found', code: 'NOT_FOUND' }, { status: 404 });
-  }
-
-  async alarm(): Promise<void> {
-    const state = this.getState();
-    if (!state) return;
-
-    // Active state with submission deadline passed: auto-transition to judging
-    if (state.status === 'active' && state.config.submissionDeadline) {
-      const deadline = Date.parse(state.config.submissionDeadline);
-      if (Number.isFinite(deadline) && Date.now() >= deadline) {
-        const success = this.performTransition(state, 'judging');
-        if (success) {
-          console.warn(
-            `[HackathonStateMachine] Auto-transitioned hackathon ${state.hackathonId} from active to judging (submission deadline passed)`,
-          );
-        }
-        const updated = this.getState();
-        if (updated) await this.scheduleNextAlarm(updated);
-        return;
-      }
-    }
-
-    // Judging state with judging window ended: notify only, do NOT auto-transition
-    if (state.status === 'judging' && state.config.judgingEnds) {
-      const judgingEnds = Date.parse(state.config.judgingEnds);
-      if (Number.isFinite(judgingEnds) && Date.now() >= judgingEnds) {
-        console.warn(
-          `[HackathonStateMachine] Judging window ended for hackathon ${state.hackathonId}. Manual transition to completed required.`,
-        );
-        return;
-      }
-    }
-
-    // Re-schedule for next upcoming deadline
-    await this.scheduleNextAlarm(state);
-  }
-
-  // ─── Private: State Management ────────────────────────────
-
-  private getState(): HackathonState | null {
-    const rows = this.ctx.storage.sql
-      .exec(`
-        SELECT hackathon_id, status, config, version, transitioned_at
-        FROM lifecycle_state
-        LIMIT 1
-      `)
-      .toArray();
-
-    const row = rows[0];
-    if (!isRecord(row)) return null;
-
-    const { hackathon_id, status, config, version, transitioned_at } = row;
-    if (
-      typeof hackathon_id !== 'string' ||
-      typeof status !== 'string' ||
-      typeof config !== 'string' ||
-      typeof version !== 'number' ||
-      typeof transitioned_at !== 'string'
-    ) {
-      throw new Error('Invalid lifecycle_state row shape');
-    }
-
-    if (!isHackathonStatus(status)) {
-      throw new Error(`Invalid status stored in lifecycle_state: ${status}`);
-    }
-
-    let parsedConfig: HackathonConfig;
     try {
-      parsedConfig = JSON.parse(config) as HackathonConfig;
-    } catch {
-      throw new Error('Invalid config JSON in lifecycle_state');
-    }
-
-    return {
-      hackathonId: hackathon_id,
-      status,
-      config: parsedConfig,
-      version,
-      transitionedAt: transitioned_at,
-    };
-  }
-
-  private performTransition(currentState: HackathonState, targetStatus: HackathonStatus): boolean {
-    const allowed = HACKATHON_STATUS_TRANSITIONS[currentState.status];
-    if (!allowed.includes(targetStatus)) return false;
-
-    const now = new Date().toISOString();
-    const cursor = this.ctx.storage.sql.exec(
-      `UPDATE lifecycle_state SET status = ?, version = version + 1, transitioned_at = ? WHERE hackathon_id = ? AND version = ?`,
-      targetStatus,
-      now,
-      currentState.hackathonId,
-      currentState.version,
-    );
-
-    // Verify the UPDATE actually modified a row (optimistic concurrency check)
-    if (cursor.rowsWritten === 0) return false;
-
-    return true;
-  }
-
-  private async scheduleNextAlarm(state: HackathonState): Promise<void> {
-    const now = Date.now();
-
-    if (state.status === 'active' && state.config.submissionDeadline) {
-      const t = Date.parse(state.config.submissionDeadline);
-      if (Number.isFinite(t) && t > now) {
-        await this.ctx.storage.setAlarm(t);
-        return;
+      if (request.method === 'POST' && path === '/initialize') {
+        return this.handleInitialize(request);
       }
-    }
-
-    if (state.status === 'judging' && state.config.judgingEnds) {
-      const t = Date.parse(state.config.judgingEnds);
-      if (Number.isFinite(t) && t > now) {
-        await this.ctx.storage.setAlarm(t);
-        return;
+      if (request.method === 'POST' && path === '/transition') {
+        return this.handleTransition(request);
       }
+      if (request.method === 'GET' && path === '/state') {
+        return this.handleGetState();
+      }
+      if (request.method === 'POST' && path === '/accept-submission') {
+        return this.handleAcceptSubmission(request);
+      }
+
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`DO error on ${path}: ${message}`);
+      return new Response(JSON.stringify({ error: message }), { status: 500 });
     }
-
-    await this.ctx.storage.deleteAlarm();
   }
-
-  // ─── Private: HTTP Handlers ────────────────────────────────
 
   private async handleInitialize(request: Request): Promise<Response> {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 });
-    }
+    const body = await request.json() as {
+      hackathon_id: string;
+      status?: string;
+      submission_deadline?: string;
+    };
 
-    const payload = parseInitializeRequest(body);
-    if (!payload) {
-      return Response.json(
-        { error: 'Expected { hackathonId, config: { startsAt, judgingStarts, judgingEnds, ... } }', code: 'INVALID_BODY' },
-        { status: 400 },
-      );
-    }
+    const { hackathon_id, status = 'draft', submission_deadline } = body;
 
-    const existing = this.getState();
-    if (existing) {
-      if (existing.hackathonId !== payload.hackathonId) {
-        return Response.json(
-          { error: 'State machine already initialized for a different hackathon', code: 'ALREADY_INITIALIZED', currentState: existing },
-          { status: 409 },
-        );
-      }
-      // Idempotent: return existing state
+    // Idempotent: check if already initialized
+    const existing = this.ctx.storage.sql.exec(
+      'SELECT status, version FROM lifecycle_state WHERE hackathon_id = ?',
+      hackathon_id
+    ).toArray();
+
+    if (existing.length > 0) {
       return Response.json({
-        hackathonId: existing.hackathonId,
-        status: existing.status,
-        config: existing.config,
-        version: existing.version,
-        transitionedAt: existing.transitionedAt,
+        ok: true,
+        data: { status: existing[0].status, version: existing[0].version, already_initialized: true },
       });
     }
 
     const now = new Date().toISOString();
-    const configJson = JSON.stringify(payload.config);
-
     this.ctx.storage.sql.exec(
-      `INSERT INTO lifecycle_state (hackathon_id, status, config, version, transitioned_at) VALUES (?, ?, ?, 0, ?)`,
-      payload.hackathonId,
-      'draft',
-      configJson,
-      now,
+      'INSERT INTO lifecycle_state (hackathon_id, status, version, updated_at) VALUES (?, ?, 1, ?)',
+      hackathon_id, status, now
     );
 
-    await this.scheduleNextAlarm({
-      hackathonId: payload.hackathonId,
-      status: 'draft',
-      config: payload.config,
-      version: 0,
-      transitionedAt: now,
-    });
-
-    const created = this.getState();
-    if (!created) {
-      return Response.json({ error: 'Failed to initialize state', code: 'INITIALIZATION_FAILED' }, { status: 500 });
+    // Set alarm for submission deadline if transitioning to active
+    if (status === 'active' && submission_deadline) {
+      const deadlineMs = new Date(submission_deadline).getTime();
+      if (deadlineMs > Date.now()) {
+        await this.ctx.storage.setAlarm(deadlineMs);
+      }
     }
 
-    return Response.json({
-      hackathonId: created.hackathonId,
-      status: created.status,
-      config: created.config,
-      version: created.version,
-      transitionedAt: created.transitionedAt,
-    }, { status: 201 });
+    return Response.json({ ok: true, data: { status, version: 1, already_initialized: false } });
   }
 
   private async handleTransition(request: Request): Promise<Response> {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 });
-    }
+    const body = await request.json() as {
+      target_status: string;
+      version: number;
+      submission_deadline?: string;
+    };
 
-    const payload = parseTransitionRequest(body);
-    if (!payload) {
+    const { target_status, version, submission_deadline } = body;
+
+    const current = this.ctx.storage.sql.exec(
+      'SELECT hackathon_id, status, version FROM lifecycle_state LIMIT 1'
+    ).toArray();
+
+    if (current.length === 0) {
       return Response.json(
-        { error: 'Expected { targetStatus, expectedVersion? }', code: 'INVALID_BODY' },
-        { status: 400 },
+        { ok: false, error: { code: 'NOT_INITIALIZED', message: 'DO not initialized' } },
+        { status: 400 }
       );
     }
 
-    const state = this.getState();
-    if (!state) {
-      return Response.json({ error: 'State machine not initialized', code: 'NOT_INITIALIZED' }, { status: 404 });
-    }
+    const state = current[0] as { hackathon_id: string; status: string; version: number };
 
-    // Check optimistic concurrency
-    if (payload.expectedVersion !== undefined && state.version !== payload.expectedVersion) {
+    // Validate transition
+    const allowed = VALID_TRANSITIONS[state.status as string];
+    if (!allowed || !allowed.includes(target_status)) {
       return Response.json(
-        {
-          error: 'Version mismatch',
-          code: 'VERSION_MISMATCH',
-          currentVersion: state.version,
-          expectedVersion: payload.expectedVersion,
-        },
-        { status: 409 },
+        { ok: false, error: { code: 'INVALID_TRANSITION', message: `Cannot transition from ${state.status} to ${target_status}` } },
+        { status: 409 }
       );
     }
 
-    // Check transition is allowed
-    const allowed = HACKATHON_STATUS_TRANSITIONS[state.status];
-    if (!allowed.includes(payload.targetStatus)) {
+    // Optimistic locking (version=-1 bypasses for cron/alarm)
+    if (version !== -1 && version !== state.version) {
       return Response.json(
-        {
-          error: `Cannot transition from '${state.status}' to '${payload.targetStatus}'`,
-          code: 'INVALID_TRANSITION',
-          currentStatus: state.status,
-          allowedTransitions: allowed,
-        },
-        { status: 400 },
+        { ok: false, error: { code: 'VERSION_CONFLICT', message: `Expected version ${version}, got ${state.version}` } },
+        { status: 409 }
       );
     }
 
-    // Precondition checks for specific transitions
-    if (state.status === 'draft' && payload.targetStatus === 'active') {
-      if (!state.config.submissionDeadline) {
-        return Response.json(
-          { error: 'submission_deadline must be set before starting the hackathon', code: 'PRECONDITION_FAILED' },
-          { status: 400 },
-        );
-      }
-      const deadline = Date.parse(state.config.submissionDeadline);
-      if (!Number.isFinite(deadline) || Date.now() >= deadline) {
-        return Response.json(
-          { error: 'submission_deadline must be in the future', code: 'PRECONDITION_FAILED' },
-          { status: 400 },
-        );
+    const now = new Date().toISOString();
+    const newVersion = (state.version as number) + 1;
+
+    this.ctx.storage.sql.exec(
+      'UPDATE lifecycle_state SET status = ?, version = ?, updated_at = ?',
+      target_status, newVersion, now
+    );
+
+    // Set alarm for submission deadline when transitioning to active
+    if (target_status === 'active' && submission_deadline) {
+      const deadlineMs = new Date(submission_deadline).getTime();
+      if (deadlineMs > Date.now()) {
+        await this.ctx.storage.setAlarm(deadlineMs);
       }
     }
 
-    const success = this.performTransition(state, payload.targetStatus);
-    if (!success) {
-      return Response.json(
-        { error: 'Transition failed', code: 'TRANSITION_FAILED' },
-        { status: 500 },
-      );
+    // Clear alarm when transitioning away from active
+    if (state.status === 'active' && target_status !== 'active') {
+      await this.ctx.storage.deleteAlarm();
     }
-
-    const updated = this.getState();
-    if (!updated) {
-      return Response.json({ error: 'State missing after transition', code: 'STATE_MISSING' }, { status: 500 });
-    }
-
-    await this.scheduleNextAlarm(updated);
 
     return Response.json({
-      hackathonId: updated.hackathonId,
-      status: updated.status,
-      config: updated.config,
-      version: updated.version,
-      transitionedAt: updated.transitionedAt,
+      ok: true,
+      data: { status: target_status, version: newVersion, previous_status: state.status },
     });
   }
 
-  private async handleUpdateConfig(request: Request): Promise<Response> {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 });
-    }
+  private handleGetState(): Response {
+    const current = this.ctx.storage.sql.exec(
+      'SELECT hackathon_id, status, version, updated_at FROM lifecycle_state LIMIT 1'
+    ).toArray();
 
-    if (!isRecord(body)) {
-      return Response.json({ error: 'Expected { config, expectedVersion? }', code: 'INVALID_BODY' }, { status: 400 });
-    }
-
-    const { config: partialConfig, expectedVersion } = body;
-    if (!isRecord(partialConfig)) {
-      return Response.json({ error: 'Expected config object', code: 'INVALID_BODY' }, { status: 400 });
-    }
-
-    if (expectedVersion !== undefined && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) {
-      return Response.json({ error: 'Invalid expectedVersion', code: 'INVALID_BODY' }, { status: 400 });
-    }
-
-    const state = this.getState();
-    if (!state) {
-      return Response.json({ error: 'State machine not initialized', code: 'NOT_INITIALIZED' }, { status: 404 });
-    }
-
-    // Check optimistic concurrency
-    if (typeof expectedVersion === 'number' && state.version !== expectedVersion) {
+    if (current.length === 0) {
       return Response.json(
-        {
-          error: 'Version mismatch',
-          code: 'VERSION_MISMATCH',
-          currentVersion: state.version,
-          expectedVersion,
-        },
-        { status: 409 },
+        { ok: false, error: { code: 'NOT_INITIALIZED', message: 'DO not initialized' } },
+        { status: 400 }
       );
     }
 
-    // Merge new config with existing (only override provided fields)
-    const merged: HackathonConfig = { ...state.config };
-
-    if ('startsAt' in partialConfig) {
-      if (partialConfig.startsAt !== null && (typeof partialConfig.startsAt !== 'string' || !isValidDateString(partialConfig.startsAt))) {
-        return Response.json({ error: 'Invalid startsAt', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.startsAt = typeof partialConfig.startsAt === 'string' ? partialConfig.startsAt : null;
-    }
-
-    if ('submissionDeadline' in partialConfig) {
-      if (partialConfig.submissionDeadline !== null && (typeof partialConfig.submissionDeadline !== 'string' || !isValidDateString(partialConfig.submissionDeadline))) {
-        return Response.json({ error: 'Invalid submissionDeadline', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.submissionDeadline = typeof partialConfig.submissionDeadline === 'string' ? partialConfig.submissionDeadline : null;
-    }
-
-    if ('judgingStarts' in partialConfig) {
-      if (partialConfig.judgingStarts !== null && (typeof partialConfig.judgingStarts !== 'string' || !isValidDateString(partialConfig.judgingStarts))) {
-        return Response.json({ error: 'Invalid judgingStarts', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.judgingStarts = typeof partialConfig.judgingStarts === 'string' ? partialConfig.judgingStarts : null;
-    }
-
-    if ('judgingEnds' in partialConfig) {
-      if (partialConfig.judgingEnds !== null && (typeof partialConfig.judgingEnds !== 'string' || !isValidDateString(partialConfig.judgingEnds))) {
-        return Response.json({ error: 'Invalid judgingEnds', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.judgingEnds = typeof partialConfig.judgingEnds === 'string' ? partialConfig.judgingEnds : null;
-    }
-
-    if ('maxTeams' in partialConfig) {
-      if (partialConfig.maxTeams !== null && (typeof partialConfig.maxTeams !== 'number' || !Number.isInteger(partialConfig.maxTeams))) {
-        return Response.json({ error: 'Invalid maxTeams', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.maxTeams = typeof partialConfig.maxTeams === 'number' ? partialConfig.maxTeams : null;
-    }
-
-    if ('maxSubmissionsPerTeam' in partialConfig) {
-      if (partialConfig.maxSubmissionsPerTeam !== null && (typeof partialConfig.maxSubmissionsPerTeam !== 'number' || !Number.isInteger(partialConfig.maxSubmissionsPerTeam))) {
-        return Response.json({ error: 'Invalid maxSubmissionsPerTeam', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.maxSubmissionsPerTeam = typeof partialConfig.maxSubmissionsPerTeam === 'number' ? partialConfig.maxSubmissionsPerTeam : null;
-    }
-
-    if ('allowResubmission' in partialConfig) {
-      merged.allowResubmission = partialConfig.allowResubmission ? 1 : 0;
-    }
-
-    if ('submissionTagPattern' in partialConfig) {
-      if (typeof partialConfig.submissionTagPattern !== 'string') {
-        return Response.json({ error: 'Invalid submissionTagPattern', code: 'INVALID_BODY' }, { status: 400 });
-      }
-      merged.submissionTagPattern = partialConfig.submissionTagPattern;
-    }
-
-    if ('allowRegistrationDuringActive' in partialConfig) {
-      merged.allowRegistrationDuringActive = partialConfig.allowRegistrationDuringActive ? 1 : 0;
-    }
-
-    const configJson = JSON.stringify(merged);
-    const now = new Date().toISOString();
-
-    this.ctx.storage.sql.exec(
-      `UPDATE lifecycle_state SET config = ?, version = version + 1, transitioned_at = ? WHERE hackathon_id = ?`,
-      configJson,
-      now,
-      state.hackathonId,
-    );
-
-    const updated = this.getState();
-    if (!updated) {
-      return Response.json({ error: 'State missing after config update', code: 'STATE_MISSING' }, { status: 500 });
-    }
-
-    await this.scheduleNextAlarm(updated);
-
-    return Response.json({
-      hackathonId: updated.hackathonId,
-      status: updated.status,
-      config: updated.config,
-      version: updated.version,
-      transitionedAt: updated.transitionedAt,
-    });
+    return Response.json({ ok: true, data: current[0] });
   }
 
   private async handleAcceptSubmission(request: Request): Promise<Response> {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 });
+    const body = await request.json() as {
+      submission_key: string;  // {team_id}:{tag_name}
+      submission_id: string;
+      team_id: string;
+    };
+
+    const { submission_key, submission_id, team_id } = body;
+
+    // Check lifecycle state — must be 'active'
+    const state = this.ctx.storage.sql.exec(
+      'SELECT status FROM lifecycle_state LIMIT 1'
+    ).toArray();
+
+    if (state.length === 0 || state[0].status !== 'active') {
+      return Response.json({
+        ok: true,
+        data: { accepted: false, reason: 'Hackathon is not accepting submissions' },
+      });
     }
 
-    const payload = parseAcceptSubmissionRequest(body);
-    if (!payload) {
-      return Response.json(
-        { error: 'Expected { teamId, submissionId, tagName, commitSha, timestamp, webhookDeliveryId }', code: 'INVALID_BODY' },
-        { status: 400 },
-      );
-    }
-
-    const state = this.getState();
-    if (!state) {
-      return Response.json({ error: 'State machine not initialized', code: 'NOT_INITIALIZED' }, { status: 404 });
-    }
-
-    // Check idempotency first: duplicate webhook_delivery_id
-    const existingDelivery = this.ctx.storage.sql
-      .exec(
-        `SELECT webhook_delivery_id FROM submission_locks WHERE webhook_delivery_id = ? LIMIT 1`,
-        payload.webhookDeliveryId,
-      )
-      .toArray()[0];
-
-    if (isRecord(existingDelivery)) {
-      // Idempotent no-op
-      const result: SubmissionResult = { accepted: true, reason: 'Already processed (idempotent)', submissionId: payload.submissionId };
-      return Response.json(result);
-    }
-
-    // Check if hackathon is in a state that accepts submissions
-    if (state.status !== 'active') {
-      const result: SubmissionResult = { accepted: false, reason: `Hackathon is in '${state.status}' status, not accepting submissions` };
-      return Response.json(result, { status: 400 });
-    }
-
-    // Check resubmission policy
-    if (!state.config.allowResubmission) {
-      const existingSubmission = this.ctx.storage.sql
-        .exec(`SELECT submission_count FROM team_submissions WHERE team_id = ? LIMIT 1`, payload.teamId)
-        .toArray()[0];
-
-      if (isRecord(existingSubmission) && typeof existingSubmission.submission_count === 'number' && existingSubmission.submission_count > 0) {
-        const result: SubmissionResult = { accepted: false, reason: 'Resubmission is not allowed for this hackathon' };
-        return Response.json(result, { status: 400 });
-      }
-    }
-
-    // Check max submissions per team
-    if (state.config.maxSubmissionsPerTeam !== null) {
-      const teamCount = this.ctx.storage.sql
-        .exec(`SELECT submission_count FROM team_submissions WHERE team_id = ? LIMIT 1`, payload.teamId)
-        .toArray()[0];
-
-      const currentCount = isRecord(teamCount) && typeof teamCount.submission_count === 'number'
-        ? teamCount.submission_count
-        : 0;
-
-      if (currentCount >= state.config.maxSubmissionsPerTeam) {
-        const result: SubmissionResult = {
-          accepted: false,
-          reason: `Team has reached maximum submissions (${state.config.maxSubmissionsPerTeam})`,
-        };
-        return Response.json(result, { status: 400 });
-      }
-    }
-
-    // Lock the submission
     const now = new Date().toISOString();
-    this.ctx.storage.sql.exec(
-      `INSERT INTO submission_locks (team_id, tag_name, submission_id, commit_sha, webhook_delivery_id, locked_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      payload.teamId,
-      payload.tagName,
-      payload.submissionId,
-      payload.commitSha,
-      payload.webhookDeliveryId,
-      now,
+
+    // Try to insert lock — if key already exists, INSERT OR IGNORE does nothing
+    const result = this.ctx.storage.sql.exec(
+      'INSERT OR IGNORE INTO submission_locks (submission_key, submission_id, locked_at) VALUES (?, ?, ?)',
+      submission_key, submission_id, now
     );
 
-    const existingTeam = this.ctx.storage.sql
-      .exec(`SELECT team_id FROM team_submissions WHERE team_id = ? LIMIT 1`, payload.teamId)
-      .toArray()[0];
-
-    if (isRecord(existingTeam)) {
-      this.ctx.storage.sql.exec(
-        `UPDATE team_submissions SET submission_count = submission_count + 1 WHERE team_id = ?`,
-        payload.teamId,
-      );
-    } else {
-      this.ctx.storage.sql.exec(
-        `INSERT INTO team_submissions (team_id, submission_count) VALUES (?, 1)`,
-        payload.teamId,
-      );
+    if (result.rowsWritten === 0) {
+      // Already locked — duplicate submission for this tag
+      return Response.json({
+        ok: true,
+        data: { accepted: false, reason: 'Submission already locked for this tag' },
+      });
     }
 
-    const result: SubmissionResult = { accepted: true, submissionId: payload.submissionId };
-    return Response.json(result, { status: 201 });
+    // Update team submission count
+    this.ctx.storage.sql.exec(
+      'INSERT INTO team_submissions (team_id, count) VALUES (?, 1) ON CONFLICT(team_id) DO UPDATE SET count = count + 1',
+      team_id
+    );
+
+    return Response.json({ ok: true, data: { accepted: true } });
   }
 
-  private handleCanAcceptSubmissions(): Response {
-    const state = this.getState();
-    if (!state) {
-      return Response.json({ allowed: false, reason: 'State machine not initialized' });
-    }
+  /**
+   * Alarm handler: auto-transition from active → judging when deadline hits.
+   */
+  override async alarm(): Promise<void> {
+    this.ensureTables();
 
-    if (state.status !== 'active') {
-      return Response.json({ allowed: false, reason: `Hackathon is in '${state.status}' status` });
-    }
+    const state = this.ctx.storage.sql.exec(
+      'SELECT hackathon_id, status, version FROM lifecycle_state LIMIT 1'
+    ).toArray();
 
-    return Response.json({ allowed: true });
+    if (state.length === 0) return;
+    const current = state[0] as { hackathon_id: string; status: string; version: number };
+
+    if (current.status !== 'active') return;
+
+    // Transition to judging
+    const now = new Date().toISOString();
+    const newVersion = (current.version as number) + 1;
+
+    this.ctx.storage.sql.exec(
+      'UPDATE lifecycle_state SET status = ?, version = ?, updated_at = ?',
+      'judging', newVersion, now
+    );
+
+    // Sync D1 status (DO has access to env bindings)
+    await this.env.DB.prepare(
+      'UPDATE hackathons SET status = ?, updated_at = ? WHERE id = ?'
+    ).bind('judging', now, current.hackathon_id).run();
+
+    // Enqueue notification
+    await this.env.NOTIFICATION_QUEUE.send({
+      type: 'hackathon.judging_started',
+      hackathon_id: current.hackathon_id,
+    });
   }
 }

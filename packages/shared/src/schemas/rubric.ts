@@ -1,33 +1,15 @@
 import { z } from 'zod';
 
-export const RubricCriteriaSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  roundId: z.string().nullable().optional(),
-  trackId: z.string().nullable().optional(),
-  round: z.number().int(),
-  name: z.string(),
-  description: z.string(),
-  maxScore: z.number().int(),
-  weight: z.number(),
-  sortOrder: z.number().int(),
-  createdAt: z.string(),
+export const createRubricCriterionSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  max_score: z.number().int().min(1).max(100).default(10),
+  weight: z.number().min(0).max(1),
+  track_id: z.string().uuid().nullable().optional(),
+  sort_order: z.number().int().default(0),
 });
 
-export type RubricCriteria = z.infer<typeof RubricCriteriaSchema>;
+export const updateRubricCriterionSchema = createRubricCriterionSchema.partial();
 
-export const BulkRubricRequestSchema = z.object({
-  criteria: z.array(
-    z.object({
-      name: z.string().min(1, 'Name is required'),
-      description: z.string().optional(),
-      maxScore: z.number().int().positive('Max score must be positive'),
-      weight: z.number().min(0).max(1, 'Weight must be between 0 and 1'),
-      sortOrder: z.number().int().nonnegative('Sort order must be nonnegative'),
-      trackId: z.string().optional(),
-      round: z.number().int().optional(),
-    }),
-  ),
-});
-
-export type BulkRubricRequest = z.infer<typeof BulkRubricRequestSchema>;
+export type CreateRubricCriterion = z.infer<typeof createRubricCriterionSchema>;
+export type UpdateRubricCriterion = z.infer<typeof updateRubricCriterionSchema>;

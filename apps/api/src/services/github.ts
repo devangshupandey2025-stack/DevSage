@@ -1,169 +1,115 @@
-import type { Env } from '../types/env.js';
-import { SERVICE_TIMEOUT_MS } from '../lib/constants.js';
+import { KV_TTL } from '../lib/constants.js';
 
-interface CommitStatusParams {
-  repoFullName: string;
-  sha: string;
-  state: 'success' | 'failure' | 'pending' | 'error';
-  description: string;
-  context: string;
-}
+const GITHUB_API = 'https://api.github.com';
+const TIMEOUT_MS = 10_000;
 
-interface InstallationTokenResult {
-  token: string;
-  expiresAt: string;
-}
-
-// secretlint-disable
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const b64 = pem
-    .replace(/-----BEGIN RSA PRIVATE KEY-----/, '')
-    .replace(/-----END RSA PRIVATE KEY-----/, '')
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s/g, '');
-  // secretlint-enable
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-async function createAppJWT(appId: string, privateKeyPem: string): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = { iat: now - 60, exp: now + 600, iss: appId };
-
-  const encode = (obj: Record<string, unknown>) =>
-    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-  const headerB64 = encode(header);
-  const payloadB64 = encode(payload);
-  const signingInput = `${headerB64}.${payloadB64}`;
-
-  const keyData = pemToArrayBuffer(privateKeyPem);
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    keyData,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
-  return `${signingInput}.${sigB64}`;
-}
-
-async function getInstallationToken(
-  env: Env,
-  installationId: string,
-): Promise<InstallationTokenResult | null> {
-  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
-    console.warn('getInstallationToken: GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY not configured');
-    return null;
-  }
-
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SERVICE_TIMEOUT_MS);
-
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-
-    const response = await fetch(
-      `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'DevSage',
-        },
-        signal: controller.signal,
-      },
-    );
-
-    if (!response.ok) {
-      console.warn(`getInstallationToken: GitHub returned ${response.status} for installation ${installationId}`);
-      return null;
-    }
-
-    const data = (await response.json()) as { token: string; expires_at: string };
-    return { token: data.token, expiresAt: data.expires_at };
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      console.warn(`getInstallationToken: timeout for installation ${installationId}`);
-    } else {
-      console.warn(`getInstallationToken: failed for installation ${installationId}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    return null;
+    return await fetch(url, { ...init, signal: controller.signal });
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timeout);
   }
 }
 
-export async function postCommitStatus(env: Env, params: CommitStatusParams & { installationId?: string }): Promise<void> {
-  let authToken: string | null = null;
+/**
+ * Get installation access token (cached in KV for 50 min).
+ * Fail-open: returns null on failure.
+ */
+export async function getInstallationToken(
+  installationId: number,
+  kv: KVNamespace
+): Promise<string | null> {
+  const cacheKey = `gh:install:${installationId}`;
+  const cached = await kv.get(cacheKey);
+  if (cached) return cached;
 
-  if (params.installationId) {
-    const result = await getInstallationToken(env, params.installationId);
-    if (result) authToken = result.token;
-  }
+  // TODO: Implement JWT signing for GitHub App authentication
+  // This requires the GitHub App private key which would be a secret binding
+  // For Phase 1, installation tokens are obtained during the OAuth/installation flow
+  console.warn(`Installation token not cached for ${installationId}`);
+  return null;
+}
 
-  if (!authToken && env.GITHUB_CLIENT_SECRET) {
-    authToken = env.GITHUB_CLIENT_SECRET;
-  }
-
-  if (!authToken) {
-    console.warn('postCommitStatus: no GitHub auth available, skipping');
-    return;
-  }
-
-  const url = `https://api.github.com/repos/${params.repoFullName}/statuses/${params.sha}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SERVICE_TIMEOUT_MS);
-
+/**
+ * Post commit status to GitHub. Fail-open: log warning on failure.
+ */
+export async function postCommitStatus(
+  owner: string,
+  repo: string,
+  sha: string,
+  state: 'pending' | 'success' | 'failure' | 'error',
+  description: string,
+  context: string,
+  token: string,
+  targetUrl?: string
+): Promise<void> {
   try {
-    const response = await fetch(url, {
+    const body: Record<string, string> = { state, description, context };
+    if (targetUrl) body.target_url = targetUrl;
+
+    const res = await fetchWithTimeout(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
       method: 'POST',
       headers: {
-        Authorization: `token ${authToken}`,
-        Accept: 'application/vnd.github.v3+json',
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'User-Agent': 'DevSage',
+        Accept: 'application/vnd.github+json',
       },
-      body: JSON.stringify({
-        state: params.state,
-        description: params.description,
-        context: params.context,
-      }),
-      signal: controller.signal,
+      body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      console.warn(
-        `postCommitStatus: GitHub API returned ${response.status} for ${params.repoFullName}/${params.sha}`,
-      );
-      return;
+    if (!res.ok) {
+      console.warn(`Failed to post commit status: ${res.status} ${await res.text()}`);
     }
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      console.warn(`postCommitStatus: timeout posting to GitHub for ${params.repoFullName}/${params.sha}`);
-    } else {
-      console.warn(
-        `postCommitStatus: failed to post commit status for ${params.repoFullName}/${params.sha}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  } finally {
-    clearTimeout(timeoutId);
+  } catch (err) {
+    console.warn(`Commit status post failed (fail-open): ${err instanceof Error ? err.message : err}`);
   }
 }
 
-export { getInstallationToken, createAppJWT };
+/**
+ * Get tag SHA from GitHub API. Fail-open: returns null.
+ */
+export async function getTagSha(
+  owner: string,
+  repo: string,
+  tagName: string,
+  token: string
+): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `${GITHUB_API}/repos/${owner}/${repo}/git/refs/tags/${tagName}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'DevSage',
+          Accept: 'application/vnd.github+json',
+        },
+      }
+    );
+
+    if (!res.ok) return null;
+
+    const data = await res.json() as { object: { sha: string; type: string; url: string } };
+
+    // If it's an annotated tag, follow the reference to get the commit SHA
+    if (data.object.type === 'tag') {
+      const tagRes = await fetchWithTimeout(data.object.url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'DevSage',
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      if (!tagRes.ok) return data.object.sha;
+      const tagData = await tagRes.json() as { object: { sha: string } };
+      return tagData.object.sha;
+    }
+
+    return data.object.sha;
+  } catch (err) {
+    console.warn(`Get tag SHA failed (fail-open): ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}

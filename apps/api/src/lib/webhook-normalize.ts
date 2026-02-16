@@ -1,308 +1,195 @@
-export interface NormalizedPushEvent {
-  type: 'push';
-  deliveryId: string;
-  timestamp: string;
-  repoFullName: string;
-  branch: string;
+export type NormalizedEvent =
+  | { type: 'push'; data: PushEvent }
+  | { type: 'tag_created'; data: TagEvent }
+  | { type: 'tag_deleted'; data: TagEvent }
+  | { type: 'installation'; data: InstallationEvent }
+  | { type: 'installation_repos_added'; data: InstallationReposEvent }
+  | { type: 'installation_repos_removed'; data: InstallationReposEvent };
+
+export interface PushEvent {
+  ref: string;
+  before: string;
+  after: string;
   forced: boolean;
+  pusher: { login: string; email?: string };
   commits: Array<{
     sha: string;
     message: string;
-    author: string;
+    author: { username?: string; email: string };
     timestamp: string;
   }>;
-  headSha: string;
-  beforeSha: string;
-  pusherName: string;
-  size?: number;
+  repository: { owner: string; name: string; full_name: string };
 }
 
-export interface NormalizedTagCreateEvent {
-  type: 'tag_created';
-  deliveryId: string;
-  timestamp: string;
-  repoFullName: string;
-  tagName: string;
+export interface TagEvent {
+  ref: string;
+  tag_name: string;
   sha: string;
-  senderLogin: string;
+  action: 'created' | 'deleted';
+  sender: { login: string };
+  repository: { owner: string; name: string; full_name: string };
 }
 
-export interface NormalizedTagDeleteEvent {
-  type: 'tag_deleted';
-  deliveryId: string;
-  timestamp: string;
-  repoFullName: string;
-  tagName: string;
-  senderLogin: string;
-}
-
-export interface NormalizedInstallationEvent {
-  type: 'installation';
-  deliveryId: string;
-  timestamp: string;
+export interface InstallationEvent {
   action: string;
-  installationId: number;
-  senderLogin: string;
-  repositories: Array<{ fullName: string }>;
+  installation_id: number;
+  sender: { login: string };
+  repositories: Array<{ full_name: string; name: string }>;
 }
 
-export type NormalizedGitHubEvent =
-  | NormalizedPushEvent
-  | NormalizedTagCreateEvent
-  | NormalizedTagDeleteEvent
-  | NormalizedInstallationEvent;
-
-import { isRecord } from './utils.js';
-
-function extractBranchFromRef(ref: string): string {
-  return ref.replace(/^refs\/heads\//, '');
+export interface InstallationReposEvent {
+  installation_id: number;
+  sender: { login: string };
+  repositories: Array<{ full_name: string; name: string }>;
 }
 
 export function normalizeGitHubEvent(
   eventType: string,
-  payload: unknown,
-  deliveryId: string
-): NormalizedGitHubEvent | null {
-  const timestamp = new Date().toISOString();
-
-  if (!isRecord(payload)) {
-    return null;
-  }
-
+  payload: Record<string, unknown>
+): NormalizedEvent | null {
   switch (eventType) {
     case 'push':
-      return normalizePushEvent(payload, deliveryId, timestamp);
-
+      return normalizePush(payload);
     case 'create':
-      return normalizeCreateEvent(payload, deliveryId, timestamp);
-
+      if ((payload as { ref_type?: string }).ref_type === 'tag') {
+        return normalizeTagCreate(payload);
+      }
+      return null;
     case 'delete':
-      return normalizeDeleteEvent(payload, deliveryId, timestamp);
-
+      if ((payload as { ref_type?: string }).ref_type === 'tag') {
+        return normalizeTagDelete(payload);
+      }
+      return null;
     case 'installation':
-      return normalizeInstallationEvent(payload, deliveryId, timestamp);
-
+      return normalizeInstallation(payload);
     case 'installation_repositories':
-      return normalizeInstallationRepositoriesEvent(payload, deliveryId, timestamp);
-
+      return normalizeInstallationRepos(payload);
     default:
       return null;
   }
 }
 
-function normalizePushEvent(
-  payload: Record<string, unknown>,
-  deliveryId: string,
-  timestamp: string
-): NormalizedPushEvent | null {
-  const { repository, head_commit: headCommit, ref, pusher, forced, before, commits } = payload;
-
-  if (!isRecord(repository) || !isRecord(headCommit) || !isRecord(pusher)) {
-    return null;
-  }
-
-  if (
-    typeof repository.full_name !== 'string' ||
-    typeof headCommit.id !== 'string' ||
-    typeof ref !== 'string' ||
-    typeof pusher.name !== 'string' ||
-    typeof forced !== 'boolean' ||
-    typeof before !== 'string' ||
-    !Array.isArray(commits)
-  ) {
-    return null;
-  }
-
-  const normalizedCommits = commits
-    .slice(0, 20)
-    .map((commit) => {
-      if (!isRecord(commit) || !isRecord(commit.author)) {
-        return null;
-      }
-
-      if (
-        typeof commit.id !== 'string' ||
-        typeof commit.message !== 'string' ||
-        typeof commit.author.name !== 'string' ||
-        typeof commit.timestamp !== 'string'
-      ) {
-        return null;
-      }
-
-      return {
-        sha: commit.id,
-        message: commit.message,
-        author: commit.author.name,
-        timestamp: commit.timestamp,
-      };
-    })
-    .filter((commit) => commit !== null);
+function normalizePush(p: Record<string, unknown>): NormalizedEvent {
+  const payload = p as {
+    ref: string; before: string; after: string; forced: boolean;
+    pusher: { name: string; email?: string };
+    commits: Array<{
+      id: string; message: string;
+      author: { username?: string; email: string };
+      timestamp: string;
+    }>;
+    repository: { owner: { login: string }; name: string; full_name: string };
+  };
 
   return {
     type: 'push',
-    deliveryId,
-    timestamp,
-    repoFullName: repository.full_name,
-    branch: extractBranchFromRef(ref),
-    forced,
-    commits: normalizedCommits,
-    headSha: headCommit.id,
-    beforeSha: before,
-    pusherName: pusher.name,
-    size: typeof payload.size === 'number' ? payload.size : undefined,
+    data: {
+      ref: payload.ref,
+      before: payload.before,
+      after: payload.after,
+      forced: payload.forced,
+      pusher: { login: payload.pusher.name, email: payload.pusher.email },
+      commits: payload.commits.map(c => ({
+        sha: c.id,
+        message: c.message,
+        author: { username: c.author.username, email: c.author.email },
+        timestamp: c.timestamp,
+      })),
+      repository: {
+        owner: payload.repository.owner.login,
+        name: payload.repository.name,
+        full_name: payload.repository.full_name,
+      },
+    },
   };
 }
 
-function normalizeCreateEvent(
-  payload: Record<string, unknown>,
-  deliveryId: string,
-  timestamp: string
-): NormalizedTagCreateEvent | null {
-  const { ref, ref_type: refType, repository, sender, head_commit: headCommit } = payload;
-
-  if (!isRecord(repository) || !isRecord(sender)) {
-    return null;
-  }
-
-  if (
-    typeof ref !== 'string' ||
-    typeof refType !== 'string' ||
-    typeof repository.full_name !== 'string' ||
-    typeof sender.login !== 'string'
-  ) {
-    return null;
-  }
-
-  if (refType !== 'tag') {
-    return null;
-  }
-
-  // Extract SHA from head_commit (GitHub create event) or master_branch sha
-  const sha = (isRecord(headCommit) && typeof headCommit.sha === 'string')
-    ? headCommit.sha
-    : (typeof payload.sha === 'string' ? payload.sha : '');
+function normalizeTagCreate(p: Record<string, unknown>): NormalizedEvent {
+  const payload = p as {
+    ref: string; master_branch: string;
+    sender: { login: string };
+    repository: { owner: { login: string }; name: string; full_name: string };
+  };
 
   return {
     type: 'tag_created',
-    deliveryId,
-    timestamp,
-    repoFullName: repository.full_name,
-    tagName: ref,
-    sha,
-    senderLogin: sender.login,
+    data: {
+      ref: `refs/tags/${payload.ref}`,
+      tag_name: payload.ref,
+      sha: '', // SHA not available in create event — will be resolved from API
+      action: 'created',
+      sender: { login: payload.sender.login },
+      repository: {
+        owner: payload.repository.owner.login,
+        name: payload.repository.name,
+        full_name: payload.repository.full_name,
+      },
+    },
   };
 }
 
-function normalizeDeleteEvent(
-  payload: Record<string, unknown>,
-  deliveryId: string,
-  timestamp: string
-): NormalizedTagDeleteEvent | null {
-  const { ref, ref_type: refType, repository, sender } = payload;
-
-  if (!isRecord(repository) || !isRecord(sender)) {
-    return null;
-  }
-
-  if (
-    typeof ref !== 'string' ||
-    typeof refType !== 'string' ||
-    typeof repository.full_name !== 'string' ||
-    typeof sender.login !== 'string'
-  ) {
-    return null;
-  }
-
-  if (refType !== 'tag') {
-    return null;
-  }
+function normalizeTagDelete(p: Record<string, unknown>): NormalizedEvent {
+  const payload = p as {
+    ref: string;
+    sender: { login: string };
+    repository: { owner: { login: string }; name: string; full_name: string };
+  };
 
   return {
     type: 'tag_deleted',
-    deliveryId,
-    timestamp,
-    repoFullName: repository.full_name,
-    tagName: ref,
-    senderLogin: sender.login,
+    data: {
+      ref: `refs/tags/${payload.ref}`,
+      tag_name: payload.ref,
+      sha: '',
+      action: 'deleted',
+      sender: { login: payload.sender.login },
+      repository: {
+        owner: payload.repository.owner.login,
+        name: payload.repository.name,
+        full_name: payload.repository.full_name,
+      },
+    },
   };
 }
 
-function normalizeInstallationEvent(
-  payload: Record<string, unknown>,
-  deliveryId: string,
-  timestamp: string
-): NormalizedInstallationEvent | null {
-  const { action, installation, repositories, sender } = payload;
-
-  if (!isRecord(installation) || !isRecord(sender)) {
-    return null;
-  }
-
-  if (
-    typeof action !== 'string' ||
-    typeof installation.id !== 'number' ||
-    typeof sender.login !== 'string' ||
-    !Array.isArray(repositories)
-  ) {
-    return null;
-  }
-
-  const normalizedRepos = repositories
-    .map((repo) => {
-      if (!isRecord(repo) || typeof repo.full_name !== 'string') {
-        return null;
-      }
-      return { fullName: repo.full_name };
-    })
-    .filter((repo) => repo !== null);
+function normalizeInstallation(p: Record<string, unknown>): NormalizedEvent {
+  const payload = p as {
+    action: string;
+    installation: { id: number };
+    sender: { login: string };
+    repositories?: Array<{ full_name: string; name: string }>;
+  };
 
   return {
     type: 'installation',
-    deliveryId,
-    timestamp,
-    action,
-    installationId: installation.id,
-    senderLogin: sender.login,
-    repositories: normalizedRepos,
+    data: {
+      action: payload.action,
+      installation_id: payload.installation.id,
+      sender: { login: payload.sender.login },
+      repositories: payload.repositories || [],
+    },
   };
 }
 
-function normalizeInstallationRepositoriesEvent(
-  payload: Record<string, unknown>,
-  deliveryId: string,
-  timestamp: string
-): NormalizedInstallationEvent | null {
-  const { action, installation, repositories_added: repositoriesAdded, sender } = payload;
+function normalizeInstallationRepos(p: Record<string, unknown>): NormalizedEvent {
+  const payload = p as {
+    action: string;
+    installation: { id: number };
+    sender: { login: string };
+    repositories_added?: Array<{ full_name: string; name: string }>;
+    repositories_removed?: Array<{ full_name: string; name: string }>;
+  };
 
-  if (!isRecord(installation) || !isRecord(sender)) {
-    return null;
-  }
-
-  if (
-    typeof action !== 'string' ||
-    typeof installation.id !== 'number' ||
-    typeof sender.login !== 'string' ||
-    !Array.isArray(repositoriesAdded)
-  ) {
-    return null;
-  }
-
-  const normalizedRepos = repositoriesAdded
-    .map((repo) => {
-      if (!isRecord(repo) || typeof repo.full_name !== 'string') {
-        return null;
-      }
-      return { fullName: repo.full_name };
-    })
-    .filter((repo) => repo !== null);
+  const repos = payload.action === 'added'
+    ? payload.repositories_added || []
+    : payload.repositories_removed || [];
 
   return {
-    type: 'installation',
-    deliveryId,
-    timestamp,
-    action,
-    installationId: installation.id,
-    senderLogin: sender.login,
-    repositories: normalizedRepos,
+    type: payload.action === 'added' ? 'installation_repos_added' : 'installation_repos_removed',
+    data: {
+      installation_id: payload.installation.id,
+      sender: { login: payload.sender.login },
+      repositories: repos,
+    },
   };
 }

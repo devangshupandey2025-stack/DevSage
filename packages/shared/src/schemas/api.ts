@@ -1,33 +1,30 @@
 import { z } from 'zod';
-import { HackathonStatusEnum } from './hackathon.js';
 
-export const PaginationQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(10),
-  offset: z.coerce.number().int().min(0).default(0),
-});
+export const successResponseSchema = <T extends z.ZodType>(dataSchema: T) =>
+  z.object({
+    ok: z.literal(true),
+    data: dataSchema,
+    meta: z.record(z.unknown()).optional(),
+  });
 
-export type PaginationQuery = z.infer<typeof PaginationQuerySchema>;
-
-export const StatusTransitionRequestSchema = z.object({
-  targetStatus: HackathonStatusEnum,
-});
-
-export type StatusTransitionRequest = z.infer<typeof StatusTransitionRequestSchema>;
-
-export const ApiErrorSchema = z.object({
+export const errorResponseSchema = z.object({
   ok: z.literal(false),
   error: z.object({
     code: z.string(),
     message: z.string(),
+    details: z.record(z.unknown()).optional(),
   }),
 });
 
-export type ApiError = z.infer<typeof ApiErrorSchema>;
-
-export const ApiSuccessSchema = z.object({
-  ok: z.literal(true),
-  data: z.unknown().optional(),
-  meta: z.record(z.unknown()).optional(),
+export const paginationQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
-export type ApiSuccess = z.infer<typeof ApiSuccessSchema>;
+export const cursorPaginationQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+export type CursorPaginationQuery = z.infer<typeof cursorPaginationQuerySchema>;

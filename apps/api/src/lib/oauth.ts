@@ -1,247 +1,101 @@
-export type OAuthProvider = 'google' | 'github';
-
-export interface OAuthStateRecord {
-  provider: OAuthProvider;
-  redirectUri: string;
-  frontendOrigin: string;
-  createdAt: string;
-  elevate?: boolean;
-  scope?: string;
-  return_to?: string;
-  user_id?: string;
-}
-
-interface GoogleTokenResponse {
-  access_token: string;
-}
-
-interface GoogleUserResponse {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
-}
-
-interface GitHubTokenResponse {
-  access_token: string;
-}
-
-interface GitHubUserResponse {
-  id: number;
-  email: string | null;
-  name: string | null;
-  login: string;
-  avatar_url: string | null;
-}
-
-interface GitHubEmailResponse {
-  email: string;
-  verified: boolean;
-  primary: boolean;
-}
-
-export interface GitHubOAuthProfile {
-  githubId: number;
-  githubUsername: string;
-  displayName: string;
-  email: string | null;
-  avatarUrl: string | null;
-}
-
-export interface GoogleOAuthProfile {
-  googleId: string;
-  email: string;
-  displayName: string;
-  avatarUrl: string | null;
-}
-
-const OAUTH_STATE_PREFIX = 'oauth:state:';
-const OAUTH_STATE_TTL_SECONDS = 600;
-const OAUTH_FETCH_TIMEOUT_MS = 10_000;
-
-function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), OAUTH_FETCH_TIMEOUT_MS);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-}
-
-export function generateOAuthState(): string {
-  return crypto.randomUUID();
-}
-
-export async function storeOAuthState(kv: KVNamespace, state: string, value: OAuthStateRecord): Promise<void> {
-  await kv.put(`${OAUTH_STATE_PREFIX}${state}`, JSON.stringify(value), {
-    expirationTtl: OAUTH_STATE_TTL_SECONDS,
+export function getGitHubAuthUrl(clientId: string, state: string, redirectUri: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: 'read:user user:email',
+    state,
   });
+  return `https://github.com/login/oauth/authorize?${params}`;
 }
 
-export async function consumeOAuthState(kv: KVNamespace, state: string): Promise<OAuthStateRecord | null> {
-  const key = `${OAUTH_STATE_PREFIX}${state}`;
-  const rawValue = await kv.get(key);
-  if (!rawValue) {
-    return null;
-  }
-
-  await kv.delete(key);
-
-  try {
-    const parsed = JSON.parse(rawValue) as OAuthStateRecord;
-    if (!parsed.provider || !parsed.redirectUri || !parsed.createdAt) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function buildGoogleAuthorizationUrl(clientId: string, redirectUri: string, state: string): string {
-  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', redirectUri);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid email profile');
-  url.searchParams.set('state', state);
-  return url.toString();
-}
-
-export function buildGitHubAuthorizationUrl(clientId: string, redirectUri: string, state: string, scope?: string): string {
-  const url = new URL('https://github.com/login/oauth/authorize');
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', redirectUri);
-  url.searchParams.set('scope', scope ?? 'read:user user:email');
-  url.searchParams.set('state', state);
-  return url.toString();
-}
-
-export async function exchangeGoogleCodeForToken(params: {
-  code: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-}): Promise<string> {
-  const body = new URLSearchParams({
-    code: params.code,
-    client_id: params.clientId,
-    client_secret: params.clientSecret,
-    redirect_uri: params.redirectUri,
-    grant_type: 'authorization_code',
+export function getGoogleAuthUrl(clientId: string, state: string, redirectUri: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    access_type: 'offline',
   });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+}
 
-  const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
+export async function exchangeGitHubCode(
+  code: string, clientId: string, clientSecret: string
+): Promise<string> {
+  const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
   });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error('Google token exchange failed', { status: response.status, body: errorBody });
-    throw new Error(`Google token exchange failed: ${response.status} ${errorBody}`);
-  }
-
-  const token = (await response.json()) as GoogleTokenResponse;
-  if (!token.access_token) {
-    throw new Error('Google token missing access token');
-  }
-
-  return token.access_token;
+  const data = await res.json() as { access_token?: string; error?: string };
+  if (!data.access_token) throw new Error(data.error || 'GitHub token exchange failed');
+  return data.access_token;
 }
 
-export async function fetchGoogleUserProfile(accessToken: string): Promise<GoogleOAuthProfile> {
-  const response = await fetchWithTimeout('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+export async function getGitHubUserInfo(accessToken: string): Promise<{
+  email: string; name: string; avatar_url: string | null;
+  github_id: number; github_username: string;
+}> {
+  const [userRes, emailsRes] = await Promise.all([
+    fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'DevSage' },
+    }),
+    fetch('https://api.github.com/user/emails', {
+      headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'DevSage' },
+    }),
+  ]);
 
-  if (!response.ok) {
-    throw new Error('Google user info fetch failed');
-  }
+  const user = await userRes.json() as { id: number; login: string; name: string | null; avatar_url: string };
+  const emails = await emailsRes.json() as Array<{ email: string; primary: boolean; verified: boolean }>;
 
-  const user = (await response.json()) as GoogleUserResponse;
-  if (!user.id || !user.email) {
-    throw new Error('Google user profile incomplete');
-  }
+  const primaryEmail = emails.find(e => e.primary && e.verified)?.email
+    || emails.find(e => e.verified)?.email
+    || emails[0]?.email;
+
+  if (!primaryEmail) throw new Error('No verified email found on GitHub account');
 
   return {
-    googleId: user.id,
-    email: user.email,
-    displayName: user.name ?? user.email,
-    avatarUrl: user.picture ?? null,
+    email: primaryEmail,
+    name: user.name || user.login,
+    avatar_url: user.avatar_url || null,
+    github_id: user.id,
+    github_username: user.login,
   };
 }
 
-export async function exchangeGitHubCodeForToken(params: {
-  code: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-}): Promise<string> {
-  const body = new URLSearchParams({
-    client_id: params.clientId,
-    client_secret: params.clientSecret,
-    code: params.code,
-    redirect_uri: params.redirectUri,
-  });
-
-  const response = await fetchWithTimeout('https://github.com/login/oauth/access_token', {
+export async function exchangeGoogleCode(
+  code: string, clientId: string, clientSecret: string, redirectUri: string
+): Promise<string> {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'devsage-api',
-    },
-    body,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }),
   });
-
-  if (!response.ok) {
-    throw new Error('GitHub token exchange failed');
-  }
-
-  const token = (await response.json()) as GitHubTokenResponse;
-  if (!token.access_token) {
-    throw new Error('GitHub token missing access token');
-  }
-
-  return token.access_token;
+  const data = await res.json() as { access_token?: string; error?: string };
+  if (!data.access_token) throw new Error(data.error || 'Google token exchange failed');
+  return data.access_token;
 }
 
-export async function fetchGitHubUserProfile(accessToken: string): Promise<GitHubOAuthProfile> {
-  const baseHeaders = {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'devsage-api',
+export async function getGoogleUserInfo(accessToken: string): Promise<{
+  email: string; name: string; avatar_url: string | null; google_id: string;
+}> {
+  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json() as {
+    id: string; email: string; name: string; picture?: string;
   };
-
-  const userResponse = await fetchWithTimeout('https://api.github.com/user', {
-    headers: baseHeaders,
-  });
-  if (!userResponse.ok) {
-    throw new Error('GitHub user fetch failed');
-  }
-
-  const user = (await userResponse.json()) as GitHubUserResponse;
-
-  const emailResponse = await fetchWithTimeout('https://api.github.com/user/emails', {
-    headers: baseHeaders,
-  });
-  if (!emailResponse.ok) {
-    throw new Error('GitHub email fetch failed');
-  }
-
-  const emails = (await emailResponse.json()) as GitHubEmailResponse[];
-  const primaryVerified = emails.find((email) => email.primary && email.verified);
-  const fallbackVerified = emails.find((email) => email.verified);
-  const selectedEmail = user.email ?? primaryVerified?.email ?? fallbackVerified?.email ?? emails[0]?.email ?? null;
-
   return {
-    githubId: user.id,
-    githubUsername: user.login,
-    displayName: user.name ?? user.login,
-    email: selectedEmail,
-    avatarUrl: user.avatar_url,
+    email: data.email,
+    name: data.name,
+    avatar_url: data.picture || null,
+    google_id: data.id,
   };
 }

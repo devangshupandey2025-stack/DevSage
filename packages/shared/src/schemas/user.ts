@@ -1,21 +1,14 @@
 import { z } from 'zod';
+import { authProviderSchema } from './constants.js';
 
-export const UserSchema = z.object({
-  id: z.string(),
-  githubId: z.number().int(),
-  googleId: z.string().nullable().optional(),
-  githubUsername: z.string(),
-  displayName: z.string(),
-  email: z.string().nullable().optional(),
-  avatarUrl: z.string().nullable().optional(),
-  emailVerified: z.number().int(),
-  emailBounced: z.number().int(),
-  suspended: z.number().int(),
-  suspendedAt: z.string().nullable().optional(),
-  suspendedReason: z.string().nullable().optional(),
-  lastLoginAt: z.string().nullable().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+export const userResponseSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  name: z.string(),
+  github_username: z.string().nullable(),
+  avatar_url: z.string().url().nullable(),
+  auth_provider: authProviderSchema,
+  created_at: z.string().datetime(),
 });
 
-export type User = z.infer<typeof UserSchema>;
+export type UserResponse = z.infer<typeof userResponseSchema>;

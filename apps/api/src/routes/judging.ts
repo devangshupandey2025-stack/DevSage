@@ -1,567 +1,381 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
-import { eq, and, sql } from 'drizzle-orm';
-import { createDbClient, judges, users, rubricCriteria, judgeAssignments, scores, hackathons, submissions, teams } from '@devsage/db';
-import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema, SubmitScoreRequestSchema, PaginationQuerySchema } from '@devsage/shared';
-import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware, optionalAuth } from '../middleware/auth.js';
-import { requireRole } from '../middleware/role.js';
+import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
-import { buildJudgeAssignments, validateScoreSubmission, getLeaderboard } from '../services/judging-service.js';
+import { authMiddleware } from '../middleware/auth.js';
+import { hackathonContext } from '../middleware/hackathon.js';
+import { requireRole, requireExactRole } from '../middleware/role.js';
+import { assignSubmissionsRoundRobin, computeLeaderboard } from '../services/judging-service.js';
+import { generateETag, checkConditionalRequest } from '../lib/etag.js';
+import { KV_TTL } from '../lib/constants.js';
 
-const judging = new Hono<AuthAppEnv>();
+const judging = new Hono<AppEnv>();
+judging.use('/*', hackathonContext);
 
-judging.post(
-  '/:slug/judges',
-  authMiddleware,
-  requireRole('co_organizer'),
-  zValidator('json', InviteJudgeRequestSchema),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
+// === Rubric CRUD (organizer+) ===
 
-    const existing = await db
-      .select()
-      .from(judges)
-      .where(
-        and(
-          eq(judges.hackathon_id, hackathon.id),
-          eq(judges.user_id, body.userId),
-        ),
-      )
-      .get();
+// Create rubric criterion
+judging.post('/rubric', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{
+    name: string; description?: string; max_score?: number;
+    weight: number; track_id?: string | null; sort_order?: number;
+  }>();
 
-    if (existing) {
-      return errorResponse(c, 409, 'DUPLICATE_INVITE', 'Judge already invited');
+  if (!body.name || body.weight === undefined) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name and weight are required');
+  }
+
+  const id = crypto.randomUUID();
+  await c.env.DB.prepare(
+    `INSERT INTO rubric_criteria (id, hackathon_id, name, description, max_score, weight, track_id, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, hackathon.id, body.name, body.description ?? null, body.max_score ?? 10, body.weight, body.track_id ?? null, body.sort_order ?? 0).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      event_type: 'rubric.criterion_added', entity_type: 'rubric_criteria', entity_id: id,
+      metadata: { name: body.name },
+    })
+  );
+
+  const created = await c.env.DB.prepare('SELECT * FROM rubric_criteria WHERE id = ?').bind(id).first();
+  return successResponse(c, created, { status: 201 });
+});
+
+// List rubric criteria
+judging.get('/rubric', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const criteria = await c.env.DB.prepare(
+    'SELECT * FROM rubric_criteria WHERE hackathon_id = ? ORDER BY sort_order ASC'
+  ).bind(hackathon.id).all();
+  return successResponse(c, criteria.results || []);
+});
+
+// Update rubric criterion
+judging.patch('/rubric/:criterionId', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const criterionId = c.req.param('criterionId');
+  const body = await c.req.json<Record<string, unknown>>();
+
+  const allowedFields = ['name', 'description', 'max_score', 'weight', 'track_id', 'sort_order'];
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  for (const field of allowedFields) {
+    if (field in body) { updates.push(`${field} = ?`); values.push(body[field]); }
+  }
+
+  if (updates.length === 0) return errorResponse(c, 400, 'VALIDATION_ERROR', 'No fields to update');
+
+  values.push(criterionId);
+  await c.env.DB.prepare(`UPDATE rubric_criteria SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+  const updated = await c.env.DB.prepare('SELECT * FROM rubric_criteria WHERE id = ?').bind(criterionId).first();
+  return successResponse(c, updated);
+});
+
+// Delete rubric criterion
+judging.delete('/rubric/:criterionId', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const criterionId = c.req.param('criterionId');
+  await c.env.DB.prepare('DELETE FROM rubric_criteria WHERE id = ?').bind(criterionId).run();
+  return successResponse(c, { deleted: true });
+});
+
+// === Judge Management (organizer+) ===
+
+// Invite judge
+judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{ email: string }>();
+
+  if (!body.email) return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email is required');
+
+  const id = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO judges (id, hackathon_id, email, invite_token, invited_by) VALUES (?, ?, ?, ?, ?)`
+    ).bind(id, hackathon.id, body.email, inviteToken, user.id).run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('UNIQUE')) {
+      return errorResponse(c, 409, 'JUDGE_ALREADY_INVITED', 'Judge already invited');
     }
+    throw err;
+  }
 
-    const judgeId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    await db.insert(judges).values({
-      id: judgeId,
+  // Send invite email via notification queue
+  c.executionCtx.waitUntil(
+    c.env.NOTIFICATION_QUEUE.send({
+      type: 'judge.invited',
       hackathon_id: hackathon.id,
-      user_id: body.userId,
-      invite_status: 'pending',
-      invited_by: user.sub,
-      invited_at: now,
-    });
+      data: { judge_id: id, email: body.email, invite_token: inviteToken },
+    })
+  );
 
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'judge.invite',
-      entityType: 'judge',
-      entityId: judgeId,
-    });
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      event_type: 'judge.invited', entity_type: 'judge', entity_id: id,
+      metadata: { email: body.email },
+    })
+  );
 
-    const judge = await db
-      .select()
-      .from(judges)
-      .where(eq(judges.id, judgeId))
-      .get();
+  return successResponse(c, { id, email: body.email, invite_token: inviteToken }, { status: 201 });
+});
 
-    return successResponse(c, judge);
-  },
-);
+// Bulk invite judges
+judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{ emails: string[] }>();
 
-judging.get(
-  '/:slug/judges',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const db = createDbClient(c.env.DB);
+  if (!body.emails || body.emails.length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Emails array is required');
+  }
 
-    const judgeList = await db
-      .select({
-        id: judges.id,
-        hackathon_id: judges.hackathon_id,
-        user_id: judges.user_id,
-        invite_status: judges.invite_status,
-        invited_by: judges.invited_by,
-        invited_at: judges.invited_at,
-        responded_at: judges.responded_at,
-        user: {
-          id: users.id,
-          email: users.email,
-          display_name: users.display_name,
-          avatar_url: users.avatar_url,
-        },
-      })
-      .from(judges)
-      .innerJoin(users, eq(judges.user_id, users.id))
-      .where(eq(judges.hackathon_id, hackathon.id))
-      .all();
+  const results: Array<{ email: string; status: string; invite_token?: string }> = [];
 
-    return successResponse(c, judgeList);
-  },
-);
-
-judging.post(
-  '/:slug/judges/:judgeId/respond',
-  authMiddleware,
-  requireRole('anonymous'),
-  zValidator('json', RespondToJudgeInviteRequestSchema),
-  async (c) => {
-    const judgeRecordId = c.req.param('judgeId');
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
-
-    const judgeRecord = await db
-      .select()
-      .from(judges)
-      .where(
-        and(
-          eq(judges.id, judgeRecordId),
-          eq(judges.hackathon_id, hackathon.id),
-        ),
-      )
-      .get();
-
-    if (!judgeRecord) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Judge invite not found');
+  // Chunk to stay under D1 param limit
+  for (const email of body.emails.slice(0, 50)) {
+    const id = crypto.randomUUID();
+    const inviteToken = crypto.randomUUID();
+    try {
+      await c.env.DB.prepare(
+        'INSERT INTO judges (id, hackathon_id, email, invite_token, invited_by) VALUES (?, ?, ?, ?, ?)'
+      ).bind(id, hackathon.id, email, inviteToken, user.id).run();
+      results.push({ email, status: 'invited', invite_token: inviteToken });
+    } catch {
+      results.push({ email, status: 'already_invited' });
     }
+  }
 
-    if (judgeRecord.user_id !== user.sub) {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Can only respond to your own invite');
+  return successResponse(c, results, { status: 201 });
+});
+
+// List judges
+judging.get('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const judges = await c.env.DB.prepare(`
+    SELECT j.id, j.email, j.invite_status, j.user_id, j.created_at, j.accepted_at,
+           u.name, u.avatar_url
+    FROM judges j
+    LEFT JOIN users u ON j.user_id = u.id
+    WHERE j.hackathon_id = ?
+    ORDER BY j.created_at ASC
+  `).bind(hackathon.id).all();
+  return successResponse(c, judges.results || []);
+});
+
+// Remove judge
+judging.delete('/judges/:judgeId', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const judgeId = c.req.param('judgeId');
+  await c.env.DB.prepare('DELETE FROM judges WHERE id = ?').bind(judgeId).run();
+  return successResponse(c, { deleted: true });
+});
+
+// Assign judge to tracks
+judging.post('/judges/:judgeId/tracks', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const judgeId = c.req.param('judgeId');
+  const body = await c.req.json<{ track_ids: string[] }>();
+
+  if (!body.track_ids || body.track_ids.length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'track_ids required');
+  }
+
+  // Clear existing and re-insert
+  await c.env.DB.prepare('DELETE FROM judge_tracks WHERE judge_id = ?').bind(judgeId).run();
+
+  for (const trackId of body.track_ids) {
+    await c.env.DB.prepare(
+      'INSERT INTO judge_tracks (id, judge_id, track_id) VALUES (?, ?, ?)'
+    ).bind(crypto.randomUUID(), judgeId, trackId).run();
+  }
+
+  return successResponse(c, { assigned: body.track_ids.length });
+});
+
+// === Assignments (organizer+) ===
+
+// Auto-assign submissions to judges (round-robin)
+judging.post('/assign', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{ round_id?: string }>().catch((): { round_id?: string } => ({}));
+
+  const result = await assignSubmissionsRoundRobin(c.env.DB, hackathon.id, body.round_id);
+  return successResponse(c, result);
+});
+
+// Get assignments for a judge
+judging.get('/judges/:judgeId/assignments', authMiddleware, async (c) => {
+  const judgeId = c.req.param('judgeId');
+  const assignments = await c.env.DB.prepare(`
+    SELECT ja.id, ja.submission_id, ja.status, ja.created_at,
+           s.tag_name, s.commit_sha, s.team_id, t.name as team_name
+    FROM judge_assignments ja
+    JOIN submissions s ON ja.submission_id = s.id
+    JOIN teams t ON s.team_id = t.id
+    WHERE ja.judge_id = ?
+    ORDER BY ja.created_at ASC
+  `).bind(judgeId).all();
+  return successResponse(c, assignments.results || []);
+});
+
+// === Scoring (judges only) ===
+
+// Submit scores for a submission
+judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRole('judge'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const submissionId = c.req.param('submissionId');
+  const body = await c.req.json<{
+    scores: Array<{ criterion_id: string; score: number; notes?: string }>;
+  }>();
+
+  if (!body.scores || body.scores.length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Scores are required');
+  }
+
+  // Get judge record
+  const judge = await c.env.DB.prepare(
+    'SELECT id FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = ?'
+  ).bind(hackathon.id, user.id, 'accepted').first<{ id: string }>();
+
+  if (!judge) return errorResponse(c, 403, 'FORBIDDEN', 'Not an accepted judge');
+
+  // Verify assignment exists
+  const assignment = await c.env.DB.prepare(
+    'SELECT id FROM judge_assignments WHERE judge_id = ? AND submission_id = ?'
+  ).bind(judge.id, submissionId).first<{ id: string }>();
+
+  if (!assignment) return errorResponse(c, 403, 'NOT_ASSIGNED', 'Not assigned to this submission');
+
+  const now = new Date().toISOString();
+
+  // Upsert scores
+  for (const s of body.scores) {
+    await c.env.DB.prepare(`
+      INSERT INTO scores (id, hackathon_id, submission_id, judge_id, criterion_id, score, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(judge_id, submission_id, criterion_id) DO UPDATE SET score = ?, notes = ?, updated_at = ?
+    `).bind(
+      crypto.randomUUID(), hackathon.id, submissionId, judge.id, s.criterion_id, s.score, s.notes ?? null, now, now,
+      s.score, s.notes ?? null, now
+    ).run();
+  }
+
+  // Update assignment status
+  await c.env.DB.prepare(
+    'UPDATE judge_assignments SET status = ? WHERE id = ?'
+  ).bind('scored', assignment.id).run();
+
+  // Invalidate leaderboard cache
+  await c.env.KV.delete(`leaderboard:${hackathon.id}`);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      event_type: 'score.submitted', entity_type: 'submission', entity_id: submissionId,
+      metadata: { judge_id: judge.id, scores_count: body.scores.length },
+    })
+  );
+
+  return successResponse(c, { scored: true });
+});
+
+// Get scores for a submission
+judging.get('/submissions/:submissionId/scores', authMiddleware, requireRole('judge'), async (c) => {
+  const submissionId = c.req.param('submissionId');
+  const scores = await c.env.DB.prepare(`
+    SELECT s.id, s.criterion_id, s.judge_id, s.score, s.notes, s.updated_at,
+           rc.name as criterion_name, rc.max_score, rc.weight
+    FROM scores s
+    JOIN rubric_criteria rc ON s.criterion_id = rc.id
+    WHERE s.submission_id = ?
+    ORDER BY rc.sort_order ASC
+  `).bind(submissionId).all();
+  return successResponse(c, scores.results || []);
+});
+
+// === Leaderboard ===
+
+judging.get('/leaderboard', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const roundId = c.req.query('round_id');
+  const trackId = c.req.query('track_id');
+
+  // Check KV cache
+  const cacheKey = `leaderboard:${hackathon.id}:${roundId ?? 'all'}:${trackId ?? 'all'}`;
+  const cached = await c.env.KV.get(cacheKey);
+  if (cached) {
+    const data = JSON.parse(cached);
+    const etag = await generateETag(data);
+    if (checkConditionalRequest(c.req.header('If-None-Match'), etag)) {
+      return c.body(null, 304);
     }
+    c.header('ETag', etag);
+    return successResponse(c, data);
+  }
 
-    const now = new Date().toISOString();
-    const newStatus = body.accept ? 'accepted' : 'declined';
+  const leaderboard = await computeLeaderboard(c.env.DB, hackathon.id, roundId, trackId);
 
-    await db
-      .update(judges)
-      .set({
-        invite_status: newStatus,
-        responded_at: now,
-      })
-      .where(eq(judges.id, judgeRecordId));
+  // Cache with appropriate TTL
+  const ttl = hackathon.status === 'judging' ? KV_TTL.LEADERBOARD_JUDGING : KV_TTL.LEADERBOARD_COMPLETED;
+  c.executionCtx.waitUntil(
+    c.env.KV.put(cacheKey, JSON.stringify(leaderboard), { expirationTtl: ttl })
+  );
 
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: body.accept ? 'judge.accept' : 'judge.decline',
-      entityType: 'judge',
-      entityId: judgeRecordId,
-    });
+  const etag = await generateETag(leaderboard);
+  c.header('ETag', etag);
+  return successResponse(c, leaderboard);
+});
 
-    const updated = await db
-      .select()
-      .from(judges)
-      .where(eq(judges.id, judgeRecordId))
-      .get();
+// === Results Publication (organizer) ===
 
-    return successResponse(c, updated);
-  },
-);
+judging.post('/results/publish', authMiddleware, requireRole('organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{ round_id?: string }>().catch((): { round_id?: string } => ({}));
 
-judging.get(
-  '/:slug/rubric',
-  optionalAuth,
-  requireRole('anonymous'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const db = createDbClient(c.env.DB);
+  if (hackathon.status !== 'judging' && hackathon.status !== 'completed') {
+    return errorResponse(c, 409, 'INVALID_STATE', 'Cannot publish results in current state');
+  }
 
-    const criteria = await db
-      .select()
-      .from(rubricCriteria)
-      .where(eq(rubricCriteria.hackathon_id, hackathon.id))
-      .orderBy(rubricCriteria.sort_order)
-      .all();
+  const leaderboard = await computeLeaderboard(c.env.DB, hackathon.id, body.round_id);
 
-    return successResponse(c, criteria);
-  },
-);
+  // Persist results
+  for (const entry of leaderboard) {
+    const id = crypto.randomUUID();
+    const roundId = body.round_id ?? null;
+    await c.env.DB.prepare(`
+      INSERT INTO round_results (id, round_id, team_id, rank, total_score)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?
+    `).bind(id, roundId, entry.team_id, entry.rank, entry.total_score, entry.rank, entry.total_score).run();
+  }
 
-judging.post(
-  '/:slug/rubric',
-  authMiddleware,
-  requireRole('co_organizer'),
-  zValidator('json', BulkRubricRequestSchema),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
-
-    if (hackathon.status !== 'draft') {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Can only update rubric when hackathon is in draft');
-    }
-
-    await db
-      .delete(rubricCriteria)
-      .where(eq(rubricCriteria.hackathon_id, hackathon.id));
-
-    const now = new Date().toISOString();
-    const newCriteria = body.criteria.map((_c) => ({
-      id: crypto.randomUUID(),
+  // Notify
+  c.executionCtx.waitUntil(
+    c.env.NOTIFICATION_QUEUE.send({
+      type: 'results.published',
       hackathon_id: hackathon.id,
-      name: _c.name,
-      description: _c.description || '',
-      max_score: _c.maxScore,
-      weight: _c.weight,
-      sort_order: _c.sortOrder,
-      created_at: now,
-    }));
+      data: { round_id: body.round_id, results_count: leaderboard.length },
+    })
+  );
 
-    if (newCriteria.length > 0) {
-      await db.insert(rubricCriteria).values(newCriteria);
-    }
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      event_type: 'results.published', entity_type: 'hackathon', entity_id: hackathon.id,
+      metadata: { results_count: leaderboard.length },
+    })
+  );
 
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'rubric.bulk_update',
-      entityType: 'rubric_criteria',
-      entityId: hackathon.id,
-      metadata: { count: newCriteria.length },
-    });
-
-    const inserted = await db
-      .select()
-      .from(rubricCriteria)
-      .where(eq(rubricCriteria.hackathon_id, hackathon.id))
-      .orderBy(rubricCriteria.sort_order)
-      .all();
-
-    return successResponse(c, inserted);
-  },
-);
-
-judging.post(
-  '/:slug/judges/assign',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const db = createDbClient(c.env.DB);
-
-    const acceptedJudges = await db
-      .select()
-      .from(judges)
-      .where(
-        and(
-          eq(judges.hackathon_id, hackathon.id),
-          eq(judges.invite_status, 'accepted'),
-        ),
-      )
-      .all();
-
-    if (acceptedJudges.length === 0) {
-      return errorResponse(c, 400, 'NO_JUDGES', 'No accepted judges available for assignment');
-    }
-
-    const result = await buildJudgeAssignments(db, hackathon.id, acceptedJudges);
-
-    if (!result) {
-      return errorResponse(c, 400, 'NO_SUBMISSIONS', 'No teams with submissions to assign judges to');
-    }
-
-    if (result.assignments.length > 0) {
-      await db.insert(judgeAssignments).values(result.assignments).onConflictDoNothing();
-    }
-
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'judges.assign',
-      entityType: 'judge_assignment',
-      entityId: hackathon.id,
-      metadata: { count: result.assignments.length },
-    });
-
-    const inserted = await db
-      .select()
-      .from(judgeAssignments)
-      .where(eq(judgeAssignments.hackathon_id, hackathon.id))
-      .all();
-
-    return successResponse(c, inserted);
-  },
-);
-
-judging.post(
-  '/:slug/scores',
-  authMiddleware,
-  requireRole('judge'),
-  zValidator('json', SubmitScoreRequestSchema),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const body = c.req.valid('json');
-    const db = createDbClient(c.env.DB);
-
-    const validation = await validateScoreSubmission(db, hackathon.id, user.sub, body);
-
-    if (!validation.valid) {
-      return errorResponse(c, validation.status, validation.code, validation.message);
-    }
-
-    const assignment = await db
-      .select({ id: judgeAssignments.id })
-      .from(judgeAssignments)
-      .where(
-        and(
-          eq(judgeAssignments.judge_id, validation.judgeRecordId),
-          eq(judgeAssignments.team_id, validation.submissionTeamId),
-          eq(judgeAssignments.hackathon_id, hackathon.id),
-        ),
-      )
-      .get();
-
-    if (!assignment) {
-      return errorResponse(c, 403, 'NO_ASSIGNMENT', 'No assignment found for this judge and team');
-    }
-
-    const scoreId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    await db.insert(scores).values({
-      id: scoreId,
-      submission_id: body.submissionId,
-      judge_id: validation.judgeRecordId,
-      criteria_id: body.criteriaId,
-      assignment_id: assignment.id,
-      score: body.score,
-      comment: body.comment || null,
-      scored_at: now,
-    });
-
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'score.submit',
-      entityType: 'score',
-      entityId: scoreId,
-      metadata: {
-        submissionId: body.submissionId,
-        criteriaId: body.criteriaId,
-        score: body.score,
-      },
-    });
-
-    const insertedScore = await db
-      .select()
-      .from(scores)
-      .where(eq(scores.id, scoreId))
-      .get();
-
-    return successResponse(c, insertedScore);
-  },
-);
-
-judging.get(
-  '/:slug/leaderboard',
-  optionalAuth,
-  requireRole('anonymous'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const role = c.get('role');
-    const db = createDbClient(c.env.DB);
-
-    const isOrganizer = ['organizer', 'co_organizer'].includes(role);
-    const isAfterJudging = ['completed', 'archived'].includes(hackathon.status);
-
-    if (!isOrganizer && !isAfterJudging) {
-      return errorResponse(c, 403, 'FORBIDDEN', 'Leaderboard is only visible after judging is complete');
-    }
-
-    const leaderboard = await getLeaderboard(db, hackathon.id);
-    return successResponse(c, leaderboard);
-  },
-);
-
-/**
- * DELETE /:slug/judges/:id — remove a judge
- * Requires: co_organizer
- */
-judging.delete(
-  '/:slug/judges/:id',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const judgeId = c.req.param('id');
-    const db = createDbClient(c.env.DB);
-
-    const judge = await db
-      .select()
-      .from(judges)
-      .where(and(eq(judges.id, judgeId), eq(judges.hackathon_id, hackathon.id)))
-      .get();
-
-    if (!judge) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Judge not found');
-    }
-
-    // Delete assignments first
-    await db.delete(judgeAssignments).where(eq(judgeAssignments.judge_id, judgeId));
-    await db.delete(judges).where(eq(judges.id, judgeId));
-
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'judge.remove',
-      entityType: 'judge',
-      entityId: judgeId,
-      metadata: { userId: judge.user_id },
-    });
-
-    return successResponse(c, { removed: true });
-  },
-);
-
-/**
- * GET /:slug/judges/:id/assignments — get a judge's assignments
- * Requires: judge (own) or co_organizer
- */
-judging.get(
-  '/:slug/judges/:id/assignments',
-  authMiddleware,
-  requireRole('judge'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const judgeId = c.req.param('id');
-    const db = createDbClient(c.env.DB);
-
-    const judge = await db
-      .select()
-      .from(judges)
-      .where(and(eq(judges.id, judgeId), eq(judges.hackathon_id, hackathon.id)))
-      .get();
-
-    if (!judge) {
-      return errorResponse(c, 404, 'NOT_FOUND', 'Judge not found');
-    }
-
-    const assignments = await db
-      .select({
-        id: judgeAssignments.id,
-        teamId: judgeAssignments.team_id,
-        judgeId: judgeAssignments.judge_id,
-        hackathonId: judgeAssignments.hackathon_id,
-        assignedAt: judgeAssignments.assigned_at,
-      })
-      .from(judgeAssignments)
-      .where(
-        and(
-          eq(judgeAssignments.judge_id, judgeId),
-          eq(judgeAssignments.hackathon_id, hackathon.id),
-        ),
-      )
-      .all();
-
-    return successResponse(c, assignments);
-  },
-);
-
-/**
- * GET /:slug/scores — list all scores (organizer view)
- * Requires: co_organizer
- */
-judging.get(
-  '/:slug/scores',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const db = createDbClient(c.env.DB);
-
-    const parsed = PaginationQuerySchema.safeParse({
-      limit: c.req.query('limit'),
-      offset: c.req.query('offset'),
-    });
-    const { limit, offset } = parsed.success ? parsed.data : { limit: 20, offset: 0 };
-
-    // Get scores with submission and judge info
-    const data = await db
-      .select({
-        id: scores.id,
-        submissionId: scores.submission_id,
-        judgeId: scores.judge_id,
-        criteriaId: scores.criteria_id,
-        score: scores.score,
-        comment: scores.comment,
-        isSubmitted: scores.is_submitted,
-        scoredAt: scores.scored_at,
-      })
-      .from(scores)
-      .innerJoin(submissions, eq(submissions.id, scores.submission_id))
-      .innerJoin(teams, eq(teams.id, submissions.team_id))
-      .where(eq(teams.hackathon_id, hackathon.id))
-      .limit(limit)
-      .offset(offset)
-      .all();
-
-    const totalResult = await db
-      .select({ value: sql<number>`COUNT(*)` })
-      .from(scores)
-      .innerJoin(submissions, eq(submissions.id, scores.submission_id))
-      .innerJoin(teams, eq(teams.id, submissions.team_id))
-      .where(eq(teams.hackathon_id, hackathon.id))
-      .get();
-
-    return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
-  },
-);
-
-/**
- * POST /:slug/results/publish — publish final results
- * Requires: co_organizer, hackathon must be in judging or completed status
- */
-judging.post(
-  '/:slug/results/publish',
-  authMiddleware,
-  requireRole('co_organizer'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const user = c.get('user');
-    const db = createDbClient(c.env.DB);
-
-    if (!['judging', 'completed'].includes(hackathon.status)) {
-      return errorResponse(c, 400, 'INVALID_STATUS', 'Results can only be published during judging or completed status');
-    }
-
-    const leaderboard = await getLeaderboard(db, hackathon.id);
-
-    // Transition to completed if still in judging
-    if (hackathon.status === 'judging') {
-      const now = new Date().toISOString();
-      await db
-        .update(hackathons)
-        .set({ status: 'completed', updated_at: now })
-        .where(eq(hackathons.id, hackathon.id));
-    }
-
-    await insertAuditEvent(db, {
-      hackathonId: hackathon.id,
-      actorId: user.sub,
-      actorType: 'user',
-      eventType: 'results.publish',
-      entityType: 'hackathon',
-      entityId: hackathon.id,
-      metadata: { teamCount: leaderboard.length },
-    });
-
-    return successResponse(c, { published: true, leaderboard });
-  },
-);
+  return successResponse(c, { published: true, results: leaderboard });
+});
 
 export default judging;
-
-

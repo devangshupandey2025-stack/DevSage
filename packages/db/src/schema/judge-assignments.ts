@@ -1,21 +1,18 @@
-import { sqliteTable, text, integer, unique, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 import { judges } from './judges.js';
-import { teams } from './teams.js';
-import { hackathons } from './hackathons.js';
 import { submissions } from './submissions.js';
+import { hackathons } from './hackathons.js';
 
 export const judgeAssignments = sqliteTable('judge_assignments', {
   id: text('id').primaryKey(),
-  hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
   judge_id: text('judge_id').notNull().references(() => judges.id, { onDelete: 'cascade' }),
-  team_id: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  submission_id: text('submission_id').references(() => submissions.id),
-  round: integer('round').notNull().default(1),
-  status: text('status', { enum: ['pending', 'in_progress', 'completed'] }).notNull().default('pending'),
-  assigned_at: text('assigned_at').notNull(),
-  completed_at: text('completed_at'),
+  submission_id: text('submission_id').notNull().references(() => submissions.id, { onDelete: 'cascade' }),
+  hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
-  uniqueJudgeTeamRound: unique().on(table.judge_id, table.team_id, table.round),
-  idxJudgeAssignmentsHackathonRound: index('idx_judge_assignments_hackathon_round').on(table.hackathon_id, table.round, table.status),
-  idxJudgeAssignmentsJudge: index('idx_judge_assignments_judge').on(table.judge_id, table.status),
+  judgeSubmissionUniq: uniqueIndex('uq_judge_assignments_judge_submission').on(table.judge_id, table.submission_id),
+  submissionIdx: index('idx_judge_assignments_submission').on(table.submission_id),
+  hackathonIdx: index('idx_judge_assignments_hackathon').on(table.hackathon_id),
 }));

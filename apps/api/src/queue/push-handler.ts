@@ -1,100 +1,81 @@
-import { createDbClient, commitLog, forcePushEvents, submissions } from '@devsage/db';
-import { eq, and, inArray } from 'drizzle-orm';
-import type { NormalizedPushEvent } from '../lib/webhook-normalize.js';
+import type { PushEvent } from '../lib/webhook-normalize.js';
 import { insertAuditEvent } from '../lib/audit.js';
-import type { Env } from '../types/env.js';
-import { MAX_COMMITS_PER_PUSH } from '../lib/constants.js';
-import type { TeamRepoRow } from '../types/db-rows.js';
 
-export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<void> {
+interface PushEnv {
+  DB: D1Database;
+  NOTIFICATION_QUEUE: Queue;
+}
+
+export async function handlePushEvent(
+  payload: Record<string, unknown>,
+  env: PushEnv
+): Promise<void> {
+  const data = payload as unknown as PushEvent;
+  const { repository, commits, forced, before, after, ref, pusher } = data;
+
+  // Find team repo
   const teamRepo = await env.DB.prepare(
-    'SELECT id, team_id, hackathon_id, repo_full_name FROM team_repos WHERE repo_full_name = ? AND bot_active = 1'
-  ).bind(event.repoFullName).first<TeamRepoRow>();
+    'SELECT id, team_id FROM team_repos WHERE github_owner = ? AND github_repo = ?'
+  ).bind(repository.owner, repository.name).first<{ id: string; team_id: string }>();
 
-  if (!teamRepo) return;
+  if (!teamRepo) return; // Not a tracked repo
 
-  const existing = await env.DB.prepare(
-    'SELECT id FROM commit_log WHERE webhook_delivery_id = ? LIMIT 1'
-  ).bind(event.deliveryId).first();
+  // Log commits (chunk to stay under D1 100 param limit)
+  if (commits && commits.length > 0) {
+    const CHUNK_SIZE = 10; // 10 columns per row × 10 rows = 100 params
+    for (let i = 0; i < commits.length; i += CHUNK_SIZE) {
+      const chunk = commits.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const values = chunk.flatMap(c => [
+        crypto.randomUUID(),
+        teamRepo.id,
+        c.sha,
+        c.message.slice(0, 500),
+        c.author.username ?? null,
+        c.author.email,
+        c.timestamp,
+        new Date().toISOString(),
+      ]);
 
-  if (existing) return;
-
-  const db = createDbClient(env.DB);
-  const boundedCommits = event.commits.slice(0, MAX_COMMITS_PER_PUSH);
-  const now = new Date().toISOString();
-
-  try {
-    for (const commit of boundedCommits) {
-      await db.insert(commitLog).values({
-        id: crypto.randomUUID(),
-        team_id: teamRepo.team_id,
-        hackathon_id: teamRepo.hackathon_id,
-        sha: commit.sha,
-        message: commit.message?.substring(0, 500) ?? '',
-        author_name: commit.author?.substring(0, 100) ?? '',
-        author_email: '',
-        committed_at: commit.timestamp,
-        url: `https://github.com/${event.repoFullName}/commit/${commit.sha}`,
-        branch: event.branch,
-        delivery_id: event.deliveryId,
-        provider: 'github',
-        created_at: now,
-      });
+      await env.DB.prepare(
+        `INSERT INTO commit_log (id, team_repo_id, commit_sha, commit_message, author_login, author_email, committed_at, pushed_at) VALUES ${placeholders}`
+      ).bind(...values).run();
     }
-  } catch (error) {
-    console.error('push-handler: failed to log commits:', {
-      teamId: teamRepo.team_id,
-      deliveryId: event.deliveryId,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 
-  if (event.forced) {
-    const forcePushId = crypto.randomUUID();
-    const estimatedLost = Math.max(0, (event.size ?? 0) - event.commits.length);
+  // Detect force push
+  if (forced) {
+    const fpId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO force_push_events (id, team_repo_id, before_sha, after_sha, ref, pusher_login, detected_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(fpId, teamRepo.id, before, after, ref, pusher.login, new Date().toISOString()).run();
 
-    const affectedSubmissions = await db
-      .select({ id: submissions.id })
-      .from(submissions)
-      .where(
-        and(
-          eq(submissions.team_id, teamRepo.team_id),
-          inArray(submissions.status, ['received', 'validated', 'locked', 'under_review'])
-        )
-      );
+    // Get hackathon_id for notifications
+    const team = await env.DB.prepare(
+      'SELECT hackathon_id FROM teams WHERE id = ?'
+    ).bind(teamRepo.team_id).first<{ hackathon_id: string }>();
 
-    await db.insert(forcePushEvents).values({
-      id: forcePushId,
-      team_id: teamRepo.team_id,
-      hackathon_id: teamRepo.hackathon_id,
-      delivery_id: event.deliveryId,
-      repo_full_name: event.repoFullName,
-      branch: event.branch,
-      before_sha: event.beforeSha,
-      after_sha: event.headSha,
-      estimated_lost_commits: estimatedLost,
-      severity: affectedSubmissions.length > 0 ? 'critical' : 'warning',
-      affected_submission_ids: JSON.stringify(affectedSubmissions.map((s) => s.id)),
-      pusher_login: event.pusherName,
-      provider: 'github',
-      created_at: now,
-    });
+    if (team) {
+      await env.NOTIFICATION_QUEUE.send({
+        type: 'force_push_detected',
+        hackathon_id: team.hackathon_id,
+        data: {
+          team_id: teamRepo.team_id,
+          ref,
+          pusher_login: pusher.login,
+          before_sha: before,
+          after_sha: after,
+        },
+      });
 
-    await env.NOTIFICATION_QUEUE.send({
-      type: 'force_push_alert',
-      hackathonId: teamRepo.hackathon_id,
-      teamId: teamRepo.team_id,
-      forcePushId,
-      affectedSubmissionCount: affectedSubmissions.length,
-    });
-
-    await insertAuditEvent(db, {
-      hackathonId: teamRepo.hackathon_id,
-      actorType: 'bot',
-      eventType: 'force_push.detected',
-      entityType: 'team',
-      entityId: teamRepo.team_id,
-      metadata: { before: event.beforeSha, after: event.headSha, branch: event.branch },
-    });
+      await insertAuditEvent(env.DB, {
+        hackathon_id: team.hackathon_id,
+        actor_type: 'bot',
+        event_type: 'webhook.force_push',
+        entity_type: 'team_repo',
+        entity_id: teamRepo.id,
+        metadata: { ref, pusher: pusher.login, before, after },
+      });
+    }
   }
 }

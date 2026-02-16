@@ -1,10 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "api",
+  "name": "devsage-api",
   "account_id": "cf3386ad6d48a38a199781a39b2324ad",
   "main": "src/index.ts",
-  "compatibility_date": "2025-12-01",
+  "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat"],
+
+  // D1 Database
   "d1_databases": [
     {
       "binding": "DB",
@@ -13,19 +15,16 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
+
+  // KV Namespace
   "kv_namespaces": [
     {
       "binding": "KV",
       "id": "716fbff3dd3d4374b11c69540a18dcf0"
     }
   ],
-  // TODO: Enable after R2 is activated in Cloudflare Dashboard
-  // "r2_buckets": [
-  //   {
-  //     "binding": "R2",
-  //     "bucket_name": "devsage-assets"
-  //   }
-  // ],
+
+  // Durable Objects
   "durable_objects": {
     "bindings": [
       {
@@ -45,18 +44,12 @@
       "new_sqlite_classes": ["HackathonStateMachine"]
     }
   ],
+
+  // Queues
   "queues": {
     "producers": [
-      {
-        "queue": "github-webhooks",
-        "binding": "WEBHOOK_QUEUE"
-      },
-      {
-        "queue": "devsage-notifications",
-        "binding": "NOTIFICATION_QUEUE"
-      }
-      // TODO: Enable after creating queue: wrangler queues create devsage-events
-      // { "queue": "devsage-events", "binding": "EVENT_QUEUE" }
+      { "binding": "WEBHOOK_QUEUE", "queue": "github-webhooks" },
+      { "binding": "NOTIFICATION_QUEUE", "queue": "devsage-notifications" }
     ],
     "consumers": [
       {
@@ -69,71 +62,33 @@
         "max_batch_size": 10,
         "max_retries": 3
       }
-      // TODO: Enable after creating queue: wrangler queues create devsage-events
-      // { "queue": "devsage-events", "max_batch_size": 10, "max_retries": 3 }
     ]
   },
+
+  // Cron Triggers
   "triggers": {
     "crons": ["0 * * * *"]
   },
+
+  // R2 (Phase 2)
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "devsage-uploads"
+    }
+  ],
+
+  // Observability
   "observability": {
     "enabled": true
   },
-  "env": {
-    "dev": {
-      "name": "api-dev",
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "devsage-db-dev",
-          "database_id": "00000000-0000-0000-0000-000000000000",
-          "migrations_dir": "../../packages/db/migrations"
-        }
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "KV",
-          "id": "00000000000000000000000000000000"
-        }
-      ],
-       "queues": {
-         "producers": [
-           {
-             "queue": "github-webhooks-dev",
-             "binding": "WEBHOOK_QUEUE"
-           },
-           {
-             "queue": "devsage-notifications-dev",
-             "binding": "NOTIFICATION_QUEUE"
-           },
-           {
-             "queue": "devsage-events-dev",
-             "binding": "EVENT_QUEUE"
-           }
-         ],
-         "consumers": [
-           {
-             "queue": "github-webhooks-dev",
-             "max_batch_size": 10,
-             "max_retries": 3
-           },
-           {
-             "queue": "devsage-notifications-dev",
-             "max_batch_size": 10,
-             "max_retries": 3
-           },
-           {
-             "queue": "devsage-events-dev",
-             "max_batch_size": 10,
-             "max_retries": 3
-           }
-         ]
-       },
-      "vars": {
-        "FRONTEND_URL": "http://localhost:5173",
-        "PLATFORM_URL": "http://localhost:5174",
-        "ADMIN_URL": "http://localhost:5175"
-      }
-    }
+
+  // Non-secret environment variables
+  "vars": {
+    "FRONTEND_URL": "https://devsage.org",
+    "PLATFORM_URL": "https://platform.devsage.org",
+    "ADMIN_URL": "https://shikdd.devsage.org",
+    "API_URL": "https://api.devsage.org",
+    "EMAIL_FROM": "noreply@devsage.org"
   }
 }

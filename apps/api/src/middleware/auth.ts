@@ -1,63 +1,55 @@
 import type { MiddlewareHandler } from 'hono';
-import { eq } from 'drizzle-orm';
-import { createDbClient, users } from '@devsage/db';
-import { getAccessTokenCookie } from '../lib/cookies.js';
+import { getCookie } from 'hono/cookie';
+import type { AppEnv } from '../types/env.js';
 import { verifyJWT } from '../lib/jwt.js';
-import type { JWTPayload } from '../lib/jwt.js';
-import { errorResponse } from '../lib/response.js';
-import type { AuthAppEnv } from '../types/auth.js';
 
-function isTokenExpired(token: string): boolean {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return false;
-    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
-    const payload = JSON.parse(atob(padded)) as Partial<JWTPayload>;
-    if (typeof payload.exp === 'number') {
-      return payload.exp <= Math.floor(Date.now() / 1000);
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
+/**
+ * Global middleware: extracts and validates JWT from HttpOnly cookie.
+ * Sets c.set('user', ...) on success, c.set('user', null) on failure.
+ * Never rejects — downstream handlers check user themselves.
+ */
+export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const token = getCookie(c, 'access_token');
 
-export const authMiddleware: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
-  const token = getAccessTokenCookie(c);
   if (!token) {
-    return errorResponse(c, 401, 'NO_TOKEN', 'Authentication required. Please sign in.');
+    c.set('user', null);
+    return next();
   }
 
   const payload = await verifyJWT(token, c.env.JWT_SECRET);
   if (!payload) {
-    if (isTokenExpired(token)) {
-      return errorResponse(c, 401, 'TOKEN_EXPIRED', 'Session expired.');
-    }
-    return errorResponse(c, 401, 'INVALID_TOKEN', 'Invalid session. Please sign in again.');
+    c.set('user', null);
+    return next();
   }
 
-  const db = createDbClient(c.env.DB);
-  const row = await db
-    .select({ suspended: users.suspended })
-    .from(users)
-    .where(eq(users.id, payload.sub))
-    .get();
+  // Fetch user from DB
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, name, github_id, github_username, avatar_url FROM users WHERE id = ?'
+  ).bind(payload.sub).first<{
+    id: string; email: string; name: string;
+    github_id: number | null; github_username: string | null; avatar_url: string | null;
+  }>();
 
-  if (row?.suspended === 1) {
-    return errorResponse(c, 403, 'USER_SUSPENDED', 'Your account has been suspended.');
+  if (!user) {
+    c.set('user', null);
+    return next();
   }
 
-  c.set('user', { sub: payload.sub, ghid: payload.ghid, ghu: payload.ghu, fam: payload.fam });
-  await next();
+  c.set('user', user);
+  return next();
 };
 
-export const optionalAuth: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
-  const token = getAccessTokenCookie(c);
-  if (token) {
-    const payload = await verifyJWT(token, c.env.JWT_SECRET);
-    if (payload) {
-      c.set('user', { sub: payload.sub, ghid: payload.ghid, ghu: payload.ghu, fam: payload.fam });
-    }
+/**
+ * Per-route middleware: requires authenticated user.
+ * Returns 401 if no valid session.
+ */
+export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const user = c.get('user');
+  if (!user) {
+    return c.json(
+      { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } },
+      401
+    );
   }
-  await next();
+  return next();
 };

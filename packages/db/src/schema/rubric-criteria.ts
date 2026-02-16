@@ -1,20 +1,18 @@
-import { sqliteTable, text, integer, real, unique, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 import { hackathons } from './hackathons.js';
-import { hackathonRounds } from './hackathon-rounds.js';
+import { hackathonTracks } from './hackathon-tracks.js';
 
 export const rubricCriteria = sqliteTable('rubric_criteria', {
   id: text('id').primaryKey(),
   hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
-  round_id: text('round_id').references(() => hackathonRounds.id, { onDelete: 'cascade' }),
-  track_id: text('track_id'),
-  round: integer('round').notNull().default(1),
   name: text('name').notNull(),
-  description: text('description').notNull().default(''),
+  description: text('description'),
   max_score: integer('max_score').notNull().default(10),
   weight: real('weight').notNull().default(1.0),
+  track_id: text('track_id').references(() => hackathonTracks.id, { onDelete: 'cascade' }),
   sort_order: integer('sort_order').notNull().default(0),
-  created_at: text('created_at').notNull(),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
-  uniqueHackathonNameTrackRound: unique().on(table.hackathon_id, table.name, table.track_id, table.round),
-  idxRubricRound: index('idx_rubric_round').on(table.hackathon_id, table.round),
+  hackathonIdx: index('idx_rubric_criteria_hackathon').on(table.hackathon_id),
 }));

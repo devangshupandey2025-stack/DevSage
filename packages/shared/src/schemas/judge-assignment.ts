@@ -1,19 +1,13 @@
 import { z } from 'zod';
+import { assignmentStatusSchema } from './constants.js';
 
-export const JudgeAssignmentStatusEnum = z.enum(['pending', 'in_progress', 'completed']);
-
-export type JudgeAssignmentStatus = z.infer<typeof JudgeAssignmentStatusEnum>;
-
-export const JudgeAssignmentSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  judgeId: z.string(),
-  teamId: z.string(),
-  submissionId: z.string().nullable().optional(),
-  round: z.number().int(),
-  status: JudgeAssignmentStatusEnum,
-  assignedAt: z.string(),
-  completedAt: z.string().nullable().optional(),
+export const judgeAssignmentResponseSchema = z.object({
+  id: z.string().uuid(),
+  judge_id: z.string().uuid(),
+  submission_id: z.string().uuid(),
+  hackathon_id: z.string().uuid(),
+  status: assignmentStatusSchema,
+  created_at: z.string().datetime(),
 });
 
-export type JudgeAssignment = z.infer<typeof JudgeAssignmentSchema>;
+export type JudgeAssignmentResponse = z.infer<typeof judgeAssignmentResponseSchema>;

@@ -1,16 +1,16 @@
 import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 import { workspaces } from './workspaces.js';
 import { users } from './users.js';
 
 export const workspaceMembers = sqliteTable('workspace_members', {
   id: text('id').primaryKey(),
   workspace_id: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  user_id: text('user_id').notNull().references(() => users.id),
-  role: text('role', { enum: ['workspace_owner', 'workspace_admin', 'workspace_member'] }).notNull(),
-  invited_by: text('invited_by').references(() => users.id),
-  created_at: text('created_at').notNull(),
-  updated_at: text('updated_at').notNull(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  invited_by: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
-  wsUserIdx: uniqueIndex('workspace_members_ws_user_idx').on(table.workspace_id, table.user_id),
-  userIdx: index('workspace_members_user_idx').on(table.user_id),
+  workspaceUserUniq: uniqueIndex('uq_workspace_members_workspace_user').on(table.workspace_id, table.user_id),
+  userIdx: index('idx_workspace_members_user').on(table.user_id),
 }));

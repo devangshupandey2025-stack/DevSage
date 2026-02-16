@@ -1,41 +1,18 @@
 import { z } from 'zod';
+import { submissionStatusSchema } from './constants.js';
 
-export const SubmissionStatusEnum = z.enum([
-  'received',
-  'validated',
-  'validation_failed',
-  'locked',
-  'under_review',
-  'scored',
-  'invalid',
-  'superseded',
-]);
-
-export type SubmissionStatus = z.infer<typeof SubmissionStatusEnum>;
-
-export const SubmissionSchema = z.object({
-  id: z.string(),
-  teamId: z.string(),
-  hackathonId: z.string(),
-  tagName: z.string(),
-  commitSha: z.string(),
-  commitMessage: z.string().nullable().optional(),
-  commitAuthor: z.string().nullable().optional(),
-  branch: z.string().nullable().optional(),
-  provider: z.string(),
-  repoFullName: z.string(),
-  roundId: z.string(),
-  status: SubmissionStatusEnum,
-  demoUrl: z.string().nullable().optional(),
-  rejectionReason: z.string().nullable().optional(),
-  isLate: z.number().int(),
-  isFinal: z.number().int(),
-  validationResults: z.string().nullable().optional(),
-  lockedAt: z.string().nullable().optional(),
-  finalizedAt: z.string().nullable().optional(),
-  submittedAt: z.string(),
-  receivedAt: z.string(),
-  webhookDeliveryId: z.string().nullable().optional(),
+export const submissionResponseSchema = z.object({
+  id: z.string().uuid(),
+  hackathon_id: z.string().uuid(),
+  team_id: z.string().uuid(),
+  round_id: z.string().uuid().nullable(),
+  tag_name: z.string(),
+  commit_sha: z.string(),
+  submitted_at: z.string().datetime(),
+  status: submissionStatusSchema,
+  validated_at: z.string().datetime().nullable(),
+  is_current: z.boolean(),
+  created_at: z.string().datetime(),
 });
 
-export type Submission = z.infer<typeof SubmissionSchema>;
+export type SubmissionResponse = z.infer<typeof submissionResponseSchema>;

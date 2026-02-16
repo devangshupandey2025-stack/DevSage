@@ -1,17 +1,16 @@
 import { z } from 'zod';
+import { sponsorTierSchema } from './constants.js';
 
-export const HackathonSponsorSchema = z.object({
-  id: z.string(),
-  hackathonId: z.string(),
-  name: z.string(),
-  tier: z.string(),
-  logoR2Key: z.string().nullable().optional(),
-  website: z.string().nullable().optional(),
-  description: z.string(),
-  sortOrder: z.number().int(),
-  createdBy: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+export const createSponsorSchema = z.object({
+  name: z.string().min(1).max(200),
+  tier: sponsorTierSchema,
+  logo_url: z.string().url().optional(),
+  website_url: z.string().url().optional(),
+  description: z.string().max(1000).optional(),
+  sort_order: z.number().int().default(0),
 });
 
-export type HackathonSponsor = z.infer<typeof HackathonSponsorSchema>;
+export const updateSponsorSchema = createSponsorSchema.partial();
+
+export type CreateSponsor = z.infer<typeof createSponsorSchema>;
+export type UpdateSponsor = z.infer<typeof updateSponsorSchema>;

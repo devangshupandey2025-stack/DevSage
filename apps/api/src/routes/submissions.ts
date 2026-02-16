@@ -1,59 +1,75 @@
 import { Hono } from 'hono';
-import type { AuthAppEnv } from '../types/auth.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { requireRole } from '../middleware/role.js';
-import { successResponse, errorResponse } from '../lib/response.js';
-import { isRecord } from '../lib/utils.js';
-import { getStateMachineStub, fetchDO } from '../lib/do-client.js';
-import { DO_PATHS } from '../lib/constants.js';
+import type { AppEnv } from '../types/env.js';
+import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
+import { hackathonContext } from '../middleware/hackathon.js';
 
-const submissions = new Hono<AuthAppEnv>();
+const submissions = new Hono<AppEnv>();
+submissions.use('/*', hackathonContext);
 
-submissions.get(
-  '/:slug/submissions',
-  authMiddleware,
-  requireRole('team_member'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const stub = getStateMachineStub(c.env, hackathon.id);
-    const result = await fetchDO(stub, DO_PATHS.submissions(hackathon.id));
+// List submissions for hackathon
+submissions.get('/', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
+  const offset = parseInt(c.req.query('offset') ?? '0');
+  const teamId = c.req.query('team_id');
+  const roundId = c.req.query('round_id');
+  const currentOnly = c.req.query('current_only') !== 'false';
 
-    if (!result.ok) {
-      const errPayload = isRecord(result.data) ? result.data : {};
-      return errorResponse(
-        c,
-        result.status as 400,
-        String(errPayload.code ?? 'SUBMISSIONS_FETCH_FAILED'),
-        String(errPayload.error ?? 'Failed to fetch submissions'),
-      );
-    }
+  let query = 'SELECT * FROM submissions WHERE hackathon_id = ?';
+  let countQuery = 'SELECT COUNT(*) as total FROM submissions WHERE hackathon_id = ?';
+  const params: unknown[] = [hackathon.id];
 
-    return successResponse(c, result.data);
-  },
-);
+  if (currentOnly) {
+    query += ' AND is_current = 1';
+    countQuery += ' AND is_current = 1';
+  }
 
-submissions.get(
-  '/:slug/submissions/:teamId',
-  authMiddleware,
-  requireRole('team_member'),
-  async (c) => {
-    const hackathon = c.get('hackathon');
-    const teamId = c.req.param('teamId');
-    const stub = getStateMachineStub(c.env, hackathon.id);
-    const result = await fetchDO(stub, DO_PATHS.submission(hackathon.id, teamId));
+  if (teamId) {
+    query += ' AND team_id = ?';
+    countQuery += ' AND team_id = ?';
+    params.push(teamId);
+  }
 
-    if (!result.ok) {
-      const errPayload = isRecord(result.data) ? result.data : {};
-      return errorResponse(
-        c,
-        result.status as 400,
-        String(errPayload.code ?? 'SUBMISSION_FETCH_FAILED'),
-        String(errPayload.error ?? 'Failed to fetch submission'),
-      );
-    }
+  if (roundId) {
+    query += ' AND round_id = ?';
+    countQuery += ' AND round_id = ?';
+    params.push(roundId);
+  }
 
-    return successResponse(c, result.data);
-  },
-);
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(query).bind(...params, limit, offset).all(),
+    c.env.DB.prepare(countQuery).bind(...params).first<{ total: number }>(),
+  ]);
+
+  return paginatedResponse(c, rows.results || [], count?.total ?? 0, limit, offset);
+});
+
+// Get specific submission
+submissions.get('/:submissionId', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const submissionId = c.req.param('submissionId');
+
+  const submission = await c.env.DB.prepare(
+    'SELECT * FROM submissions WHERE id = ? AND hackathon_id = ?'
+  ).bind(submissionId, hackathon.id).first();
+
+  if (!submission) return errorResponse(c, 404, 'NOT_FOUND', 'Submission not found');
+  return successResponse(c, submission);
+});
+
+// Get team's current submission
+submissions.get('/team/:teamId/current', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const teamId = c.req.param('teamId');
+
+  const submission = await c.env.DB.prepare(
+    'SELECT * FROM submissions WHERE hackathon_id = ? AND team_id = ? AND is_current = 1 ORDER BY created_at DESC LIMIT 1'
+  ).bind(hackathon.id, teamId).first();
+
+  if (!submission) return errorResponse(c, 404, 'NOT_FOUND', 'No submission found');
+  return successResponse(c, submission);
+});
 
 export default submissions;
