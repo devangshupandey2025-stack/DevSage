@@ -70,13 +70,13 @@
     "crons": ["0 * * * *"]
   },
 
-  // R2 (Phase 2)
-  "r2_buckets": [
-    {
-      "binding": "UPLOADS",
-      "bucket_name": "devsage-uploads"
-    }
-  ],
+  // R2 (Phase 2) — disabled until R2 is enabled on the account
+  // "r2_buckets": [
+  //   {
+  //     "binding": "UPLOADS",
+  //     "bucket_name": "devsage-uploads"
+  //   }
+  // ],
 
   // Observability
   "observability": {

@@ -10,7 +10,7 @@ export interface AppEnv {
     HACKATHON_SM: DurableObjectNamespace;
     WEBHOOK_QUEUE: Queue;
     NOTIFICATION_QUEUE: Queue;
-    UPLOADS: R2Bucket;
+    // UPLOADS: R2Bucket; // disabled until R2 is enabled
     // Secrets
     JWT_SECRET: string;
     GITHUB_CLIENT_ID: string;
