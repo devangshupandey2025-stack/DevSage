@@ -78,7 +78,7 @@ admin.get('/stats', async (c) => {
   const [users, hackathons, teams, submissions] = await Promise.all([
     c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first<{ count: number }>(),
     c.env.DB.prepare('SELECT COUNT(*) as count FROM hackathons').first<{ count: number }>(),
-    c.env.DB.prepare('SELECT COUNT(*) as count FROM teams WHERE status != ?').bind('dissolved').first<{ count: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) as count FROM teams').first<{ count: number }>(),
     c.env.DB.prepare('SELECT COUNT(*) as count FROM submissions').first<{ count: number }>(),
   ]);
 

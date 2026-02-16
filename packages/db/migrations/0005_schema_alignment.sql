@@ -109,8 +109,7 @@ DROP INDEX IF EXISTS `idx_audit_action`;
 CREATE INDEX `idx_audit_event_type` ON `audit_events` (`event_type`);
 --> statement-breakpoint
 
--- Add sequence column to audit_events (for hash-chain ordering)
-ALTER TABLE `audit_events` ADD COLUMN `sequence` integer;
+-- sequence column already exists from 0002_v3_clean_reset.sql — skipping
 --> statement-breakpoint
 
 -- Add actor_ip as alias for ip_address (PRD uses actor_ip)
