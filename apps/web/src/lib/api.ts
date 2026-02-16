@@ -23,8 +23,12 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
     },
   });
 
-  // Silent token refresh on 401
+  // Silent token refresh on 401 (skip in dev — auth is bypassed)
   if (response.status === 401 && !isAuthCheck && !isAuthRefresh) {
+    if (import.meta.env.DEV) {
+      throw new ApiError(401, 'Unauthorized (dev bypass — no redirect)');
+    }
+
     const refreshUrl = apiOrigin ? `${apiOrigin}/auth/refresh` : '/auth/refresh';
     const refreshRes = await fetch(refreshUrl, {
       method: 'POST',
