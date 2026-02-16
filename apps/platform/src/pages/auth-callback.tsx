@@ -21,7 +21,7 @@ export function AuthCallbackPage() {
     <div className="flex h-screen w-full items-center justify-center bg-black text-white">
         <div className="flex flex-col items-center gap-4">
             <Skeleton className="h-12 w-12 rounded-full bg-white/10" />
-            <p className="text-white/60">Authenticating...</p>
+            <p className="text-white/60">Redirecting...</p>
         </div>
     </div>
   );

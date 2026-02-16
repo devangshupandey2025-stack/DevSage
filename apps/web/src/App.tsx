@@ -3,8 +3,8 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { ProtectedRoute } from '@/components/protected-route';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoginPage } from '@/pages/login';
+import { RegisterPage } from '@/pages/register';
 import { AuthCallbackPage } from '@/pages/auth-callback';
-import { LinkRequiredPage } from '@/pages/link-required';
 import { AboutPage } from '@/pages/about';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
@@ -26,8 +26,8 @@ const LazyWrapper = ({ children }: { children: React.ReactNode }) => (
 const router = createBrowserRouter([
   { path: '/', element: <LazyWrapper><HomePage /></LazyWrapper> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
   { path: '/auth/callback', element: <AuthCallbackPage /> },
-  { path: '/link-required', element: <LinkRequiredPage /> },
   { path: '/about', element: <AboutPage /> },
   { path: '/hackathons', element: <LazyWrapper><BrowseHackathonsPage /></LazyWrapper> },
 

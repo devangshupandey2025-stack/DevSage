@@ -45,7 +45,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
   }, []);
 
   const initial =
-    user?.display_name?.charAt(0)?.toUpperCase() ??
+    user?.name?.charAt(0)?.toUpperCase() ??
     user?.email?.charAt(0)?.toUpperCase() ??
     '?';
 
@@ -114,7 +114,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
               </span>
             )}
             <span className="hidden sm:block text-sm font-medium text-white/70 max-w-[100px] truncate">
-              {user?.display_name ?? 'User'}
+              {user?.name ?? 'User'}
             </span>
             <ChevronDown
               className={`h-3.5 w-3.5 text-white/30 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`}
@@ -132,7 +132,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
               >
                 <div className="border-b border-white/[0.06] px-4 py-3">
                   <p className="truncate text-sm font-semibold text-white">
-                    {user?.display_name ?? 'User'}
+                    {user?.name ?? 'User'}
                   </p>
                   <p className="truncate text-xs text-white/40">{user?.email}</p>
                 </div>

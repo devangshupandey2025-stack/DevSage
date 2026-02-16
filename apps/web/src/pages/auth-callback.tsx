@@ -4,30 +4,24 @@ import { useAuth } from '@/contexts/auth-context';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export function AuthCallbackPage() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!isLoading) {
-      if (isAuthenticated && user) {
-        // If user signed in via Google but has no linked GitHub account,
-        // redirect to the link-required page
-        if (!user.github_username) {
-          navigate('/link-required');
-        } else {
-          navigate('/dashboard');
-        }
+      if (isAuthenticated) {
+        navigate('/dashboard');
       } else {
         navigate('/login');
       }
     }
-  }, [isLoading, isAuthenticated, user, navigate]);
+  }, [isLoading, isAuthenticated, navigate]);
 
   return (
     <div className="flex h-screen w-full items-center justify-center">
         <div className="flex flex-col items-center gap-4">
             <Skeleton className="h-12 w-12 rounded-full" />
-            <p className="text-muted-foreground">Authenticating...</p>
+            <p className="text-muted-foreground">Redirecting...</p>
         </div>
     </div>
   );

@@ -14,7 +14,7 @@ function AccessDenied() {
         </div>
         <h1 className="text-2xl font-bold text-white">Access Denied</h1>
         <p className="mt-3 text-white/60">
-          You are signed in as <span className="text-white">{user?.display_name || user?.github_username}</span>, but
+          You are signed in as <span className="text-white">{user?.name || user?.email}</span>, but
           this account does not have organizer access.
         </p>
         <p className="mt-2 text-sm text-white/40">

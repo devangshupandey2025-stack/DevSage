@@ -1,5 +1,5 @@
 import { useAuth } from '@/contexts/auth-context';
-import { Mail, Shield, Calendar, Github } from 'lucide-react';
+import { Mail, Shield, Calendar } from 'lucide-react';
 
 export function ProfilePage() {
   const { user, isLoading } = useAuth();
@@ -63,19 +63,19 @@ export function ProfilePage() {
               {user.avatar_url ? (
                 <img
                   src={user.avatar_url}
-                  alt={user.display_name}
+                  alt={user.name}
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-[#CCFF00]/10 text-xl font-bold text-[#CCFF00]">
-                  {getInitials(user.display_name)}
+                  {getInitials(user.name)}
                 </div>
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <span className="text-2xl font-bold text-white">{user.display_name}</span>
+              <span className="text-2xl font-bold text-white">{user.name}</span>
               <span className="inline-flex w-fit rounded-full border border-[#CCFF00]/30 bg-[#CCFF00]/10 px-3 py-0.5 text-xs font-semibold text-[#CCFF00]">
-                @{user.github_username}
+                {user.email}
               </span>
             </div>
           </div>
@@ -104,13 +104,13 @@ export function ProfilePage() {
           <div className="grid gap-3">
             <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/3 px-4 py-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#CCFF00]/10">
-                <Github className="h-4 w-4 text-[#CCFF00]" />
+                <Shield className="h-4 w-4 text-[#CCFF00]" />
               </div>
               <div className="flex flex-col">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-white/40">
-                  Sign-in Provider
+                  Sign-in Method
                 </span>
-                <span className="text-sm font-medium text-white/90">GitHub{user.email ? ' + Google' : ''}</span>
+                <span className="text-sm font-medium text-white/90">Email &amp; Password</span>
               </div>
             </div>
 

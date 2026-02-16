@@ -30,9 +30,6 @@ export type WorkspaceType = z.infer<typeof workspaceTypeSchema>;
 export const auditActorTypeSchema = z.enum(['user', 'system', 'bot', 'cron']);
 export type AuditActorType = z.infer<typeof auditActorTypeSchema>;
 
-export const authProviderSchema = z.enum(['github', 'google']);
-export type AuthProvider = z.infer<typeof authProviderSchema>;
-
 export const sponsorTierSchema = z.enum(['platinum', 'gold', 'silver', 'bronze']);
 export type SponsorTier = z.infer<typeof sponsorTierSchema>;
 

@@ -4,178 +4,128 @@ import type { AppEnv } from '../types/env.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
 import { createRefreshToken, rotateRefreshToken, revokeTokenFamily, revokeAllUserTokens, hashToken, generateFamilyId } from '../lib/refresh-token.js';
 import { setAccessTokenCookie, setRefreshTokenCookie, clearAuthCookies } from '../lib/cookies.js';
-import { getGitHubAuthUrl, getGoogleAuthUrl, exchangeGitHubCode, exchangeGoogleCode, getGitHubUserInfo, getGoogleUserInfo } from '../lib/oauth.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { hashPassword, verifyPassword } from '../lib/password.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { rateLimitMiddleware } from '../middleware/rate-limit.js';
 
 const auth = new Hono<AppEnv>();
 
-// Rate limit all auth endpoints
 auth.use('/*', rateLimitMiddleware('auth'));
 
-// GitHub OAuth
-auth.get('/github', async (c) => {
-  const state = crypto.randomUUID();
-  const redirectUri = `${c.env.API_URL}/auth/github/callback`;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 8;
 
-  await c.env.KV.put(`oauth:state:${state}`, 'github', { expirationTtl: 600 });
+auth.post('/register', async (c) => {
+  const body = await c.req.json<{ email?: string; name?: string; password?: string }>();
 
-  const url = getGitHubAuthUrl(c.env.GITHUB_CLIENT_ID, state, redirectUri);
-  return c.redirect(url);
+  const email = body.email?.trim().toLowerCase();
+  const name = body.name?.trim();
+  const password = body.password;
+
+  if (!email || !EMAIL_REGEX.test(email)) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Valid email is required');
+  }
+  if (!name || name.length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name is required');
+  }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE email = ?'
+  ).bind(email).first<{ id: string }>();
+
+  if (existing) {
+    return errorResponse(c, 409, 'CONFLICT', 'Email already registered');
+  }
+
+  const id = crypto.randomUUID();
+  const passwordHash = await hashPassword(password);
+
+  await c.env.DB.prepare(
+    'INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)'
+  ).bind(id, email, name, passwordHash).run();
+
+  const familyId = generateFamilyId();
+  const refreshToken = await createRefreshToken(c.env.DB, id, familyId);
+  const jwt = await signJWT({ sub: id, fam: familyId }, c.env.JWT_SECRET);
+
+  setAccessTokenCookie(c, jwt);
+  setRefreshTokenCookie(c, refreshToken);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: id,
+      actor_type: 'user',
+      event_type: 'auth.signup',
+      entity_type: 'user',
+      entity_id: id,
+    })
+  );
+
+  return successResponse(c, { id, email, name }, { status: 201 });
 });
 
-auth.get('/github/callback', async (c) => {
-  const code = c.req.query('code');
-  const state = c.req.query('state');
+auth.post('/login', async (c) => {
+  const body = await c.req.json<{ email?: string; password?: string }>();
 
-  if (!code || !state) {
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=missing_params`);
+  const email = body.email?.trim().toLowerCase();
+  const password = body.password;
+
+  if (!email || !password) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and password are required');
   }
 
-  // Verify state
-  const storedState = await c.env.KV.get(`oauth:state:${state}`);
-  if (storedState !== 'github') {
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=invalid_state`);
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, name, password_hash, avatar_url FROM users WHERE email = ?'
+  ).bind(email).first<{ id: string; email: string; name: string; password_hash: string; avatar_url: string | null }>();
+
+  if (!user) {
+    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
-  await c.env.KV.delete(`oauth:state:${state}`);
 
-  try {
-    const accessToken = await exchangeGitHubCode(code, c.env.GITHUB_CLIENT_ID, c.env.GITHUB_CLIENT_SECRET);
-    const userInfo = await getGitHubUserInfo(accessToken);
-
-    const { user, isNew } = await findOrCreateUser(c.env.DB, {
-      email: userInfo.email,
-      name: userInfo.name,
-      avatar_url: userInfo.avatar_url,
-      github_id: userInfo.github_id,
-      github_username: userInfo.github_username,
-      auth_provider: 'github',
-    });
-
-    // Issue tokens
-    const familyId = generateFamilyId();
-    const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
-    const jwt = await signJWT({
-      sub: user.id,
-      ghid: user.github_id,
-      ghu: user.github_username,
-      fam: familyId,
-    }, c.env.JWT_SECRET);
-
-    setAccessTokenCookie(c, jwt);
-    setRefreshTokenCookie(c, refreshToken);
-
-    // Update last login
-    await c.env.DB.prepare(
-      'UPDATE users SET last_login_at = ? WHERE id = ?'
-    ).bind(new Date().toISOString(), user.id).run();
-
-    // Audit
-    c.executionCtx.waitUntil(
-      insertAuditEvent(c.env.DB, {
-        actor_id: user.id,
-        actor_type: 'user',
-        event_type: isNew ? 'auth.signup' : 'auth.login',
-        entity_type: 'user',
-        entity_id: user.id,
-        metadata: { provider: 'github' },
-      })
-    );
-
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/callback`);
-  } catch (err) {
-    console.error('GitHub OAuth error:', err instanceof Error ? err.message : err);
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=oauth_failed`);
+  const valid = await verifyPassword(password, user.password_hash);
+  if (!valid) {
+    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
+
+  const familyId = generateFamilyId();
+  const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
+  const jwt = await signJWT({ sub: user.id, fam: familyId }, c.env.JWT_SECRET);
+
+  setAccessTokenCookie(c, jwt);
+  setRefreshTokenCookie(c, refreshToken);
+
+  await c.env.DB.prepare(
+    'UPDATE users SET last_login_at = ? WHERE id = ?'
+  ).bind(new Date().toISOString(), user.id).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id,
+      actor_type: 'user',
+      event_type: 'auth.login',
+      entity_type: 'user',
+      entity_id: user.id,
+    })
+  );
+
+  return successResponse(c, { id: user.id, email: user.email, name: user.name });
 });
 
-// Google OAuth
-auth.get('/google', async (c) => {
-  const state = crypto.randomUUID();
-  const redirectUri = `${c.env.API_URL}/auth/google/callback`;
-
-  await c.env.KV.put(`oauth:state:${state}`, 'google', { expirationTtl: 600 });
-
-  const url = getGoogleAuthUrl(c.env.GOOGLE_CLIENT_ID, state, redirectUri);
-  return c.redirect(url);
-});
-
-auth.get('/google/callback', async (c) => {
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-
-  if (!code || !state) {
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=missing_params`);
-  }
-
-  const storedState = await c.env.KV.get(`oauth:state:${state}`);
-  if (storedState !== 'google') {
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=invalid_state`);
-  }
-  await c.env.KV.delete(`oauth:state:${state}`);
-
-  try {
-    const redirectUri = `${c.env.API_URL}/auth/google/callback`;
-    const accessToken = await exchangeGoogleCode(code, c.env.GOOGLE_CLIENT_ID, c.env.GOOGLE_CLIENT_SECRET, redirectUri);
-    const userInfo = await getGoogleUserInfo(accessToken);
-
-    const { user, isNew } = await findOrCreateUser(c.env.DB, {
-      email: userInfo.email,
-      name: userInfo.name,
-      avatar_url: userInfo.avatar_url,
-      google_id: userInfo.google_id,
-      auth_provider: 'google',
-    });
-
-    const familyId = generateFamilyId();
-    const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
-    const jwt = await signJWT({
-      sub: user.id,
-      ghid: user.github_id ?? null,
-      ghu: user.github_username ?? null,
-      fam: familyId,
-    }, c.env.JWT_SECRET);
-
-    setAccessTokenCookie(c, jwt);
-    setRefreshTokenCookie(c, refreshToken);
-
-    await c.env.DB.prepare(
-      'UPDATE users SET last_login_at = ? WHERE id = ?'
-    ).bind(new Date().toISOString(), user.id).run();
-
-    c.executionCtx.waitUntil(
-      insertAuditEvent(c.env.DB, {
-        actor_id: user.id,
-        actor_type: 'user',
-        event_type: isNew ? 'auth.signup' : 'auth.login',
-        entity_type: 'user',
-        entity_id: user.id,
-        metadata: { provider: 'google' },
-      })
-    );
-
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/callback`);
-  } catch (err) {
-    console.error('Google OAuth error:', err instanceof Error ? err.message : err);
-    return c.redirect(`${c.env.FRONTEND_URL}/auth/error?reason=oauth_failed`);
-  }
-});
-
-// Refresh token
 auth.post('/refresh', async (c) => {
   const token = getCookie(c, 'refresh_token');
   if (!token) {
     return errorResponse(c, 401, 'AUTH_REQUIRED', 'No refresh token');
   }
 
-  // Get user from current access token (may be expired but that's ok, we check refresh token)
   const accessToken = getCookie(c, 'access_token');
   let userId: string | null = null;
 
   if (accessToken) {
-    // Try to decode even if expired — we just need the sub claim
     try {
       const parts = accessToken.split('.');
       if (parts.length === 3) {
@@ -189,7 +139,6 @@ auth.post('/refresh', async (c) => {
   }
 
   if (!userId) {
-    // Try to find user from refresh token hash
     const tokenHash = await hashToken(token);
     const record = await c.env.DB.prepare(
       'SELECT user_id FROM refresh_tokens WHERE token_hash = ?'
@@ -207,10 +156,9 @@ auth.post('/refresh', async (c) => {
     return errorResponse(c, 401, 'TOKEN_EXPIRED', 'Refresh token expired or revoked');
   }
 
-  // Get user data for new JWT
   const user = await c.env.DB.prepare(
-    'SELECT id, github_id, github_username FROM users WHERE id = ?'
-  ).bind(userId).first<{ id: string; github_id: number | null; github_username: string | null }>();
+    'SELECT id FROM users WHERE id = ?'
+  ).bind(userId).first<{ id: string }>();
 
   if (!user) {
     clearAuthCookies(c);
@@ -219,8 +167,6 @@ auth.post('/refresh', async (c) => {
 
   const jwt = await signJWT({
     sub: user.id,
-    ghid: user.github_id,
-    ghu: user.github_username,
     fam: result.familyId,
   }, c.env.JWT_SECRET);
 
@@ -230,7 +176,6 @@ auth.post('/refresh', async (c) => {
   return successResponse(c, { refreshed: true });
 });
 
-// Logout
 auth.post('/logout', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const accessToken = getCookie(c, 'access_token');
@@ -257,10 +202,31 @@ auth.post('/logout', authMiddleware, async (c) => {
   return successResponse(c, { logged_out: true });
 });
 
-// Get current user
 auth.get('/me', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  return successResponse(c, user);
+
+  const adminRow = await c.env.DB.prepare(
+    'SELECT id FROM platform_admins WHERE user_id = ? LIMIT 1'
+  ).bind(user.id).first<{ id: string }>();
+  const isPlatformAdmin = !!adminRow;
+
+  const orgRow = await c.env.DB.prepare(
+    'SELECT id FROM organizer_roles WHERE user_id = ? LIMIT 1'
+  ).bind(user.id).first<{ id: string }>();
+  const isOrganizer = !!orgRow;
+
+  return successResponse(c, {
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      created_at: user.created_at,
+    },
+    roles: [],
+    isPlatformAdmin,
+    isOrganizer,
+  });
 });
 
 // List sessions
@@ -361,70 +327,5 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
 
   return successResponse(c, { deleted: true });
 });
-
-// Helper: find or create user with account linking
-async function findOrCreateUser(
-  db: D1Database,
-  info: {
-    email: string; name: string; avatar_url: string | null;
-    github_id?: number; github_username?: string;
-    google_id?: string; auth_provider: 'github' | 'google';
-  }
-): Promise<{ user: { id: string; github_id: number | null; github_username: string | null }; isNew: boolean }> {
-  // Try to find by provider-specific ID first
-  let existing: { id: string; github_id: number | null; github_username: string | null } | null = null;
-
-  if (info.github_id) {
-    existing = await db.prepare(
-      'SELECT id, github_id, github_username FROM users WHERE github_id = ?'
-    ).bind(info.github_id).first();
-  } else if (info.google_id) {
-    existing = await db.prepare(
-      'SELECT id, github_id, github_username FROM users WHERE google_id = ?'
-    ).bind(info.google_id).first();
-  }
-
-  if (existing) {
-    return { user: existing, isNew: false };
-  }
-
-  // Try to find by email (account linking)
-  existing = await db.prepare(
-    'SELECT id, github_id, github_username FROM users WHERE email = ?'
-  ).bind(info.email).first();
-
-  if (existing) {
-    // Link additional provider
-    if (info.github_id) {
-      await db.prepare(
-        'UPDATE users SET github_id = ?, github_username = ?, avatar_url = COALESCE(avatar_url, ?) WHERE id = ?'
-      ).bind(info.github_id, info.github_username ?? null, info.avatar_url, existing.id).run();
-      existing.github_id = info.github_id;
-      existing.github_username = info.github_username ?? null;
-    } else if (info.google_id) {
-      await db.prepare(
-        'UPDATE users SET google_id = ?, avatar_url = COALESCE(avatar_url, ?) WHERE id = ?'
-      ).bind(info.google_id, info.avatar_url, existing.id).run();
-    }
-    return { user: existing, isNew: false };
-  }
-
-  // Create new user
-  const id = crypto.randomUUID();
-  await db.prepare(
-    `INSERT INTO users (id, email, name, github_id, github_username, google_id, avatar_url, auth_provider)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    id, info.email, info.name,
-    info.github_id ?? null, info.github_username ?? null,
-    info.google_id ?? null, info.avatar_url,
-    info.auth_provider
-  ).run();
-
-  return {
-    user: { id, github_id: info.github_id ?? null, github_username: info.github_username ?? null },
-    isNew: true,
-  };
-}
 
 export default auth;

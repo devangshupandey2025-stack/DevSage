@@ -190,7 +190,7 @@ export function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Welcome back, ${user?.display_name?.split(' ')[0] ?? 'Organizer'}`}
+        title={`Welcome back, ${user?.name?.split(' ')[0] ?? 'Organizer'}`}
         description="Manage your hackathons, track teams, and monitor progress."
         actions={
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

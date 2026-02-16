@@ -26,7 +26,7 @@ export function DashboardLayout() {
       ? 'text-[#CCFF00] font-semibold'
       : 'text-white/60 hover:text-white';
 
-  const initial = user?.display_name?.charAt(0)?.toUpperCase() ?? user?.email?.charAt(0)?.toUpperCase() ?? '?';
+  const initial = user?.name?.charAt(0)?.toUpperCase() ?? user?.email?.charAt(0)?.toUpperCase() ?? '?';
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -81,7 +81,7 @@ export function DashboardLayout() {
               <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-black/95 shadow-2xl backdrop-blur-xl">
                 {/* User info header */}
                 <div className="border-b border-white/10 px-4 py-3">
-                  <p className="truncate text-sm font-semibold text-white">{user?.display_name ?? 'User'}</p>
+                  <p className="truncate text-sm font-semibold text-white">{user?.name ?? 'User'}</p>
                   <p className="truncate text-xs text-white/50">{user?.email}</p>
                 </div>
 

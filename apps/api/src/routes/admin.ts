@@ -13,7 +13,7 @@ admin.get('/users', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
   const offset = parseInt(c.req.query('offset') ?? '0');
   const [rows, count] = await Promise.all([
-    c.env.DB.prepare('SELECT id, email, name, github_username, auth_provider, created_at, last_login_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    c.env.DB.prepare('SELECT id, email, name, avatar_url, created_at, last_login_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind(limit, offset).all(),
     c.env.DB.prepare('SELECT COUNT(*) as total FROM users').first<{ total: number }>(),
   ]);

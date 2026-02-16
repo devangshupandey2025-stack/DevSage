@@ -117,7 +117,7 @@ teams.get('/:teamId/members', async (c) => {
 
   const members = await c.env.DB.prepare(`
     SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
-           u.name, u.email, u.github_username, u.avatar_url
+           u.name, u.email, u.avatar_url
     FROM team_members tm
     JOIN users u ON tm.user_id = u.id
     WHERE tm.team_id = ?

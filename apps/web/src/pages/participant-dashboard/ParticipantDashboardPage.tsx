@@ -150,7 +150,7 @@ export function ParticipantDashboardPage() {
         hackathon={hackathon}
         phase={phase!}
         team={team ?? null}
-        userName={user?.display_name?.split(' ')[0] ?? 'there'}
+        userName={user?.name?.split(' ')[0] ?? 'there'}
       />
 
       {/* Deadline countdown bar */}

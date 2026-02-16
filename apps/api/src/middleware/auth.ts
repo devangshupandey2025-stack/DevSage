@@ -32,12 +32,10 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     return next();
   }
 
-  // Fetch user from DB
   const user = await c.env.DB.prepare(
-    'SELECT id, email, name, github_id, github_username, avatar_url FROM users WHERE id = ?'
+    'SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?'
   ).bind(payload.sub).first<{
-    id: string; email: string; name: string;
-    github_id: number | null; github_username: string | null; avatar_url: string | null;
+    id: string; email: string; name: string; avatar_url: string | null; created_at: string;
   }>();
 
   if (!user) {

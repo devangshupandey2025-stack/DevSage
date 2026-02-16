@@ -23,17 +23,17 @@ export function ProfilePage() {
             {user.avatar_url ? (
               <img
                 src={user.avatar_url}
-                alt={user.display_name}
+                alt={user.name}
                 className="h-20 w-20 rounded-full object-cover border-2 border-[#CCFF00]/20"
               />
             ) : (
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#CCFF00] text-2xl font-bold text-black">
-                {user.display_name?.charAt(0).toUpperCase()}
+                {user.name?.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <h2 className="text-xl font-bold text-white">{user.display_name}</h2>
-              <p className="text-white/60">@{user.github_username}</p>
+              <h2 className="text-xl font-bold text-white">{user.name}</h2>
+              <p className="text-white/60">{user.email}</p>
             </div>
           </div>
 
@@ -43,8 +43,8 @@ export function ProfilePage() {
               <p className="text-white">{user.email || 'Not provided'}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium text-white/60">GitHub ID</p>
-              <p className="text-white">{user.github_id}</p>
+              <p className="text-sm font-medium text-white/60">Auth Method</p>
+              <p className="text-white">Email &amp; Password</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium text-white/60">Joined</p>

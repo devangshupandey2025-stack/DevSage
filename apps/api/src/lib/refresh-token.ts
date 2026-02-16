@@ -34,8 +34,8 @@ export async function createRefreshToken(
   const expiresAt = getRefreshTokenExpiry();
 
   await db.prepare(
-    `INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)`
-  ).bind(id, userId, familyId, tokenHash, expiresAt).run();
+    `INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, userId, familyId, tokenHash, expiresAt, new Date().toISOString()).run();
 
   return token;
 }

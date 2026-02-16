@@ -13,10 +13,6 @@ export interface AppEnv {
     // UPLOADS: R2Bucket; // disabled until R2 is enabled
     // Secrets
     JWT_SECRET: string;
-    GITHUB_CLIENT_ID: string;
-    GITHUB_CLIENT_SECRET: string;
-    GOOGLE_CLIENT_ID: string;
-    GOOGLE_CLIENT_SECRET: string;
     GITHUB_WEBHOOK_SECRET: string;
     RESEND_API_KEY: string;
     // Dev-only (set in .dev.vars, never in production)
@@ -40,9 +36,8 @@ export interface UserContext {
   id: string;
   email: string;
   name: string;
-  github_id: number | null;
-  github_username: string | null;
   avatar_url: string | null;
+  created_at: string;
 }
 
 export interface HackathonContext {

@@ -3,10 +3,8 @@ import { apiRequest } from '@/lib/api';
 
 interface User {
   id: string;
-  github_id: number;
-  github_username: string;
-  display_name: string;
-  email: string | null;
+  email: string;
+  name: string;
   avatar_url: string | null;
   created_at: string;
 }
@@ -33,10 +31,8 @@ interface AuthContextType {
 
 const DEV_USER: User = {
   id: '00000000-0000-0000-0000-dev000000000',
-  github_id: 0,
-  github_username: 'dev-user',
-  display_name: 'Dev User',
   email: 'dev@localhost',
+  name: 'Dev User',
   avatar_url: null,
   created_at: new Date().toISOString(),
 };

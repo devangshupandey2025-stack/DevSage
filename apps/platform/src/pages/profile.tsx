@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/auth-context';
 import { PageHeader } from '@/components/common';
-import { Github, Mail, Calendar, Hash, Shield, LogOut } from 'lucide-react';
+import { Mail, Calendar, Hash, Shield, LogOut } from 'lucide-react';
 
 const container = {
   hidden: { opacity: 0 },
@@ -29,16 +29,16 @@ export function ProfilePage() {
             {user.avatar_url ? (
               <img
                 src={user.avatar_url}
-                alt={user.display_name}
+                alt={user.name}
                 className="h-20 w-20 rounded-2xl border-2 border-[#CCFF00]/15 object-cover"
               />
             ) : (
               <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#CCFF00] text-black text-2xl font-black">
-                {user.display_name?.charAt(0).toUpperCase()}
+                {user.name?.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <h2 className="text-xl font-black text-white/90">{user.display_name}</h2>
+              <h2 className="text-xl font-black text-white/90">{user.name}</h2>
               <p className="text-sm text-white/40 mt-0.5">{user.email}</p>
               <div className="flex gap-2 mt-3">
                 {isPlatformAdmin && (
@@ -59,7 +59,7 @@ export function ProfilePage() {
         {/* Details grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { icon: Github, label: 'GitHub Username', value: user.github_username || '—' },
+            { icon: Shield, label: 'Name', value: user.name || '—' },
             { icon: Mail, label: 'Email', value: user.email || '—' },
             { icon: Hash, label: 'User ID', value: user.id, mono: true },
             { icon: Calendar, label: 'Joined', value: new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) },
