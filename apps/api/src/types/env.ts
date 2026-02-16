@@ -47,4 +47,4 @@ export interface HackathonContext {
   status: string;
 }
 
-export type HackathonRole = 'organizer' | 'co_organizer' | 'judge' | 'team_lead' | 'team_member' | 'anonymous';
+export type HackathonRole = 'organizer' | 'co_organizer' | 'judge' | 'leader' | 'member' | 'anonymous';

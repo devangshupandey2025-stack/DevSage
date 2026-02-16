@@ -60,7 +60,7 @@ auth.post('/register', async (c) => {
     insertAuditEvent(c.env.DB, {
       actor_id: id,
       actor_type: 'user',
-      event_type: 'auth.signup',
+      action: 'auth.signup',
       entity_type: 'user',
       entity_id: id,
     })
@@ -107,7 +107,7 @@ auth.post('/login', async (c) => {
     insertAuditEvent(c.env.DB, {
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'auth.login',
+      action: 'auth.login',
       entity_type: 'user',
       entity_id: user.id,
     })
@@ -193,7 +193,7 @@ auth.post('/logout', authMiddleware, async (c) => {
     insertAuditEvent(c.env.DB, {
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'auth.logout',
+      action: 'auth.logout',
       entity_type: 'user',
       entity_id: user.id,
     })
@@ -319,7 +319,7 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
     insertAuditEvent(c.env.DB, {
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'auth.account_deleted',
+      action: 'auth.account_deleted',
       entity_type: 'user',
       entity_id: user.id,
     })

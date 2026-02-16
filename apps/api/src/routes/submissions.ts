@@ -20,8 +20,8 @@ submissions.get('/', async (c) => {
   const params: unknown[] = [hackathon.id];
 
   if (currentOnly) {
-    query += ' AND is_current = 1';
-    countQuery += ' AND is_current = 1';
+    query += ' AND is_final = 1';
+    countQuery += ' AND is_final = 1';
   }
 
   if (teamId) {
@@ -36,7 +36,7 @@ submissions.get('/', async (c) => {
     params.push(roundId);
   }
 
-  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  query += ' ORDER BY submitted_at DESC LIMIT ? OFFSET ?';
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(query).bind(...params, limit, offset).all(),
@@ -65,7 +65,7 @@ submissions.get('/team/:teamId/current', async (c) => {
   const teamId = c.req.param('teamId');
 
   const submission = await c.env.DB.prepare(
-    'SELECT * FROM submissions WHERE hackathon_id = ? AND team_id = ? AND is_current = 1 ORDER BY created_at DESC LIMIT 1'
+    'SELECT * FROM submissions WHERE hackathon_id = ? AND team_id = ? AND is_final = 1 ORDER BY submitted_at DESC LIMIT 1'
   ).bind(hackathon.id, teamId).first();
 
   if (!submission) return errorResponse(c, 404, 'NOT_FOUND', 'No submission found');

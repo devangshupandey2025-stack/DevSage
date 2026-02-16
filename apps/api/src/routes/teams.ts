@@ -29,7 +29,7 @@ teams.post('/', authMiddleware, async (c) => {
   const existingTeam = await c.env.DB.prepare(`
     SELECT t.id FROM teams t
     JOIN team_members tm ON tm.team_id = t.id
-    WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+    WHERE t.hackathon_id = ? AND tm.user_id = ?
   `).bind(hackathon.id, user.id).first();
 
   if (existingTeam) {
@@ -38,8 +38,8 @@ teams.post('/', authMiddleware, async (c) => {
 
   // Check max_teams limit
   const teamCount = await c.env.DB.prepare(
-    'SELECT COUNT(*) as count FROM teams WHERE hackathon_id = ? AND status != ?'
-  ).bind(hackathon.id, 'dissolved').first<{ count: number }>();
+    'SELECT COUNT(*) as count FROM teams WHERE hackathon_id = ?'
+  ).bind(hackathon.id).first<{ count: number }>();
 
   const maxTeams = await c.env.DB.prepare(
     'SELECT max_teams FROM hackathons WHERE id = ?'
@@ -55,24 +55,24 @@ teams.post('/', authMiddleware, async (c) => {
 
   // Create team
   await c.env.DB.prepare(
-    `INSERT INTO teams (id, hackathon_id, name, invite_code, track_id, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'forming', ?, ?)`
+    `INSERT INTO teams (id, hackathon_id, name, description, invite_code, track_id, created_at, updated_at)
+     VALUES (?, ?, ?, '', ?, ?, ?, ?)`
   ).bind(teamId, hackathon.id, body.name, inviteCode, body.track_id ?? null, now, now).run();
 
-  // Add creator as team_lead
+  // Add creator as leader
   await c.env.DB.prepare(
-    'INSERT INTO team_members (id, team_id, user_id, role) VALUES (?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), teamId, user.id, 'team_lead').run();
+    'INSERT INTO team_members (id, team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), teamId, user.id, 'leader', now).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.created',
+      action: 'team.created',
       entity_type: 'team',
       entity_id: teamId,
-      metadata: { name: body.name },
+      details: { name: body.name },
     })
   );
 
@@ -88,11 +88,11 @@ teams.get('/', async (c) => {
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(
-      'SELECT * FROM teams WHERE hackathon_id = ? AND status != ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    ).bind(hackathon.id, 'dissolved', limit, offset).all(),
+      'SELECT * FROM teams WHERE hackathon_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).bind(hackathon.id, limit, offset).all(),
     c.env.DB.prepare(
-      'SELECT COUNT(*) as total FROM teams WHERE hackathon_id = ? AND status != ?'
-    ).bind(hackathon.id, 'dissolved').first<{ total: number }>(),
+      'SELECT COUNT(*) as total FROM teams WHERE hackathon_id = ?'
+    ).bind(hackathon.id).first<{ total: number }>(),
   ]);
 
   return paginatedResponse(c, rows.results || [], count?.total ?? 0, limit, offset);
@@ -139,24 +139,20 @@ teams.post('/join', authMiddleware, async (c) => {
 
   // Find team by invite code in this hackathon
   const team = await c.env.DB.prepare(
-    'SELECT id, name, hackathon_id, status FROM teams WHERE invite_code = ? AND hackathon_id = ?'
+    'SELECT id, name, hackathon_id FROM teams WHERE invite_code = ? AND hackathon_id = ?'
   ).bind(body.invite_code, hackathon.id).first<{
-    id: string; name: string; hackathon_id: string; status: string;
+    id: string; name: string; hackathon_id: string;
   }>();
 
   if (!team) {
     return errorResponse(c, 404, 'INVALID_INVITE_CODE', 'Invalid invite code');
   }
 
-  if (team.status === 'dissolved') {
-    return errorResponse(c, 409, 'TEAM_DISSOLVED', 'This team has been dissolved');
-  }
-
   // Check if already on a team
   const existingTeam = await c.env.DB.prepare(`
     SELECT t.id FROM teams t
     JOIN team_members tm ON tm.team_id = t.id
-    WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+    WHERE t.hackathon_id = ? AND tm.user_id = ?
   `).bind(hackathon.id, user.id).first();
 
   if (existingTeam) {
@@ -179,8 +175,8 @@ teams.post('/join', authMiddleware, async (c) => {
   // Atomic join: INSERT with guards
   const memberId = crypto.randomUUID();
   await c.env.DB.prepare(
-    'INSERT INTO team_members (id, team_id, user_id, role) VALUES (?, ?, ?, ?)'
-  ).bind(memberId, team.id, user.id, 'team_member').run();
+    'INSERT INTO team_members (id, team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(memberId, team.id, user.id, 'member', new Date().toISOString()).run();
 
   // Notify
   c.executionCtx.waitUntil(
@@ -197,7 +193,7 @@ teams.post('/join', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.member_joined',
+      action: 'team.member_joined',
       entity_type: 'team',
       entity_id: team.id,
     })
@@ -206,7 +202,7 @@ teams.post('/join', authMiddleware, async (c) => {
   return successResponse(c, { joined: true, team_id: team.id }, { status: 201 });
 });
 
-// Update team (team_lead or co_organizer+)
+// Update team (leader or co_organizer+)
 teams.patch('/:teamId', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
@@ -215,7 +211,7 @@ teams.patch('/:teamId', authMiddleware, async (c) => {
   // Check permission (team lead or organizer)
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     // Check if organizer
@@ -250,7 +246,7 @@ teams.patch('/:teamId', authMiddleware, async (c) => {
   return successResponse(c, updated);
 });
 
-// Remove team member (team_lead or organizer)
+// Remove team member (leader or organizer)
 teams.delete('/:teamId/members/:userId', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
@@ -260,7 +256,7 @@ teams.delete('/:teamId/members/:userId', authMiddleware, async (c) => {
   // Check permission
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     const isOrg = await c.env.DB.prepare(
@@ -285,10 +281,10 @@ teams.delete('/:teamId/members/:userId', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.member_removed',
+      action: 'team.member_removed',
       entity_type: 'team',
       entity_id: teamId,
-      metadata: { removed_user_id: targetUserId },
+      details: { removed_user_id: targetUserId },
     })
   );
 
@@ -309,7 +305,7 @@ teams.post('/:teamId/leave', authMiddleware, async (c) => {
     return errorResponse(c, 404, 'NOT_FOUND', 'You are not a member of this team');
   }
 
-  if (membership.role === 'team_lead') {
+  if (membership.role === 'leader') {
     return errorResponse(c, 409, 'CANNOT_LEAVE_AS_LEAD', 'Transfer leadership before leaving');
   }
 
@@ -322,7 +318,7 @@ teams.post('/:teamId/leave', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.member_left',
+      action: 'team.member_left',
       entity_type: 'team',
       entity_id: teamId,
     })
@@ -345,7 +341,7 @@ teams.post('/:teamId/transfer', authMiddleware, async (c) => {
   // Verify current user is team lead
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead can transfer leadership');
@@ -363,9 +359,9 @@ teams.post('/:teamId/transfer', authMiddleware, async (c) => {
   // Batch: demote current lead + promote new lead
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?')
-      .bind('team_member', teamId, user.id),
+      .bind('member', teamId, user.id),
     c.env.DB.prepare('UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?')
-      .bind('team_lead', teamId, body.new_leader_id),
+      .bind('leader', teamId, body.new_leader_id),
   ]);
 
   c.executionCtx.waitUntil(
@@ -373,17 +369,17 @@ teams.post('/:teamId/transfer', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.leadership_transferred',
+      action: 'team.leadership_transferred',
       entity_type: 'team',
       entity_id: teamId,
-      metadata: { new_leader_id: body.new_leader_id },
+      details: { new_leader_id: body.new_leader_id },
     })
   );
 
   return successResponse(c, { transferred: true });
 });
 
-// Dissolve team (team_lead or organizer)
+// Dissolve team (leader or organizer)
 teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
@@ -391,7 +387,7 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
 
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     const isOrg = await c.env.DB.prepare(
@@ -402,16 +398,18 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
     }
   }
 
-  await c.env.DB.prepare(
-    'UPDATE teams SET status = ?, updated_at = ? WHERE id = ?'
-  ).bind('dissolved', new Date().toISOString(), teamId).run();
+  // Delete team members first, then the team
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM team_members WHERE team_id = ?').bind(teamId),
+    c.env.DB.prepare('DELETE FROM teams WHERE id = ?').bind(teamId),
+  ]);
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.dissolved',
+      action: 'team.dissolved',
       entity_type: 'team',
       entity_id: teamId,
     })

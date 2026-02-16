@@ -34,8 +34,8 @@ workspaces.post('/', authMiddleware, async (c) => {
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       actor_id: user.id, actor_type: 'user',
-      event_type: 'workspace.created', entity_type: 'workspace', entity_id: id,
-      metadata: { name: body.name },
+      action: 'workspace.created', entity_type: 'workspace', entity_id: id,
+      details: { name: body.name },
     })
   );
 

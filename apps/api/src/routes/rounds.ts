@@ -12,8 +12,8 @@ rounds.use('/*', hackathonContext);
 rounds.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const body = await c.req.json<{
-    name: string; description?: string; round_number: number;
-    submission_deadline?: string; is_elimination?: boolean; sort_order?: number;
+    name: string; round_number: number; type?: string;
+    submission_deadline?: string;
   }>();
 
   if (!body.name || !body.round_number) {
@@ -21,11 +21,12 @@ rounds.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   }
 
   const id = crypto.randomUUID();
+  const now = new Date().toISOString();
   await c.env.DB.prepare(
-    `INSERT INTO hackathon_rounds (id, hackathon_id, name, description, round_number, submission_deadline, is_elimination, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, hackathon.id, body.name, body.description ?? null, body.round_number,
-    body.submission_deadline ?? null, body.is_elimination ? 1 : 0, body.sort_order ?? 0).run();
+    `INSERT INTO hackathon_rounds (id, hackathon_id, round_number, name, type, status, submission_deadline, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, hackathon.id, body.round_number, body.name, body.type ?? 'standard',
+    'upcoming', body.submission_deadline ?? null, now, now).run();
 
   const created = await c.env.DB.prepare('SELECT * FROM hackathon_rounds WHERE id = ?').bind(id).first();
   return successResponse(c, created, { status: 201 });
@@ -45,19 +46,21 @@ rounds.patch('/:roundId', authMiddleware, requireRole('co_organizer'), async (c)
   const roundId = c.req.param('roundId');
   const body = await c.req.json<Record<string, unknown>>();
 
-  const allowedFields = ['name', 'description', 'submission_deadline', 'is_elimination', 'sort_order'];
+  const allowedFields = ['name', 'type', 'status', 'submission_deadline', 'started_at', 'completed_at'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
   for (const field of allowedFields) {
     if (field in body) {
       updates.push(`${field} = ?`);
-      values.push(field === 'is_elimination' ? (body[field] ? 1 : 0) : body[field]);
+      values.push(body[field]);
     }
   }
 
   if (updates.length === 0) return errorResponse(c, 400, 'VALIDATION_ERROR', 'No fields to update');
 
+  updates.push('updated_at = ?');
+  values.push(new Date().toISOString());
   values.push(roundId);
   await c.env.DB.prepare(`UPDATE hackathon_rounds SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 

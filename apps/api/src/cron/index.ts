@@ -25,11 +25,14 @@ export async function cronHandler(
 async function checkSubmissionDeadlines(env: CronEnv): Promise<void> {
   const now = new Date().toISOString();
 
+  // Find active hackathons whose latest round deadline has passed
   const expired = await env.DB.prepare(`
-    SELECT id, status FROM hackathons
-    WHERE status = 'active'
-      AND submission_deadline IS NOT NULL
-      AND submission_deadline <= ?
+    SELECT DISTINCT h.id, h.status FROM hackathons h
+    JOIN hackathon_rounds hr ON hr.hackathon_id = h.id
+    WHERE h.status = 'active'
+      AND hr.submission_deadline IS NOT NULL
+      AND hr.submission_deadline <= ?
+      AND hr.status = 'active'
   `).bind(now).all<{ id: string; status: string }>();
 
   if (!expired.results) return;
@@ -53,7 +56,7 @@ async function checkSubmissionDeadlines(env: CronEnv): Promise<void> {
       await insertAuditEvent(env.DB, {
         hackathon_id: h.id,
         actor_type: 'cron',
-        event_type: 'cron.deadline_transition',
+        action: 'cron.deadline_transition',
         entity_type: 'hackathon',
         entity_id: h.id,
         changes: { status: { old: 'active', new: 'judging' } },
@@ -73,23 +76,26 @@ async function checkSubmissionDeadlines(env: CronEnv): Promise<void> {
 async function sendDeadlineReminders(env: CronEnv): Promise<void> {
   const now = Date.now();
 
+  // Get submission deadlines from hackathon_rounds of active hackathons
   const active = await env.DB.prepare(`
-    SELECT id, submission_deadline FROM hackathons
-    WHERE status = 'active'
-      AND submission_deadline IS NOT NULL
-  `).all<{ id: string; submission_deadline: string }>();
+    SELECT h.id as hackathon_id, hr.submission_deadline FROM hackathons h
+    JOIN hackathon_rounds hr ON hr.hackathon_id = h.id
+    WHERE h.status = 'active'
+      AND hr.submission_deadline IS NOT NULL
+      AND hr.status = 'active'
+  `).all<{ hackathon_id: string; submission_deadline: string }>();
 
   if (!active.results) return;
 
-  for (const h of active.results) {
-    const deadline = new Date(h.submission_deadline).getTime();
+  for (const r of active.results) {
+    const deadline = new Date(r.submission_deadline).getTime();
     const hoursRemaining = (deadline - now) / (1000 * 60 * 60);
 
     // 24h reminder (23-24h window)
     if (hoursRemaining > 23 && hoursRemaining <= 24) {
       await env.NOTIFICATION_QUEUE.send({
         type: 'deadline_reminder',
-        hackathon_id: h.id,
+        hackathon_id: r.hackathon_id,
         data: { hours_remaining: 24 },
       });
     }
@@ -98,7 +104,7 @@ async function sendDeadlineReminders(env: CronEnv): Promise<void> {
     if (hoursRemaining > 0 && hoursRemaining <= 1) {
       await env.NOTIFICATION_QUEUE.send({
         type: 'deadline_reminder',
-        hackathon_id: h.id,
+        hackathon_id: r.hackathon_id,
         data: { hours_remaining: 1 },
       });
     }

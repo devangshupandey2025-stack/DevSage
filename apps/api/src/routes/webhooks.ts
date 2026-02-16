@@ -107,7 +107,7 @@ async function recordDelivery(
 ): Promise<void> {
   try {
     await db.prepare(
-      `INSERT OR IGNORE INTO webhook_deliveries (id, github_delivery_id, event_type, status, received_at)
+      `INSERT OR IGNORE INTO webhook_deliveries (id, delivery_id, event_type, status, received_at)
        VALUES (?, ?, ?, ?, ?)`
     ).bind(crypto.randomUUID(), deliveryId, eventType, status, new Date().toISOString()).run();
   } catch (err) {

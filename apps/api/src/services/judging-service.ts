@@ -16,7 +16,7 @@ export async function assignSubmissionsRoundRobin(
   }
 
   // Get current submissions that need assignment
-  let submissionQuery = 'SELECT s.id FROM submissions s WHERE s.hackathon_id = ? AND s.is_current = 1 AND s.status = ?';
+  let submissionQuery = 'SELECT s.id, s.team_id FROM submissions s WHERE s.hackathon_id = ? AND s.is_final = 1 AND s.status = ?';
   const params: unknown[] = [hackathonId, 'validated'];
 
   if (roundId) {
@@ -24,34 +24,36 @@ export async function assignSubmissionsRoundRobin(
     params.push(roundId);
   }
 
-  const submissions = await db.prepare(submissionQuery).bind(...params).all<{ id: string }>();
+  const submissions = await db.prepare(submissionQuery).bind(...params).all<{ id: string; team_id: string }>();
   if (!submissions.results || submissions.results.length === 0) {
     return { assigned: 0 };
   }
 
   // Get existing assignments to avoid duplicates
   const existing = await db.prepare(
-    'SELECT judge_id, submission_id FROM judge_assignments WHERE hackathon_id = ?'
-  ).bind(hackathonId).all<{ judge_id: string; submission_id: string }>();
+    'SELECT judge_id, team_id, round FROM judge_assignments WHERE hackathon_id = ?'
+  ).bind(hackathonId).all<{ judge_id: string; team_id: string; round: number }>();
 
   const existingSet = new Set(
-    (existing.results || []).map(a => `${a.judge_id}:${a.submission_id}`)
+    (existing.results || []).map(a => `${a.judge_id}:${a.team_id}:${a.round}`)
   );
 
   // Round-robin assign
   let assigned = 0;
   const judgeIds = judges.results.map(j => j.id);
   let judgeIndex = 0;
+  const now = new Date().toISOString();
+  const round = 1;
 
   for (const sub of submissions.results) {
     const judgeId = judgeIds[judgeIndex % judgeIds.length];
-    const key = `${judgeId}:${sub.id}`;
+    const key = `${judgeId}:${sub.team_id}:${round}`;
 
     if (!existingSet.has(key)) {
       const id = crypto.randomUUID();
       await db.prepare(
-        'INSERT OR IGNORE INTO judge_assignments (id, judge_id, submission_id, hackathon_id) VALUES (?, ?, ?, ?)'
-      ).bind(id, judgeId, sub.id, hackathonId).run();
+        'INSERT OR IGNORE INTO judge_assignments (id, hackathon_id, judge_id, team_id, submission_id, round, status, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(id, hackathonId, judgeId, sub.team_id, sub.id, round, 'pending', now).run();
       assigned++;
     }
 
@@ -90,10 +92,10 @@ export async function computeLeaderboard(
         sub.team_id,
         SUM(CAST(s.score AS REAL) / rc.max_score * rc.weight * 100) as judge_total
       FROM scores s
-      JOIN rubric_criteria rc ON s.criterion_id = rc.id
+      JOIN rubric_criteria rc ON s.criteria_id = rc.id
       JOIN submissions sub ON s.submission_id = sub.id
-      WHERE s.hackathon_id = ?
-        AND sub.is_current = 1
+      WHERE sub.hackathon_id = ?
+        AND sub.is_final = 1
   `;
 
   const params: unknown[] = [hackathonId];

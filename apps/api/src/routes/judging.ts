@@ -20,7 +20,7 @@ judging.post('/rubric', authMiddleware, requireRole('co_organizer'), async (c) =
   const hackathon = c.get('hackathon')!;
   const body = await c.req.json<{
     name: string; description?: string; max_score?: number;
-    weight: number; track_id?: string | null; sort_order?: number;
+    weight: number; track_id?: string | null; sort_order?: number; round?: number;
   }>();
 
   if (!body.name || body.weight === undefined) {
@@ -28,16 +28,17 @@ judging.post('/rubric', authMiddleware, requireRole('co_organizer'), async (c) =
   }
 
   const id = crypto.randomUUID();
+  const now = new Date().toISOString();
   await c.env.DB.prepare(
-    `INSERT INTO rubric_criteria (id, hackathon_id, name, description, max_score, weight, track_id, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, hackathon.id, body.name, body.description ?? null, body.max_score ?? 10, body.weight, body.track_id ?? null, body.sort_order ?? 0).run();
+    `INSERT INTO rubric_criteria (id, hackathon_id, name, description, max_score, weight, track_id, sort_order, round, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, hackathon.id, body.name, body.description ?? '', body.max_score ?? 10, body.weight, body.track_id ?? null, body.sort_order ?? 0, body.round ?? 1, now).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'rubric.criterion_added', entity_type: 'rubric_criteria', entity_id: id,
-      metadata: { name: body.name },
+      action: 'rubric.criterion_added', entity_type: 'rubric_criteria', entity_id: id,
+      details: { name: body.name },
     })
   );
 
@@ -60,7 +61,7 @@ judging.patch('/rubric/:criterionId', authMiddleware, requireRole('co_organizer'
   const criterionId = c.req.param('criterionId');
   const body = await c.req.json<Record<string, unknown>>();
 
-  const allowedFields = ['name', 'description', 'max_score', 'weight', 'track_id', 'sort_order'];
+  const allowedFields = ['name', 'description', 'max_score', 'weight', 'track_id', 'sort_order', 'round'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
@@ -90,17 +91,17 @@ judging.delete('/rubric/:criterionId', authMiddleware, requireRole('co_organizer
 judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ email: string }>();
+  const body = await c.req.json<{ user_id: string; track_id?: string | null }>();
 
-  if (!body.email) return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email is required');
+  if (!body.user_id) return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_id is required');
 
   const id = crypto.randomUUID();
-  const inviteToken = crypto.randomUUID();
+  const now = new Date().toISOString();
 
   try {
     await c.env.DB.prepare(
-      `INSERT INTO judges (id, hackathon_id, email, invite_token, invited_by) VALUES (?, ?, ?, ?, ?)`
-    ).bind(id, hackathon.id, body.email, inviteToken, user.id).run();
+      `INSERT INTO judges (id, hackathon_id, user_id, invite_status, track_id, invited_by, invited_at) VALUES (?, ?, ?, 'pending', ?, ?, ?)`
+    ).bind(id, hackathon.id, body.user_id, body.track_id ?? null, user.id, now).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
       return errorResponse(c, 409, 'JUDGE_ALREADY_INVITED', 'Judge already invited');
@@ -108,49 +109,49 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     throw err;
   }
 
-  // Send invite email via notification queue
+  // Send invite notification via queue
   c.executionCtx.waitUntil(
     c.env.NOTIFICATION_QUEUE.send({
       type: 'judge.invited',
       hackathon_id: hackathon.id,
-      data: { judge_id: id, email: body.email, invite_token: inviteToken },
+      data: { judge_id: id, user_id: body.user_id },
     })
   );
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'judge.invited', entity_type: 'judge', entity_id: id,
-      metadata: { email: body.email },
+      action: 'judge.invited', entity_type: 'judge', entity_id: id,
+      details: { user_id: body.user_id },
     })
   );
 
-  return successResponse(c, { id, email: body.email, invite_token: inviteToken }, { status: 201 });
+  return successResponse(c, { id, user_id: body.user_id }, { status: 201 });
 });
 
 // Bulk invite judges
 judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ emails: string[] }>();
+  const body = await c.req.json<{ user_ids: string[] }>();
 
-  if (!body.emails || body.emails.length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Emails array is required');
+  if (!body.user_ids || body.user_ids.length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_ids array is required');
   }
 
-  const results: Array<{ email: string; status: string; invite_token?: string }> = [];
+  const results: Array<{ user_id: string; status: string }> = [];
+  const now = new Date().toISOString();
 
   // Chunk to stay under D1 param limit
-  for (const email of body.emails.slice(0, 50)) {
+  for (const userId of body.user_ids.slice(0, 50)) {
     const id = crypto.randomUUID();
-    const inviteToken = crypto.randomUUID();
     try {
       await c.env.DB.prepare(
-        'INSERT INTO judges (id, hackathon_id, email, invite_token, invited_by) VALUES (?, ?, ?, ?, ?)'
-      ).bind(id, hackathon.id, email, inviteToken, user.id).run();
-      results.push({ email, status: 'invited', invite_token: inviteToken });
+      `INSERT INTO judges (id, hackathon_id, user_id, invite_status, invited_by, invited_at) VALUES (?, ?, ?, 'pending', ?, ?)`
+      ).bind(id, hackathon.id, userId, user.id, now).run();
+      results.push({ user_id: userId, status: 'invited' });
     } catch {
-      results.push({ email, status: 'already_invited' });
+      results.push({ user_id: userId, status: 'already_invited' });
     }
   }
 
@@ -161,12 +162,12 @@ judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async 
 judging.get('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const judges = await c.env.DB.prepare(`
-    SELECT j.id, j.email, j.invite_status, j.user_id, j.created_at, j.accepted_at,
+    SELECT j.id, j.invite_status, j.user_id, j.track_id, j.invited_at, j.responded_at,
            u.name, u.avatar_url
     FROM judges j
     LEFT JOIN users u ON j.user_id = u.id
     WHERE j.hackathon_id = ?
-    ORDER BY j.created_at ASC
+    ORDER BY j.invited_at ASC
   `).bind(hackathon.id).all();
   return successResponse(c, judges.results || []);
 });
@@ -178,25 +179,14 @@ judging.delete('/judges/:judgeId', authMiddleware, requireRole('co_organizer'), 
   return successResponse(c, { deleted: true });
 });
 
-// Assign judge to tracks
+// Assign judge to a track
 judging.post('/judges/:judgeId/tracks', authMiddleware, requireRole('co_organizer'), async (c) => {
   const judgeId = c.req.param('judgeId');
-  const body = await c.req.json<{ track_ids: string[] }>();
+  const body = await c.req.json<{ track_id: string | null }>();
 
-  if (!body.track_ids || body.track_ids.length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'track_ids required');
-  }
+  await c.env.DB.prepare('UPDATE judges SET track_id = ? WHERE id = ?').bind(body.track_id ?? null, judgeId).run();
 
-  // Clear existing and re-insert
-  await c.env.DB.prepare('DELETE FROM judge_tracks WHERE judge_id = ?').bind(judgeId).run();
-
-  for (const trackId of body.track_ids) {
-    await c.env.DB.prepare(
-      'INSERT INTO judge_tracks (id, judge_id, track_id) VALUES (?, ?, ?)'
-    ).bind(crypto.randomUUID(), judgeId, trackId).run();
-  }
-
-  return successResponse(c, { assigned: body.track_ids.length });
+  return successResponse(c, { updated: true });
 });
 
 // === Assignments (organizer+) ===
@@ -214,13 +204,13 @@ judging.post('/assign', authMiddleware, requireRole('co_organizer'), async (c) =
 judging.get('/judges/:judgeId/assignments', authMiddleware, async (c) => {
   const judgeId = c.req.param('judgeId');
   const assignments = await c.env.DB.prepare(`
-    SELECT ja.id, ja.submission_id, ja.status, ja.created_at,
-           s.tag_name, s.commit_sha, s.team_id, t.name as team_name
+    SELECT ja.id, ja.submission_id, ja.team_id, ja.round, ja.status, ja.assigned_at, ja.completed_at,
+           s.tag_name, s.commit_sha, t.name as team_name
     FROM judge_assignments ja
-    JOIN submissions s ON ja.submission_id = s.id
-    JOIN teams t ON s.team_id = t.id
+    LEFT JOIN submissions s ON ja.submission_id = s.id
+    JOIN teams t ON ja.team_id = t.id
     WHERE ja.judge_id = ?
-    ORDER BY ja.created_at ASC
+    ORDER BY ja.assigned_at ASC
   `).bind(judgeId).all();
   return successResponse(c, assignments.results || []);
 });
@@ -233,7 +223,7 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRo
   const hackathon = c.get('hackathon')!;
   const submissionId = c.req.param('submissionId');
   const body = await c.req.json<{
-    scores: Array<{ criterion_id: string; score: number; notes?: string }>;
+    scores: Array<{ criteria_id: string; score: number; comment?: string; assignment_id: string; round?: number }>;
   }>();
 
   if (!body.scores || body.scores.length === 0) {
@@ -258,20 +248,22 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRo
 
   // Upsert scores
   for (const s of body.scores) {
+    const round = s.round ?? 1;
+    const assignmentId = s.assignment_id;
     await c.env.DB.prepare(`
-      INSERT INTO scores (id, hackathon_id, submission_id, judge_id, criterion_id, score, notes, created_at, updated_at)
+      INSERT INTO scores (id, submission_id, judge_id, criteria_id, assignment_id, score, comment, round, scored_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(judge_id, submission_id, criterion_id) DO UPDATE SET score = ?, notes = ?, updated_at = ?
+      ON CONFLICT(submission_id, judge_id, criteria_id, round) DO UPDATE SET score = ?, comment = ?, scored_at = ?
     `).bind(
-      crypto.randomUUID(), hackathon.id, submissionId, judge.id, s.criterion_id, s.score, s.notes ?? null, now, now,
-      s.score, s.notes ?? null, now
+      crypto.randomUUID(), submissionId, judge.id, s.criteria_id, assignmentId, s.score, s.comment ?? null, round, now,
+      s.score, s.comment ?? null, now
     ).run();
   }
 
   // Update assignment status
   await c.env.DB.prepare(
-    'UPDATE judge_assignments SET status = ? WHERE id = ?'
-  ).bind('scored', assignment.id).run();
+    'UPDATE judge_assignments SET status = ?, completed_at = ? WHERE id = ?'
+  ).bind('scored', now, assignment.id).run();
 
   // Invalidate leaderboard cache
   await c.env.KV.delete(`leaderboard:${hackathon.id}`);
@@ -279,8 +271,8 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRo
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'score.submitted', entity_type: 'submission', entity_id: submissionId,
-      metadata: { judge_id: judge.id, scores_count: body.scores.length },
+      action: 'score.submitted', entity_type: 'submission', entity_id: submissionId,
+      details: { judge_id: judge.id, scores_count: body.scores.length },
     })
   );
 
@@ -291,10 +283,10 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRo
 judging.get('/submissions/:submissionId/scores', authMiddleware, requireRole('judge'), async (c) => {
   const submissionId = c.req.param('submissionId');
   const scores = await c.env.DB.prepare(`
-    SELECT s.id, s.criterion_id, s.judge_id, s.score, s.notes, s.updated_at,
+    SELECT s.id, s.criteria_id, s.judge_id, s.assignment_id, s.score, s.comment, s.round, s.scored_at,
            rc.name as criterion_name, rc.max_score, rc.weight
     FROM scores s
-    JOIN rubric_criteria rc ON s.criterion_id = rc.id
+    JOIN rubric_criteria rc ON s.criteria_id = rc.id
     WHERE s.submission_id = ?
     ORDER BY rc.sort_order ASC
   `).bind(submissionId).all();
@@ -348,14 +340,15 @@ judging.post('/results/publish', authMiddleware, requireRole('organizer'), async
   const leaderboard = await computeLeaderboard(c.env.DB, hackathon.id, body.round_id);
 
   // Persist results
+  const now = new Date().toISOString();
   for (const entry of leaderboard) {
     const id = crypto.randomUUID();
     const roundId = body.round_id ?? null;
     await c.env.DB.prepare(`
-      INSERT INTO round_results (id, round_id, team_id, rank, total_score)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?
-    `).bind(id, roundId, entry.team_id, entry.rank, entry.total_score, entry.rank, entry.total_score).run();
+      INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
+      VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
+      ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
+    `).bind(id, hackathon.id, roundId, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
   }
 
   // Notify
@@ -370,8 +363,8 @@ judging.post('/results/publish', authMiddleware, requireRole('organizer'), async
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'results.published', entity_type: 'hackathon', entity_id: hackathon.id,
-      metadata: { results_count: leaderboard.length },
+      action: 'results.published', entity_type: 'hackathon', entity_id: hackathon.id,
+      details: { results_count: leaderboard.length },
     })
   );
 

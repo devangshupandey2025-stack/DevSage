@@ -38,7 +38,7 @@ export async function handlePushEvent(
       ]);
 
       await env.DB.prepare(
-        `INSERT INTO commit_log (id, team_repo_id, commit_sha, commit_message, author_login, author_email, committed_at, pushed_at) VALUES ${placeholders}`
+        `INSERT INTO commit_log (id, team_repo_id, commit_sha, message, author_login, author_email, committed_at, pushed_at) VALUES ${placeholders}`
       ).bind(...values).run();
     }
   }
@@ -71,10 +71,10 @@ export async function handlePushEvent(
       await insertAuditEvent(env.DB, {
         hackathon_id: team.hackathon_id,
         actor_type: 'bot',
-        event_type: 'webhook.force_push',
+        action: 'webhook.force_push',
         entity_type: 'team_repo',
         entity_id: teamRepo.id,
-        metadata: { ref, pusher: pusher.login, before, after },
+        details: { ref, pusher: pusher.login, before, after },
       });
     }
   }

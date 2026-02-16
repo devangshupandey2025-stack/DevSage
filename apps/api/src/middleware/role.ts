@@ -31,10 +31,10 @@ export async function resolveRole(
       UNION ALL
       SELECT 'judge' as role, 3 as priority FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = 'accepted'
       UNION ALL
-      SELECT tm.role, CASE WHEN tm.role = 'team_lead' THEN 4 ELSE 5 END as priority
+      SELECT tm.role, CASE WHEN tm.role = 'leader' THEN 4 ELSE 5 END as priority
         FROM team_members tm
         JOIN teams t ON tm.team_id = t.id
-        WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+        WHERE t.hackathon_id = ? AND tm.user_id = ?
       UNION ALL
       SELECT CASE WHEN wm.role IN ('owner', 'admin') THEN 'organizer' ELSE 'co_organizer' END as role,
              CASE WHEN wm.role IN ('owner', 'admin') THEN 6 ELSE 7 END as priority

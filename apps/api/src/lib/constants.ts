@@ -2,8 +2,8 @@ export const ROLE_HIERARCHY: Record<string, number> = {
   organizer: 1,
   co_organizer: 2,
   judge: 3,
-  team_lead: 4,
-  team_member: 5,
+  leader: 4,
+  member: 5,
   anonymous: 6,
 };
 
