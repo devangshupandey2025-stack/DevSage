@@ -15,7 +15,7 @@ CREATE TABLE team_messages (
   team_id TEXT NOT NULL REFERENCES teams(id),
   user_id TEXT NOT NULL REFERENCES users(id),
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 ```
 

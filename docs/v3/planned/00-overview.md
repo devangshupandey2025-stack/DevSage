@@ -14,7 +14,6 @@
 - [Domain Interaction Map](#domain-interaction-map)
 - [Monorepo Structure](#monorepo-structure)
 - [Technology Stack](#technology-stack)
-- [Scale Targets](#scale-targets)
 - [Implementation Roadmap](#implementation-roadmap)
 - [Document Index](#document-index)
 - [Decision Log](#decision-log)
@@ -60,14 +59,12 @@ graph TD
         ADMIN["shikdd.devsage.org<br/>Admin Panel<br/>(React + Vite)"]
         PLATFORM["platform.devsage.org<br/>Organizer Dashboard<br/>(React + Vite + Tailwind v4 + shadcn/ui)"]
         PARTICIPANT["{slug}.devsage.org<br/>Participant Sites<br/>(separate repos)"]
-        SDK["Client SDK<br/>(TypeScript)"]
 
     end
 
     ADMIN -->|"HTTPS REST"| API
-    PLATFORM -->|"HTTPS REST + SSE"| API
-    PARTICIPANT -->|"HTTPS REST + SSE"| API
-    SDK -->|"HTTPS REST"| API
+    PLATFORM -->|"HTTPS REST"| API
+    PARTICIPANT -->|"HTTPS REST"| API
 
 
     subgraph CF["Cloudflare Edge"]
@@ -75,63 +72,48 @@ graph TD
 
         subgraph DOs["Durable Objects"]
             HSM["HackathonStateMachine<br/>(lifecycle + submissions)"]
-            WSG["WebSocketGateway<br/>(real-time channels)"]
 
         end
 
         subgraph Queues
             Q_WH["WEBHOOK_QUEUE<br/>(inbound webhooks)"]
-            Q_NF["NOTIFICATION_QUEUE<br/>(email + push + in-app)"]
-            Q_AN["ANALYTICS_QUEUE<br/>(event ingestion)"]
+            Q_NF["NOTIFICATION_QUEUE<br/>(email + in-app)"]
 
         end
 
-        CRON["Cron Triggers<br/>(hourly + daily)"]
+        CRON["Cron Triggers<br/>(hourly)"]
     end
 
     API -->|"stub.fetch()"| HSM
-    API -->|"stub.fetch()"| WSG
 
     API -->|"enqueue"| Q_WH
     API -->|"enqueue"| Q_NF
-    API -->|"enqueue"| Q_AN
 
     CRON -->|"scheduled()"| API
 
     subgraph Storage
-        D1[("D1 / SQLite<br/>~31 tables")]
-        KV["KV<br/>OAuth state · rate limits<br/>session cache · feature flags"]
-        R2["R2<br/>Sponsor assets · avatars<br/>submission artifacts · exports"]
-        AE["Analytics Engine<br/>Event time-series"]
+        D1[("D1 / SQLite<br/>~37 tables")]
+        KV["KV<br/>OAuth state · rate limits<br/>role cache"]
+        R2["R2<br/>Submission artifacts<br/>(Phase 2: uploads)"]
     end
 
     API --> D1
     API --> KV
     API --> R2
-    API --> AE
     HSM -->|"reads via Worker"| D1
-    WSG -->|"reads via Worker"| D1
 
     subgraph External["External Services"]
         GH["GitHub API<br/>OAuth + Webhooks + Bot"]
-        GL["GitLab API<br/>(future)"]
         GOOGLE["Google OAuth"]
         SMTP["SMTP Relay<br/>Transactional email"]
-        PUSH["Web Push<br/>Push notifications"]
-        AI["AI Provider<br/>Code reviews + summaries"]
-        SLACK["Slack / Discord<br/>Channel notifications"]
     end
 
     Q_WH -->|"consume"| API
     Q_NF -->|"consume"| API
-    Q_AN -->|"consume"| API
 
     API --> GH
     API --> GOOGLE
     API --> SMTP
-    API --> PUSH
-    API --> AI
-    API --> SLACK
 ```
 
 ---
@@ -371,7 +353,7 @@ DevSage/
 │   │   ├── src/
 │   │   │   ├── routes/         # REST route handlers (one file per domain)
 │   │   │   ├── middleware/     # Auth, roles, rate limiting, CORS
-│   │   │   ├── durable-objects/# HackathonStateMachine, WebSocketGateway
+│   │   │   ├── durable-objects/# HackathonStateMachine (WebSocketGateway in Phase 2)
 │   │   │   ├── queue/          # Queue consumers (webhook, notification, analytics, plugin)
 │   │   │   ├── services/       # External service clients (GitHub, SMTP, AI, push)
 │   │   │   ├── lib/            # Shared utilities (JWT, audit, response envelope)
@@ -450,7 +432,7 @@ graph LR
 | **Object Storage** | Cloudflare R2 | S3-compatible, no egress fees, edge-accessible |
 | **Cache / KV** | Cloudflare KV | Global key-value, TTL support, eventual consistency (acceptable for sessions, rate limits) |
 | **Analytics** | Cloudflare Analytics Engine | Time-series ingestion, SQL-queryable, no cardinality limits |
-| **Frontend** | React 18 + Vite | Component-based, fast dev server, optimized builds |
+| **Frontend** | React 19 + Vite | Component-based, fast dev server, optimized builds |
 | **Styling** | Tailwind CSS v4 + shadcn/ui | Utility-first, accessible component primitives, dark mode |
 | **Routing** | React Router v7 | File-convention routing, nested layouts, data loading |
 | **Validation** | Zod | Runtime + compile-time type safety, shared between API and frontend |
@@ -461,115 +443,65 @@ graph LR
 
 ---
 
-## Scale Targets
-
-| Metric | Phase 1 (MVP) | Phase 2 (Growth) | Phase 3 (Workspaces) |
-|--------|---------------|-------------------|----------------------|
-| **Concurrent hackathons** | 3 | 50 | 500+ |
-| **Total users** | 500 | 10,000 | 100,000+ |
-| **Teams per hackathon** | 50 | 200 | 500 |
-| **Submissions per hackathon** | 50 | 200 | 500 |
-| **Webhooks per hour** | 1,000 | 50,000 | 500,000 |
-| **WebSocket connections** | 100 | 5,000 | 50,000 |
-| **API p95 latency (reads)** | < 50ms | < 50ms | < 100ms |
-| **API p95 latency (writes)** | < 200ms | < 200ms | < 300ms |
-| **D1 storage** | ~20 MB | ~2 GB | ~50 GB (sharded) |
-| **R2 storage** | ~100 MB | ~10 GB | ~500 GB |
-| **Monthly cost** | $0 (free tier) | ~$50 | ~$500 |
-| **Uptime target** | 99.5% | 99.9% | 99.95% |
-
-### Scaling Strategy
-
-```mermaid
-flowchart TD
-    subgraph Phase1["Phase 1: MVP"]
-        P1A["Single D1 database"]
-        P1B["1 HackathonStateMachine DO per hackathon"]
-        P1C["Single queue per type"]
-        P1D["KV for sessions + rate limits"]
-    end
-
-    subgraph Phase2["Phase 2: Growth"]
-        P2A["Read replicas via D1 sessions"]
-        P2B["WebSocketGateway DO per hackathon"]
-        P2C["Queue batching + concurrency tuning"]
-        P2D["R2 for large artifacts"]
-        P2E["Analytics Engine for metrics"]
-    end
-
-    subgraph Phase3["Phase 3: Federation"]
-        P3A["D1 sharding by organization"]
-        P3B["Cross-org DO coordination"]
-        P3C["Multi-queue routing"]
-        P3D["CDN-cached public pages"]
-
-    end
-
-    Phase1 --> Phase2 --> Phase3
-```
-
----
-
 ## Implementation Roadmap
 
 | Phase | Features | Target | Dependencies |
 |-------|----------|--------|-------------|
-| **Phase 1: Core Platform** | Authentication, Hackathon Lifecycle, Team Management, Submissions, Judging, Roles & Permissions, Webhooks (GitHub only), Notifications (email only), Audit Trail, Data Model, API Design, Infrastructure | MVP launch | None |
-| **Phase 2: Engagement** | Real-Time System, Frontend Architecture (polish), Analytics & Insights, Sponsor Portal | Post-MVP | Phase 1 complete |
-| **Phase 3: Platform** | Collaborative Workspaces, Notifications (push + Slack/Discord), Webhooks (GitLab + Bitbucket) | Scale-up | Phase 2 stable |
+| **Phase 1: Core Platform** | Authentication, Hackathon Lifecycle, Team Management, Submissions, Judging, Roles & Permissions, Webhooks (GitHub only), Notifications (email + in-app), Audit Trail, Data Model, API Design, Infrastructure, Frontend Architecture | MVP launch | None — runs entirely on Cloudflare free tier |
+| **Phase 2: Engagement** | Real-Time System (WebSocket DO), Analytics & Insights, Sponsor Portal, AI Reviews, Team Chat, Audience Voting, GDPR Anonymization, Advanced Notifications (push + Slack/Discord) | Post-MVP | Phase 1 complete, paid plan ($5/mo) |
+| **Phase 3: Platform** | Collaborative Workspaces, Webhooks (GitLab + Bitbucket) | Scale-up | Phase 2 stable |
 
 ### Phase Dependency Graph
 
 ```mermaid
 flowchart LR
-    subgraph P1["Phase 1"]
+    subgraph P1["Phase 1 (free tier)"]
+        DATA["10-Data Model"]
+        INFRA["12-Infrastructure"]
+        APID["11-API Design"]
         AUTH["01-Authentication"]
-        HACK["02-Hackathon Lifecycle"]
-        TEAM["03-Team Management"]
-        SUB["04-Submissions"]
-        JUDGE["05-Judging"]
-        ROLES["06-Roles & Permissions"]
+        ROLES["02-Roles & Permissions"]
+        HACK["03-Hackathon Lifecycle"]
+        TEAM["04-Team Management"]
+        SUB["05-Submissions"]
+        JUDGE["06-Judging"]
         HOOK["07-Webhooks"]
         NOTIF["08-Notifications"]
         AUDIT["09-Audit Trail"]
-        DATA["10-Data Model"]
-        APID["11-API Design"]
-        INFRA["12-Infrastructure"]
+        FE["13-Frontend"]
     end
 
-    subgraph P2["Phase 2"]
-        FE["13-Frontend"]
-        RTME["14-Real-Time"]
-        ANLY["15-Analytics"]
-        SPON["16-Sponsor Mgmt"]
-
+    subgraph P2["Phase 2 (paid plan)"]
+        RTME["Real-Time WebSocket"]
+        ANLY["Analytics"]
+        SPON["Sponsor Mgmt"]
+        AIVW["AI Reviews"]
+        TCHAT["Team Chat"]
+        AVOTE["Audience Voting"]
     end
 
     subgraph P3["Phase 3"]
-        FED["18-Workspaces"]
-
+        FED["Workspaces"]
     end
 
+    DATA --> AUTH
+    DATA --> HACK
+    INFRA --> APID
+    APID --> AUTH
     AUTH --> ROLES
     ROLES --> HACK
     HACK --> TEAM
     HACK --> SUB
     SUB --> JUDGE
     HOOK --> SUB
-    DATA --> AUTH
-    DATA --> HACK
-    APID --> AUTH
-    INFRA --> APID
+    APID --> FE
 
     HACK --> RTME
     HACK --> ANLY
     JUDGE --> ANLY
-    RTME --> FE
     HACK --> SPON
 
-
     HACK --> FED
-
 ```
 
 ---
@@ -580,19 +512,19 @@ flowchart LR
 
 | # | Directory | Domain | Files |
 |---|-----------|--------|-------|
-| [01](./01-authentication/) | Authentication & Sessions | Identity & Access | 7 files |
-| [02](./02-roles-permissions/) | Roles & Permissions | Identity & Access | 6 files |
-| [03](./03-hackathon-lifecycle/) | Hackathon Lifecycle | Core Platform | 8 files |
-| [04](./04-team-management/) | Team Management | Core Platform | 7 files |
-| [05](./05-submissions/) | Submissions & Locking | Core Platform | 8 files |
-| [06](./06-judging/) | Judging & Scoring | Core Platform | 7 files |
-| [07](./07-webhooks/) | Webhooks & VCS Integration | Integration Layer | 7 files |
-| [08](./08-notifications/) | Notification System | Integration Layer | 6 files |
-| [09](./09-audit-trail/) | Audit Trail | Observability | 5 files |
-| [10](./10-data-model/) | Data Model & Schema | Storage | 12 files |
-| [11](./11-api-design/) | API Design & Conventions | Interface | 7 files |
-| [12](./12-infrastructure/) | Infrastructure & Deployment | Operations | 6 files |
-| [13](./13-frontend/) | Frontend Architecture | Core Platform | 8 files |
+| [01](./phase-1/01-authentication/) | Authentication & Sessions | Identity & Access | 7 files |
+| [02](./phase-1/02-roles-permissions/) | Roles & Permissions | Identity & Access | 6 files |
+| [03](./phase-1/03-hackathon-lifecycle/) | Hackathon Lifecycle | Core Platform | 8 files |
+| [04](./phase-1/04-team-management/) | Team Management | Core Platform | 7 files |
+| [05](./phase-1/05-submissions/) | Submissions & Locking | Core Platform | 8 files |
+| [06](./phase-1/06-judging/) | Judging & Scoring | Core Platform | 7 files |
+| [07](./phase-1/07-webhooks/) | Webhooks & VCS Integration | Integration Layer | 7 files |
+| [08](./phase-1/08-notifications/) | Notification System | Integration Layer | 6 files |
+| [09](./phase-1/09-audit-trail/) | Audit Trail | Observability | 5 files |
+| [10](./phase-1/10-data-model/) | Data Model & Schema | Storage | 12 files |
+| [11](./phase-1/11-api-design/) | API Design & Conventions | Interface | 7 files |
+| [12](./phase-1/12-infrastructure/) | Infrastructure & Deployment | Operations | 6 files |
+| [13](./phase-1/13-frontend/) | Frontend Architecture | Core Platform | 8 files |
 
 ### Phase 2 Docs
 

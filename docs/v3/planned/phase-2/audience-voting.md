@@ -20,7 +20,7 @@ CREATE TABLE audience_votes (
   hackathon_id TEXT NOT NULL REFERENCES hackathons(id),
   submission_id TEXT NOT NULL REFERENCES submissions(id),
   user_id TEXT NOT NULL REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(hackathon_id, user_id)  -- one vote per user per hackathon
 );
 ```

@@ -17,7 +17,7 @@ async function anonymizeUser(db: DrizzleD1, userId: string) {
   // 1. Users table
   await db.update(users).set({
     name: `Deleted User ${anonId}`,
-    email: null,
+    email: `deleted_${anonId}@anon.devsage.org`,  // NOT null — email is NOT NULL UNIQUE in schema
     avatar_url: null,
     github_username: null,
     github_id: null,

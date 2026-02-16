@@ -75,7 +75,7 @@ This runs:
 ```bash
 cd apps/api
 npx wrangler d1 execute devsage-db --local --command \
-  "INSERT INTO platform_admins (id, user_id, granted_by, created_at) VALUES ('admin-1', '<your-user-id>', 'seed', datetime('now'))"
+  "INSERT INTO platform_admins (id, user_id, granted_by, created_at) VALUES ('admin-1', '<your-user-id>', 'seed', strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
 ```
 
 ## Useful Commands
