@@ -1,32 +1,42 @@
 # apps/api — Cloudflare Worker API
 
-Hono-based API running on Cloudflare Workers. Single Worker handles HTTP routes, Durable Objects, Queue consumer, and Cron triggers. Production: `https://api.devsage.org`.
+Hono-based API on Cloudflare Workers. Single Worker handles HTTP routes, Durable Objects, Queue consumer, and Cron triggers. Production: `https://api.devsage.org`.
 
 ## STRUCTURE
 
 ```
 src/
-├── index.ts              # Entry: Hono app + DO re-exports + queue handler + cron handler
-├── routes/               # Hono route modules (6 files)
-│   ├── auth.ts           # OAuth initiation/callback, JWT creation, /auth/me, logout
-│   ├── hackathons.ts     # CRUD + state machine transitions, slug generation, pagination
-│   ├── teams.ts          # Create, join (invite code), repo linking, member management
+├── index.ts              # Entry: Hono app + DO re-export + queue/cron handlers
+├── routes/               # Hono route modules (14 files)
+│   ├── auth.ts           # OAuth initiation/callback, JWT/refresh, /auth/me, logout
+│   ├── hackathons.ts     # CRUD + state transitions, slug gen, pagination
+│   ├── teams.ts          # Create, join (invite code), member management
+│   ├── team-repos.ts     # Team repository linking
 │   ├── submissions.ts    # Submission queries via DO delegation
-│   ├── judging.ts        # Judge invites, rubric CRUD, scoring, assignment, leaderboard
-│   └── webhooks.ts       # GitHub webhook receiver, HMAC signature verification
-├── queue/                # Queue consumer handlers (6 files)
-│   ├── index.ts          # Dispatcher: routes WEBHOOK_QUEUE + NOTIFICATION_QUEUE messages
+│   ├── judging.ts        # Judge invites, rubric CRUD, scoring, assignments, leaderboard
+│   ├── rounds.ts         # Hackathon round management
+│   ├── organizers.ts     # Organizer role management
+│   ├── audit.ts          # Audit log queries
+│   ├── workspaces.ts     # Workspace CRUD, membership, invites
+│   ├── admin.ts          # Platform admin features (shikdd)
+│   ├── notifications.ts  # In-app notification queries
+│   ├── invites.ts        # Team/workspace invite management
+│   └── webhooks.ts       # GitHub webhook receiver, HMAC verification
+├── queue/                # Queue consumer handlers
+│   ├── index.ts          # Dispatcher: routes WEBHOOK_QUEUE + NOTIFICATION_QUEUE
 │   ├── push-handler.ts   # Commit logging, force-push detection
-│   ├── tag-create-handler.ts  # Submission tag matching, DO locking, commit status
+│   ├── tag-create-handler.ts  # Submission tag → DO locking → commit status
 │   ├── tag-delete-handler.ts  # Tag deletion handling
 │   ├── installation-handler.ts # GitHub App install/uninstall
-│   └── notification-handler.ts # Email dispatch (8 notification types, recipient resolution)
+│   └── notification-handler.ts # Email dispatch (recipient resolution per type)
+├── cron/
+│   └── index.ts          # Hourly: deadline checks, reminder notifications
 ├── durable-objects/      # HackathonStateMachine (single DO, SQLite-backed)
-├── middleware/            # auth (JWT), role (per-request resolution), error-handler
-├── lib/                  # jwt, cookies, oauth, response, audit, etag, submission-tag, webhook-normalize
-├── services/             # github.ts (commit status), smtp.ts (email) — fail-open pattern
-├── types/                # env.ts (Worker bindings), auth.ts (Hono context types)
-└── __tests__/            # Vitest with @cloudflare/vitest-pool-workers (15 test files)
+├── middleware/            # cors, request-id, auth, role, rate-limit, platform-admin, error-handler
+├── lib/                  # jwt, cookies, oauth, refresh-token, response, audit, etag, submission-tag, webhook-normalize
+├── services/             # github.ts, smtp.ts — fail-open pattern (10s timeout, never throw)
+├── types/                # env.ts (bindings + context vars), auth.ts (JWT payload type)
+└── __tests__/            # Vitest + @cloudflare/vitest-pool-workers (26 test files)
 ```
 
 ## WHERE TO LOOK
@@ -35,12 +45,14 @@ src/
 |------|------|-------|
 | Add route | `src/routes/` | Create file, mount in `src/index.ts` via `app.route()` |
 | Add DO | `src/durable-objects/` | MUST re-export class from `src/index.ts` |
-| Add middleware | `src/middleware/` | `MiddlewareHandler<AuthAppEnv>` type |
+| Add middleware | `src/middleware/` | `MiddlewareHandler<AppEnv>` type |
 | Add queue handler | `src/queue/` | Add handler, wire in `queue/index.ts` dispatcher |
+| Add cron handler | `src/cron/` | Add handler, wire in `cron/index.ts` |
 | Add service | `src/services/` | Fail-open: 10s timeout, never throw, log warning |
 | Change bindings | `wrangler.jsonc` | Also update `types/env.ts` |
 | OAuth flow | `src/lib/oauth.ts` | Manual HTTP — Google + GitHub token exchange |
-| JWT ops | `src/lib/jwt.ts` | Custom HMAC SHA-256 via `crypto.subtle`, 7-day expiry |
+| JWT ops | `src/lib/jwt.ts` | Custom HMAC SHA-256 via `crypto.subtle`, 15-min access token |
+| Refresh tokens | `src/lib/refresh-token.ts` | Opaque tokens, family-based replay detection, 30-day expiry |
 | Cookie ops | `src/lib/cookies.ts` | HttpOnly, SameSite=Lax (dev) / Strict+Secure (prod) |
 | Response helpers | `src/lib/response.ts` | `successResponse()`, `errorResponse()`, `paginatedResponse()` |
 | Audit logging | `src/lib/audit.ts` | `insertAuditEvent()` — user/system/bot/cron actors |
@@ -58,14 +70,19 @@ src/
 | `WEBHOOK_QUEUE` | Queue | `github-webhooks` |
 | `NOTIFICATION_QUEUE` | Queue | `devsage-notifications` |
 
-Cron trigger: `0 * * * *` (hourly deadline checks + auto-transitions).
+Cron trigger: `0 * * * *` (hourly deadline checks + reminder notifications).
 
-Secrets (in `.dev.vars` locally, `wrangler secret put` for prod):
-`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `SMTP_URL`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_EMAIL_ADDR`
+Secrets (`.dev.vars` locally, `wrangler secret put` for prod):
+`JWT_SECRET`, `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_WEBHOOK_SECRET`, `RESEND_API_KEY`
+
+Non-secret vars (in wrangler.jsonc):
+`FRONTEND_URL`, `PLATFORM_URL`, `ADMIN_URL`, `API_URL`, `EMAIL_FROM`
 
 ## ROUTES
 
-All v2 routes use `/api/v1/` prefix with slug-based hackathon addressing. Response envelope: `{ ok, data, meta }` / `{ ok, error }`.
+All routes use `/api/v1/` prefix with slug-based hackathon addressing. Response envelope: `{ ok, data, meta }` / `{ ok, error }`.
+
+**Auth** (`/auth`):
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -74,39 +91,57 @@ All v2 routes use `/api/v1/` prefix with slug-based hackathon addressing. Respon
 | GET | `/auth/google` | — | Google OAuth initiate |
 | GET | `/auth/callback/google` | — | Google OAuth callback |
 | GET | `/auth/me` | JWT | Current user + roles |
-| POST | `/auth/logout` | JWT | Clear session cookie |
-| GET | `/api/v1/hackathons` | opt | List (paginated) |
-| POST | `/api/v1/hackathons` | admin+ | Create hackathon |
-| GET | `/api/v1/hackathons/:slug` | opt | Get by slug |
-| PUT | `/api/v1/hackathons/:slug` | admin+ | Update hackathon |
-| PATCH | `/api/v1/hackathons/:slug/status` | admin+ | Transition phase |
-| DELETE | `/api/v1/hackathons/:slug` | owner | Delete hackathon |
-| POST | `/api/v1/hackathons/:slug/teams` | participant+ | Create team |
-| GET | `/api/v1/hackathons/:slug/teams` | anon+ | List teams |
-| GET | `/api/v1/hackathons/:slug/teams/:id` | anon+ | Get team |
-| POST | `/api/v1/hackathons/:slug/teams/:id/join` | participant+ | Join via code |
-| DELETE | `/api/v1/hackathons/:slug/teams/:id/members/:userId` | team_leader+ | Remove member |
-| POST | `/api/v1/hackathons/:slug/teams/:id/repo` | team_leader+ | Set team repo |
-| POST | `/api/v1/hackathons/:slug/judges` | admin+ | Invite judge |
-| GET | `/api/v1/hackathons/:slug/judges` | anon+ | List judges |
-| POST | `/api/v1/hackathons/:slug/judges/:id/respond` | judge | Accept/decline |
-| GET | `/api/v1/hackathons/:slug/rubric` | anon+ | Get rubric |
-| POST | `/api/v1/hackathons/:slug/rubric` | admin+ | Set rubric (bulk) |
-| POST | `/api/v1/hackathons/:slug/judges/assign` | admin+ | Round-robin assign |
-| POST | `/api/v1/hackathons/:slug/scores` | judge | Submit score |
-| GET | `/api/v1/hackathons/:slug/leaderboard` | varies | Weighted leaderboard |
-| POST | `/webhooks/github` | HMAC | GitHub App webhook |
+| POST | `/auth/refresh` | cookie | Rotate refresh token |
+| POST | `/auth/logout` | JWT | Clear session cookies |
+
+**Hackathons** (`/api/v1/hackathons`):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/` | opt | List (paginated) |
+| POST | `/` | organizer+ | Create hackathon |
+| GET | `/:slug` | opt | Get by slug |
+| PUT | `/:slug` | organizer+ | Update hackathon |
+| PATCH | `/:slug/status` | organizer+ | Transition phase |
+| DELETE | `/:slug` | owner | Delete hackathon |
+
+**Teams** (`/api/v1/hackathons/:slug/teams`):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/` | team_member+ | Create team |
+| GET | `/` | anon+ | List teams |
+| GET | `/:id` | anon+ | Get team |
+| POST | `/:id/join` | team_member+ | Join via code |
+| DELETE | `/:id/members/:userId` | team_lead+ | Remove member |
+| POST | `/:id/repo` | team_lead+ | Set team repo |
+
+**Judging** (`/api/v1/hackathons/:slug/judging`):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/judges` | organizer+ | Invite judge |
+| GET | `/judges` | anon+ | List judges |
+| POST | `/judges/:id/respond` | judge | Accept/decline |
+| GET | `/rubric` | anon+ | Get rubric |
+| POST | `/rubric` | organizer+ | Set rubric (bulk) |
+| POST | `/judges/assign` | organizer+ | Round-robin assign |
+| POST | `/scores` | judge | Submit score |
+| GET | `/leaderboard` | varies | Weighted leaderboard |
+
+**Other mounted routes**: `/:slug/rounds`, `/:slug/organizers`, `/:slug/audit`, `/:slug/submissions`, `/api/v1/workspaces`, `/api/v1/admin`, `/api/v1/notifications`, `/api/v1/invites`, `/webhooks/github`.
 
 ## CONVENTIONS
 
-- **Middleware chain**: Public routes → none. Protected → `authMiddleware` → `requireRole(minRole)` → handler
+- **Middleware chain**: CORS → Request ID → Optional Auth → Error Handler (global). Protected routes add `authMiddleware` → `requireRole(minRole)`
 - **Role resolution**: `requireRole()` auto-injects `c.get('hackathon')` and `c.get('role')` from slug param
-- **DB access**: `createDbClient(c.env.DB)` from `@devsage/db`. Drizzle query builder
+- **DB access**: `createDb(c.env.DB)` from `@devsage/db`. Drizzle query builder
 - **Validation**: `@hono/zod-validator` with schemas from `@devsage/shared`
 - **DO communication**: `stub.fetch('http://do/endpoint')`. DOs NEVER touch D1
-- **Queue**: Webhook route enqueues → `queue()` handler dispatches → handlers process. Retry: exponential backoff capped at 5min
+- **Queue**: Webhook route enqueues → `queue()` dispatcher → handlers process
 - **Idempotency**: Webhook handlers check `webhook_delivery_id` UNIQUE constraint
-- **Error handler**: Global `app.onError(errorHandler)` returns `{ error, code }` JSON
+- **Error handler**: Global `app.onError(errorHandler)` returns `{ ok: false, error: { code, message } }`
+- **Dev auth bypass**: `DEV_AUTH_BYPASS` env var injects dev user (local only)
 
 ## ANTI-PATTERNS
 
@@ -120,7 +155,7 @@ All v2 routes use `/api/v1/` prefix with slug-based hackathon addressing. Respon
 ## TESTING
 
 ```bash
-pnpm --filter @devsage/api test       # Run API tests
+pnpm --filter @devsage/api test
 ```
 
-Tests use `@cloudflare/vitest-pool-workers` — real Workers runtime with D1/KV/DO bindings. `SELF.fetch()` for integration tests. Inline helpers (JWT signing, DB setup/teardown). `singleWorker: true`. Test secrets hardcoded in miniflare bindings config.
+Uses `@cloudflare/vitest-pool-workers` — real Workers runtime with D1/KV/DO bindings. `SELF.fetch()` for integration tests. `singleWorker: true`, `isolatedStorage: false`. Test helpers in `__tests__/helpers.ts` (schema setup, DB reset, auth cookie generation, 7-user seed data). 26 test files covering auth, hackathons, teams, submissions, judging, webhooks, state machine, cron, roles, audit.

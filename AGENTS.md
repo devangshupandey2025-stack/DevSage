@@ -20,11 +20,10 @@ DevSage/
 │   └── web/          # devsage.org — Main website (React + Vite)
 ├── packages/
 │   ├── config/       # Shared tsconfig variants (base, react, worker) + ESLint flat config
-│   ├── db/           # Drizzle ORM schemas (~31 tables) + D1 migrations
+│   ├── db/           # Drizzle ORM schemas (~35 tables) + D1 migrations
 │   └── shared/       # Zod schemas, types, constants (only dep: zod)
 ├── docs/
-│   ├── v2/           # Previous production documentation
-│   └── v3/planned/   # Current architecture specification (source of truth)
+│   └── api/          # API endpoint documentation (14 files)
 └── templates/        # Hackathon site template for {slug}.devsage.org
 ```
 
@@ -45,10 +44,11 @@ DevSage/
 | Add judging endpoint | `apps/api/src/routes/judging.ts` | Judge invites, rubric, scoring, leaderboard |
 | Add webhook handler | `apps/api/src/routes/webhooks.ts` | HMAC signature verification, enqueue to WEBHOOK_QUEUE |
 | Add notification type | `apps/api/src/queue/notification-handler.ts` | Add case to switch, add recipient resolution logic |
+| Add cron handler | `apps/api/src/cron/` | Add handler, wire in `cron/index.ts` |
 | Change Worker bindings | `apps/api/wrangler.jsonc` | Also update `types/env.ts` |
 | Change tsconfig | `packages/config/` | Base, react, worker variants |
 | Change ESLint | `packages/config/eslint.config.mjs` | Flat config (ESLint 9+) |
-| Manage secrets | `docs/v2/secrets.md` | Full conventions documented there |
+| Manage secrets | `apps/api/.dev.vars` (dev), `wrangler secret put` (prod) | See SECRETS / SECURITY section below |
 
 ## DEPENDENCY GRAPH
 
@@ -190,5 +190,5 @@ pnpm deploy:web              # Deploy web app
 - Durable Objects MUST be re-exported from `apps/api/src/index.ts` or wrangler fails
 - Cron trigger: `0 * * * *` (hourly) — checks submission deadlines, sends reminder notifications
 - OAuth state stored in KV with 10-min TTL
-- v3 architecture docs: `docs/v3/planned/` (authoritative specification)
+- Architecture docs: `docs/api/` for API endpoints. Historical docs archived in `docs_ignore_this_stuff/`
 - Complexity hotspots: `hackathon-state-machine.ts`, `judging.ts`, `notification-handler.ts`
