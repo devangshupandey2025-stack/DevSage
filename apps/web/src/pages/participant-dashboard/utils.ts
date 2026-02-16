@@ -16,7 +16,7 @@ import type {
 export function resolveDashboardPhase(
   hackathon: Hackathon,
   team: Team | null | undefined,
-  userId: string
+  _userId: string
 ): DashboardPhase {
   const now = new Date();
   const status = hackathon.status;
@@ -31,21 +31,9 @@ export function resolveDashboardPhase(
     return 'hacking';
   }
 
-  if (status === 'registration_closed') {
-    if (!team) return 'no_team';
-    return 'pre_hacking';
-  }
-
-  if (status === 'registration_open') {
-    if (!team) return 'no_team';
-    return 'registration';
-  }
-
-  // draft or pre-registration
-  const regOpens = new Date(hackathon.registration_opens);
-  if (now < regOpens) return 'pre_registration';
-
-  return 'registration';
+  // draft
+  if (!team) return 'no_team';
+  return 'pre_hacking';
 }
 
 /* ── Team Helpers ───────────────────────────────────────────── */

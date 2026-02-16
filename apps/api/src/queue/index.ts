@@ -27,7 +27,7 @@ function isValidNotificationMessage(body: unknown): body is NotificationMessage 
 async function logDeadLetter(env: Env, queue: string, body: unknown, error: string): Promise<void> {
   try {
     await env.DB.prepare(`
-      INSERT INTO audit_events (id, actor_type, action, entity_type, entity_id, details, created_at)
+      INSERT INTO audit_events (id, actor_type, event_type, entity_type, entity_id, metadata, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       crypto.randomUUID(),

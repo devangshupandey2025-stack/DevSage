@@ -22,7 +22,7 @@ async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS judges (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, invite_status TEXT DEFAULT 'pending' NOT NULL, invited_at TEXT NOT NULL, accepted_at TEXT, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_user_unique ON judges (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY NOT NULL, team_id TEXT NOT NULL, hackathon_id TEXT NOT NULL, tag_name TEXT NOT NULL, commit_sha TEXT NOT NULL, commit_message TEXT, commit_author TEXT, branch TEXT DEFAULT 'main', submitted_at TEXT NOT NULL, received_at TEXT NOT NULL, is_late INTEGER DEFAULT 0 NOT NULL, is_final INTEGER DEFAULT 0 NOT NULL, version INTEGER NOT NULL, status TEXT DEFAULT 'received' NOT NULL, validation_errors TEXT, locked_at TEXT, webhook_delivery_id TEXT UNIQUE, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
-    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, team_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, metadata TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS platform_admins (id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS platform_admins_user_id_unique ON platform_admins (user_id)`,
     `CREATE TABLE IF NOT EXISTS organizer_invites (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, invite_code TEXT NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, invited_by TEXT NOT NULL, accepted_by TEXT, accepted_at TEXT, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (invited_by) REFERENCES users(id), FOREIGN KEY (accepted_by) REFERENCES users(id))`,
@@ -178,7 +178,7 @@ describe('notification queue consumer', () => {
 
       // Assert: audit events logged for each send
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'notification.sent'"
+        "SELECT * FROM audit_events WHERE event_type = 'notification.sent'"
       ).all();
       expect(audits.results).toHaveLength(3);
 
@@ -489,11 +489,11 @@ describe('notification queue consumer', () => {
 
       // Assert: audit event logged with failure
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'notification.failed'"
+        "SELECT * FROM audit_events WHERE event_type = 'notification.failed'"
       ).all();
       expect(audits.results).toHaveLength(1);
       
-      const details = JSON.parse(audits.results[0].details as string);
+      const details = JSON.parse(audits.results[0].metadata as string);
       expect(details.error).toBe('SMTP server unavailable');
 
       vi.restoreAllMocks();
@@ -527,10 +527,10 @@ describe('notification queue consumer', () => {
       
       // Assert: one success, one failure logged
       const successAudits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'notification.sent'"
+        "SELECT * FROM audit_events WHERE event_type = 'notification.sent'"
       ).all();
       const failureAudits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'notification.failed'"
+        "SELECT * FROM audit_events WHERE event_type = 'notification.failed'"
       ).all();
       
       expect(successAudits.results).toHaveLength(1);

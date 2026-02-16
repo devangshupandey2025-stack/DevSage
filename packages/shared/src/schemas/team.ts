@@ -8,6 +8,7 @@ export const TeamSchema = z.object({
   inviteCode: z.string().nullable().optional(),
   trackId: z.string().nullable().optional(),
   ready: z.number().int(),
+  memberCount: z.number().int().default(1),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

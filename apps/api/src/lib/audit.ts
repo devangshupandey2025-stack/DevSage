@@ -9,10 +9,10 @@ interface HashableEvent {
   hackathon_id: string | null;
   actor_id: string | null;
   actor_type: string;
-  action: string;
+  event_type: string;
   entity_type: string;
   entity_id: string;
-  details: string;
+  metadata: string;
   created_at: string;
 }
 
@@ -25,10 +25,10 @@ async function computeEventHash(
     event.hackathon_id ?? '',
     event.actor_id ?? '',
     event.actor_type,
-    event.action,
+    event.event_type,
     event.entity_type,
     event.entity_id,
-    event.details,
+    event.metadata,
     event.created_at,
     prevHash ?? 'GENESIS',
   ].join('|');
@@ -48,10 +48,11 @@ export interface AuditEventInput {
   actorType: 'user' | 'system' | 'bot' | 'cron';
   actorIp?: string;
   actorUserAgent?: string;
-  action: string;
+  eventType: string;
   entityType: string;
   entityId: string;
-  details?: Record<string, unknown>;
+  teamId?: string;
+  metadata?: Record<string, unknown>;
   changes?: { before: Record<string, unknown>; after: Record<string, unknown> };
 }
 
@@ -79,7 +80,7 @@ export async function insertAuditEvent(db: DbClient, input: AuditEventInput): Pr
     const prevHash = lastEvent?.hash ?? null;
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const details = input.details ? JSON.stringify(input.details) : '{}';
+    const metadata = input.metadata ? JSON.stringify(input.metadata) : '{}';
 
     const hash = await computeEventHash(
       {
@@ -87,10 +88,10 @@ export async function insertAuditEvent(db: DbClient, input: AuditEventInput): Pr
         hackathon_id: hackathonId,
         actor_id: input.actorId ?? null,
         actor_type: input.actorType,
-        action: input.action,
+        event_type: input.eventType,
         entity_type: input.entityType,
         entity_id: input.entityId,
-        details,
+        metadata,
         created_at: now,
       },
       prevHash,
@@ -104,10 +105,11 @@ export async function insertAuditEvent(db: DbClient, input: AuditEventInput): Pr
       actor_type: input.actorType,
       actor_ip: input.actorIp ?? null,
       actor_user_agent: input.actorUserAgent?.substring(0, 256) ?? null,
-      action: input.action,
+      event_type: input.eventType,
       entity_type: input.entityType,
       entity_id: input.entityId,
-      details,
+      team_id: input.teamId ?? null,
+      metadata,
       changes: input.changes ? JSON.stringify(input.changes) : null,
       hash,
       prev_hash: prevHash,
@@ -115,7 +117,7 @@ export async function insertAuditEvent(db: DbClient, input: AuditEventInput): Pr
     });
   } catch (error) {
     console.warn('insertAuditEvent failed (non-fatal):', {
-      action: input.action,
+      eventType: input.eventType,
       entityType: input.entityType,
       error: error instanceof Error ? error.message : String(error),
     });

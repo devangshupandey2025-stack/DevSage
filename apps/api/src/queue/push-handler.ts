@@ -91,10 +91,10 @@ export async function handlePush(event: NormalizedPushEvent, env: Env): Promise<
     await insertAuditEvent(db, {
       hackathonId: teamRepo.hackathon_id,
       actorType: 'bot',
-      action: 'force_push.detected',
+      eventType: 'force_push.detected',
       entityType: 'team',
       entityId: teamRepo.team_id,
-      details: { before: event.beforeSha, after: event.headSha, branch: event.branch },
+      metadata: { before: event.beforeSha, after: event.headSha, branch: event.branch },
     });
   }
 }

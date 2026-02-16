@@ -5,6 +5,7 @@ export const workspaces = sqliteTable('workspaces', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
+  type: text('type', { enum: ['club', 'individual'] }).notNull().default('individual'),
   description: text('description').notNull().default(''),
   logo_url: text('logo_url'),
   website: text('website'),

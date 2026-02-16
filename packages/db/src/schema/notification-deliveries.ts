@@ -7,6 +7,7 @@ export const notificationDeliveries = sqliteTable('notification_deliveries', {
   user_id: text('user_id').notNull().references(() => users.id),
   channel: text('channel', { enum: ['email', 'in_app'] }).notNull(),
   notification_type: text('notification_type').notNull(),
+  batch_id: text('batch_id'),
   status: text('status', { enum: ['pending', 'delivered', 'failed', 'permanent_failure', 'dead_lettered'] }).notNull().default('pending'),
   error_message: text('error_message'),
   attempts: integer('attempts').notNull().default(0),

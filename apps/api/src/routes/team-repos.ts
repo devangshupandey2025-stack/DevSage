@@ -107,10 +107,10 @@ teamReposRouter.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'team_repo.link',
+      eventType: 'team_repo.link',
       entityType: 'team_repo',
       entityId: repoId,
-      details: { teamId, repoFullName: body.repoFullName, provider },
+      metadata: { teamId, repoFullName: body.repoFullName, provider },
     });
 
     const created = await db
@@ -200,10 +200,10 @@ teamReposRouter.delete(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'team_repo.unlink',
+      eventType: 'team_repo.unlink',
       entityType: 'team_repo',
       entityId: repoId,
-      details: { teamId, repoFullName: repo.repo_full_name },
+      metadata: { teamId, repoFullName: repo.repo_full_name },
     });
 
     return successResponse(c, { removed: true });

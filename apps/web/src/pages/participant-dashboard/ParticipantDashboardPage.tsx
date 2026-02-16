@@ -85,7 +85,9 @@ export function ParticipantDashboardPage() {
   const deadlines = useMemo(() => {
     if (!hackathon) return [];
     return [
-      getDeadlineInfo('Registration Closes', hackathon.registration_closes),
+      ...(hackathon.starts_at
+        ? [getDeadlineInfo('Hacking Starts', hackathon.starts_at)]
+        : []),
       getDeadlineInfo('Submission Deadline', hackathon.submission_deadline),
       ...(hackathon.judging_starts
         ? [getDeadlineInfo('Judging Starts', hackathon.judging_starts)]
@@ -155,7 +157,7 @@ export function ParticipantDashboardPage() {
       <DeadlineBar deadlines={deadlines} hackathonStatus={hackathon.status} />
 
       {/* No team state */}
-      {(phase === 'no_team' || phase === 'registration') && !team && (
+      {phase === 'no_team' && !team && (
         <NoTeamCTA hackathon={hackathon} />
       )}
 

@@ -21,6 +21,8 @@ import workspaces from './routes/workspaces.js';
 import notifications from './routes/notifications.js';
 import audit from './routes/audit.js';
 import organizers from './routes/organizers.js';
+import { rounds } from './routes/rounds.js';
+import { monitoring } from './routes/monitoring.js';
 import { processWebhookBatch, processNotificationBatch } from './queue/index.js';
 import type { NormalizedGitHubEvent } from './lib/webhook-normalize.js';
 import type { NotificationMessage } from './queue/notification-handler.js';
@@ -49,6 +51,8 @@ app.route('/api/v1/invites', invites);
 app.route('/api/v1/notifications', notifications);
 app.route('/api/v1/hackathons', audit);
 app.route('/api/v1/hackathons', organizers);
+app.route('/api/v1/hackathons', rounds);
+app.route('/api/v1/hackathons', monitoring);
 
 app.get('/', (c) => {
   return c.json({ status: 'ok', message: 'DevSage API' });
@@ -104,7 +108,7 @@ export default {
             `).bind(now.toISOString(), hackathonId).run();
 
             await env.DB.prepare(`
-              INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, details, created_at)
+              INSERT INTO audit_events (id, hackathon_id, actor_type, event_type, entity_type, entity_id, metadata, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `).bind(
               crypto.randomUUID(),
@@ -154,13 +158,13 @@ export default {
 
         const alreadySent = await env.DB.prepare(`
           SELECT 1 FROM audit_events
-          WHERE hackathon_id = ? AND action = ?
+          WHERE hackathon_id = ? AND event_type = ?
           LIMIT 1
         `).bind(row.id, action).first();
 
         if (!alreadySent) {
           await env.DB.prepare(`
-            INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at)
+            INSERT INTO audit_events (id, hackathon_id, actor_type, event_type, entity_type, entity_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `).bind(
             crypto.randomUUID(),

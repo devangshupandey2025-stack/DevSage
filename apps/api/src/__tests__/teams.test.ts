@@ -21,7 +21,7 @@ async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS hackathons_slug_unique ON hackathons (slug)`,
     `CREATE TABLE IF NOT EXISTS organizer_roles (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'admin' NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
-    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, team_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, metadata TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS judges (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, invite_status TEXT DEFAULT 'pending' NOT NULL, invited_at TEXT NOT NULL, accepted_at TEXT, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_id_user_id_unique ON judges (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, repo_full_name TEXT, repo_url TEXT, github_installation_id INTEGER, bot_active INTEGER DEFAULT 0 NOT NULL, invite_code TEXT, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
@@ -423,10 +423,10 @@ describe('team routes v2', () => {
 
     // Verify audit event
     const audit = await env.DB
-      .prepare(`SELECT action FROM audit_events WHERE action = 'team.join' AND entity_id = ?1`)
+      .prepare(`SELECT event_type FROM audit_events WHERE event_type = 'team.join' AND entity_id = ?1`)
       .bind(teamId)
       .first();
-    expect(audit?.action).toBe('team.join');
+    expect(audit?.event_type).toBe('team.join');
   });
 
   it('POST /:slug/teams/:teamId/join — rejects invalid invite code', async () => {
@@ -743,10 +743,10 @@ describe('team routes v2', () => {
      expect(team?.repo_full_name).toBe('owner/repo-name');
 
      const audit = await env.DB
-       .prepare(`SELECT action FROM audit_events WHERE action = 'repo.connect' AND entity_id = ?1`)
+       .prepare(`SELECT event_type FROM audit_events WHERE event_type = 'repo.connect' AND entity_id = ?1`)
        .bind(teamId)
        .first();
-     expect(audit?.action).toBe('repo.connect');
+     expect(audit?.event_type).toBe('repo.connect');
    });
 
    it('POST /:slug/teams/:teamId/repo — member cannot connect repo (403)', async () => {

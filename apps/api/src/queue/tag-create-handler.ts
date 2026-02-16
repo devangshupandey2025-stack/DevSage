@@ -68,10 +68,10 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
     await insertAuditEvent(db, {
       hackathonId: teamRepo.hackathon_id,
       actorType: 'bot',
-      action: 'submission.rejected',
+      eventType: 'submission.rejected',
       entityType: 'submission',
       entityId: submissionId,
-      details: { tagName: event.tagName, reason: doData.reason },
+      metadata: { tagName: event.tagName, reason: doData.reason },
     });
     await postCommitStatus(env, {
       repoFullName: event.repoFullName,
@@ -127,10 +127,10 @@ export async function handleTagCreate(event: NormalizedTagCreateEvent, env: Env)
   await insertAuditEvent(db, {
     hackathonId: teamRepo.hackathon_id,
     actorType: 'bot',
-    action: 'submission.received',
+    eventType: 'submission.received',
     entityType: 'submission',
     entityId: submissionId,
-    details: {
+    metadata: {
       tagName: event.tagName,
       commitSha: event.sha,
       teamId: teamRepo.team_id,

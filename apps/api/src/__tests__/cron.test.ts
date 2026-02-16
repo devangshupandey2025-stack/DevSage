@@ -12,7 +12,7 @@ async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS users_github_id_unique ON users (github_id)`,
     `CREATE TABLE IF NOT EXISTS hackathons (id TEXT PRIMARY KEY NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT, rules_md TEXT, registration_opens TEXT NOT NULL, registration_closes TEXT NOT NULL, submission_deadline TEXT NOT NULL, judging_starts TEXT, judging_ends TEXT, min_team_size INTEGER DEFAULT 1 NOT NULL, max_team_size INTEGER DEFAULT 5 NOT NULL, max_teams INTEGER, submission_tag_pattern TEXT DEFAULT 'submission_v%' NOT NULL, max_submissions_per_team INTEGER, allow_late_submissions INTEGER DEFAULT 0 NOT NULL, primary_color TEXT DEFAULT '#6366f1', logo_r2_key TEXT, banner_r2_key TEXT, custom_subdomain TEXT, status TEXT DEFAULT 'draft' NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (created_by) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS hackathons_slug_unique ON hackathons (slug)`,
-    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, team_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, metadata TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS organizer_roles (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'admin' NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, name TEXT NOT NULL, repo_full_name TEXT, repo_url TEXT, github_installation_id INTEGER, bot_active INTEGER DEFAULT 0 NOT NULL, invite_code TEXT, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE)`,
@@ -94,7 +94,7 @@ describe('scheduled cron handler', () => {
     expect(auditEventResult.results).toContainEqual(
       expect.objectContaining({
         hackathon_id: 'h1',
-        action: 'deadline_reminder_24h',
+        event_type: 'deadline_reminder_24h',
       })
     );
   });
@@ -137,7 +137,7 @@ describe('scheduled cron handler', () => {
     expect(auditEventResult.results).toContainEqual(
       expect.objectContaining({
         hackathon_id: 'h2',
-        action: 'deadline_reminder_1h',
+        event_type: 'deadline_reminder_1h',
       })
     );
   });
@@ -158,7 +158,7 @@ describe('scheduled cron handler', () => {
 
     // Pre-insert audit event to simulate already sent reminder
     await env.DB.prepare(
-      'INSERT INTO audit_events (id, hackathon_id, actor_type, action, entity_type, entity_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO audit_events (id, hackathon_id, actor_type, event_type, entity_type, entity_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).bind('audit1', 'h3', 'cron', 'deadline_reminder_24h', 'hackathon', 'h3', now.toISOString()).run();
 
     // Mock NOTIFICATION_QUEUE.send
@@ -227,7 +227,7 @@ describe('scheduled cron handler', () => {
     // Verify audit event has correct action
     const auditEventResult = await env.DB.prepare('SELECT * FROM audit_events WHERE hackathon_id = ?').bind('h5').all();
     const event = auditEventResult.results?.[0];
-    expect(event?.action).toBe('deadline_reminder_1h');
+    expect(event?.event_type).toBe('deadline_reminder_1h');
     expect(event?.actor_type).toBe('cron');
     expect(event?.entity_type).toBe('hackathon');
   });

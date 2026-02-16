@@ -104,10 +104,10 @@ invites.post('/:code/accept', authMiddleware, async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'workspace.invite_accepted',
+    eventType: 'workspace.invite_accepted',
     entityType: 'workspace_invite',
     entityId: invite.id,
-    details: { email: invite.email, workspace_id: invite.workspace_id, invite_code: code },
+    metadata: { email: invite.email, workspace_id: invite.workspace_id, invite_code: code },
   });
 
   return successResponse(c, { message: 'Invite accepted. You are now a workspace member.' });

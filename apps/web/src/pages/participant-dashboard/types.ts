@@ -2,11 +2,9 @@
    Participant Dashboard — Shared Types
    ───────────────────────────────────────────────────────────── */
 
-/** Hackathon status enum matching v2 API */
+/** Hackathon status enum matching v2 API (5-state lifecycle) */
 export type HackathonStatus =
   | 'draft'
-  | 'registration_open'
-  | 'registration_closed'
   | 'active'
   | 'judging'
   | 'completed'
@@ -37,8 +35,7 @@ export interface Hackathon {
   banner_r2_key?: string | null;
   logo_r2_key?: string | null;
   status: HackathonStatus;
-  registration_opens: string;
-  registration_closes: string;
+  starts_at: string | null;
   submission_deadline: string;
   judging_starts?: string | null;
   judging_ends?: string | null;
@@ -161,11 +158,9 @@ export interface ChecklistItem {
 }
 
 export type DashboardPhase =
-  | 'pre_registration'    // before registration_opens
-  | 'registration'        // registration_open
-  | 'pre_hacking'         // registration_closed, waiting for active
+  | 'pre_hacking'         // draft — waiting for activation
   | 'hacking'             // active — main dashboard state
   | 'submission_locked'   // active but past deadline
   | 'judging'             // judging phase
   | 'completed'           // completed / archived
-  | 'no_team';            // registered but hasn't joined a team yet
+  | 'no_team';            // user hasn't joined a team yet

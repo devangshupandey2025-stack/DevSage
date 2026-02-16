@@ -25,9 +25,8 @@ interface Hackathon {
   primary_color?: string | null;
   banner_r2_key?: string | null;
   logo_r2_key?: string | null;
-  status: 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
-  registration_opens: string;
-  registration_closes: string;
+  status: 'draft' | 'active' | 'judging' | 'completed' | 'archived';
+  starts_at: string | null;
   submission_deadline: string;
   max_team_size: number;
   created_by: string;
@@ -72,9 +71,9 @@ function categorise(hackathons: Hackathon[]) {
   const past: Hackathon[] = [];
 
   for (const h of hackathons) {
-    if (h.status === 'draft' || h.status === 'registration_open') {
+    if (h.status === 'draft') {
       upcoming.push(h);
-    } else if (h.status === 'registration_closed' || h.status === 'active') {
+    } else if (h.status === 'active' || h.status === 'judging') {
       ongoing.push(h);
     } else {
       past.push(h);
@@ -94,8 +93,6 @@ function formatDate(iso: string) {
 
 const STATUS_PILL: Record<string, { label: string; bg: string; text: string }> = {
   draft: { label: 'Draft', bg: 'bg-white/10', text: 'text-white/60' },
-  registration_open: { label: 'Registration Open', bg: 'bg-[#CCFF00]/20', text: 'text-[#CCFF00]' },
-  registration_closed: { label: 'Registration Closed', bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
   active: { label: 'Hacking', bg: 'bg-[#00D4FF]/20', text: 'text-[#00D4FF]' },
   judging: { label: 'Judging', bg: 'bg-purple-500/20', text: 'text-purple-400' },
   completed: { label: 'Completed', bg: 'bg-white/10', text: 'text-white/50' },
@@ -149,7 +146,7 @@ function HackathonCard({ hackathon }: { hackathon: Hackathon }) {
           <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-white/40">
             <span className="flex items-center gap-1">
               <CalendarDays className="h-3.5 w-3.5" />
-              Opens {formatDate(hackathon.registration_opens)}
+              {hackathon.starts_at ? `Starts ${formatDate(hackathon.starts_at)}` : 'Start TBD'}
             </span>
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />

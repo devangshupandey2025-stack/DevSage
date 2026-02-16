@@ -16,7 +16,7 @@ interface NoTeamCTAProps {
 
 export function NoTeamCTA({ hackathon }: NoTeamCTAProps) {
   const canRegister =
-    hackathon.status === 'registration_open';
+    hackathon.status === 'draft' || hackathon.status === 'active';
 
   return (
     <motion.div

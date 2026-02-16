@@ -6,7 +6,7 @@ export const hackathonRounds = sqliteTable('hackathon_rounds', {
   hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
   round_number: integer('round_number').notNull(),
   name: text('name').notNull(),
-  type: text('type').notNull().default('standard'),
+  type: text('type', { enum: ['normal', 'elimination'] }).notNull().default('normal'),
   status: text('status', {
     enum: ['pending', 'active', 'judging', 'completed'],
   }).notNull().default('pending'),

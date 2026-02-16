@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { eq, and, desc, count } from 'drizzle-orm';
-import { createDbClient, workspaceInvites, workspaces, platformAdmins, users } from '@devsage/db';
+import { eq, and, desc, count, sql, like } from 'drizzle-orm';
+import { createDbClient, workspaceInvites, workspaces, platformAdmins, users, auditEvents, hackathons } from '@devsage/db';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
@@ -74,10 +74,10 @@ admin.post('/invites', async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'platform.workspace_invite_created',
+    eventType: 'platform.workspace_invite_created',
     entityType: 'workspace_invite',
     entityId: id,
-    details: { email, workspaceId: body.workspaceId },
+    metadata: { email, workspaceId: body.workspaceId },
   });
 
   await c.env.NOTIFICATION_QUEUE.send({
@@ -157,10 +157,10 @@ admin.delete('/invites/:id', async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'platform.workspace_invite_revoked',
+    eventType: 'platform.workspace_invite_revoked',
     entityType: 'workspace_invite',
     entityId: inviteId,
-    details: { email: invite.email },
+    metadata: { email: invite.email },
   });
 
   return successResponse(c, { message: 'Invite revoked' });
@@ -241,10 +241,10 @@ admin.post('/admins', async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'platform.admin_added',
+    eventType: 'platform.admin_added',
     entityType: 'platform_admin',
     entityId: id,
-    details: { userId: body.userId, role },
+    metadata: { userId: body.userId, role },
   });
 
   return successResponse(c, { id, user_id: body.userId, role }, undefined, 201);
@@ -286,10 +286,10 @@ admin.delete('/admins/:userId', async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'platform.admin_removed',
+    eventType: 'platform.admin_removed',
     entityType: 'platform_admin',
     entityId: target.id,
-    details: { userId: targetUserId },
+    metadata: { userId: targetUserId },
   });
 
   return successResponse(c, { message: 'Platform admin removed' });
@@ -324,6 +324,173 @@ admin.get('/workspaces', async (c) => {
     .get();
 
   return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+});
+
+/**
+ * GET /health — system health check
+ */
+admin.get('/health', async (c) => {
+  const db = createDbClient(c.env.DB);
+
+  try {
+    await db.select({ value: sql<number>`1` }).from(users).limit(1).get();
+    return successResponse(c, {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      db: 'connected',
+    });
+  } catch {
+    return errorResponse(c, 503, 'UNHEALTHY', 'Database connection failed');
+  }
+});
+
+/**
+ * GET /users — list all users (paginated)
+ */
+admin.get('/users', async (c) => {
+  const db = createDbClient(c.env.DB);
+  const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
+  const offset = Number(c.req.query('offset') ?? 0);
+  const search = c.req.query('search');
+
+  const conditions = search
+    ? sql`${users.display_name} LIKE ${'%' + search + '%'} OR ${users.github_username} LIKE ${'%' + search + '%'}`
+    : undefined;
+
+  const data = await db
+    .select({
+      id: users.id,
+      githubUsername: users.github_username,
+      displayName: users.display_name,
+      email: users.email,
+      avatarUrl: users.avatar_url,
+      createdAt: users.created_at,
+      updatedAt: users.updated_at,
+    })
+    .from(users)
+    .where(conditions)
+    .orderBy(desc(users.created_at))
+    .limit(limit)
+    .offset(offset)
+    .all();
+
+  const totalResult = await db.select({ value: count() }).from(users).where(conditions).get();
+  return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+});
+
+/**
+ * GET /hackathons — list all hackathons (admin overview)
+ */
+admin.get('/hackathons', async (c) => {
+  const db = createDbClient(c.env.DB);
+  const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
+  const offset = Number(c.req.query('offset') ?? 0);
+
+  const data = await db
+    .select()
+    .from(hackathons)
+    .orderBy(desc(hackathons.created_at))
+    .limit(limit)
+    .offset(offset)
+    .all();
+
+  const totalResult = await db.select({ value: count() }).from(hackathons).get();
+  return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+});
+
+/**
+ * DELETE /hackathons/:id — force-delete a hackathon (super admin only)
+ */
+admin.delete('/hackathons/:id', async (c) => {
+  const hackathonId = c.req.param('id');
+  const user = c.get('user');
+  const db = createDbClient(c.env.DB);
+
+  const hackathon = await db
+    .select()
+    .from(hackathons)
+    .where(eq(hackathons.id, hackathonId))
+    .get();
+
+  if (!hackathon) {
+    return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+  }
+
+  await db.delete(hackathons).where(eq(hackathons.id, hackathonId));
+
+  await insertAuditEvent(db, {
+    actorId: user.sub,
+    actorType: 'user',
+    eventType: 'platform.hackathon_force_delete',
+    entityType: 'hackathon',
+    entityId: hackathonId,
+    metadata: { title: hackathon.title, slug: hackathon.slug },
+  });
+
+  return successResponse(c, { deleted: true });
+});
+
+/**
+ * GET /audit — platform-wide audit trail
+ */
+admin.get('/audit', async (c) => {
+  const db = createDbClient(c.env.DB);
+  const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
+  const offset = Number(c.req.query('offset') ?? 0);
+  const eventTypeFilter = c.req.query('event_type');
+
+  let whereClause;
+  if (eventTypeFilter) {
+    whereClause = eq(auditEvents.event_type, eventTypeFilter);
+  }
+
+  const data = await db
+    .select()
+    .from(auditEvents)
+    .where(whereClause)
+    .orderBy(desc(auditEvents.created_at))
+    .limit(limit)
+    .offset(offset)
+    .all();
+
+  const totalResult = await db.select({ value: count() }).from(auditEvents).where(whereClause).get();
+  return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+});
+
+/**
+ * GET /audit/dashboard/recent — recent audit events for admin dashboard
+ */
+admin.get('/audit/dashboard/recent', async (c) => {
+  const db = createDbClient(c.env.DB);
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 100);
+
+  const data = await db
+    .select()
+    .from(auditEvents)
+    .orderBy(desc(auditEvents.created_at))
+    .limit(limit)
+    .all();
+
+  return successResponse(c, data);
+});
+
+/**
+ * GET /audit/dashboard/stats — aggregate audit statistics
+ */
+admin.get('/audit/dashboard/stats', async (c) => {
+  const db = createDbClient(c.env.DB);
+
+  const totalEvents = await db.select({ value: count() }).from(auditEvents).get();
+  const totalUsers = await db.select({ value: count() }).from(users).get();
+  const totalHackathons = await db.select({ value: count() }).from(hackathons).get();
+  const totalWorkspaces = await db.select({ value: count() }).from(workspaces).get();
+
+  return successResponse(c, {
+    totalEvents: totalEvents?.value ?? 0,
+    totalUsers: totalUsers?.value ?? 0,
+    totalHackathons: totalHackathons?.value ?? 0,
+    totalWorkspaces: totalWorkspaces?.value ?? 0,
+  });
 });
 
 export default admin;

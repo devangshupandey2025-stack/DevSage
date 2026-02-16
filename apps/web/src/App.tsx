@@ -15,6 +15,7 @@ const HomePage = lazy(() => import('@/pages/home').then(m => ({ default: m.HomeP
 const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ default: m.DashboardPage })));
 const HackathonDetailPage = lazy(() => import('@/pages/hackathon-detail').then(m => ({ default: m.HackathonDetailPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then(m => ({ default: m.ProfilePage })));
+const ParticipantDashboardPage = lazy(() => import('@/pages/participant-dashboard/ParticipantDashboardPage').then(m => ({ default: m.ParticipantDashboardPage })));
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/hackathons/:slug" element={<HackathonDetailPage />} />
             <Route path="/hackathons/:slug/teams" element={<TeamManagementPage />} />
+            <Route path="/hackathons/:slug/participant" element={<ParticipantDashboardPage />} />
             <Route path="/hackathons/:slug/leaderboard" element={<LeaderboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>

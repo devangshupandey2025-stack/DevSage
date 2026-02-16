@@ -207,10 +207,10 @@ hackathons.post(
       hackathonId: id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.create',
+      eventType: 'hackathon.create',
       entityType: 'hackathon',
       entityId: id,
-      details: { slug, title: body.title, workspaceId: body.workspaceId },
+      metadata: { slug, title: body.title, workspaceId: body.workspaceId },
     });
 
     const hackathon = await db
@@ -324,10 +324,10 @@ hackathons.put(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.update',
+      eventType: 'hackathon.update',
       entityType: 'hackathon',
       entityId: hackathon.id,
-      details: { updatedFields: Object.keys(body) },
+      metadata: { updatedFields: Object.keys(body) },
     });
 
     const updated = await db
@@ -380,10 +380,10 @@ hackathons.patch(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.transition',
+      eventType: 'hackathon.transition',
       entityType: 'hackathon',
       entityId: hackathon.id,
-      details: { from: hackathon.status, to: newStatus },
+      metadata: { from: hackathon.status, to: newStatus },
     });
 
     const updated = await db
@@ -415,7 +415,7 @@ hackathons.delete(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.delete',
+      eventType: 'hackathon.delete',
       entityType: 'hackathon',
       entityId: hackathon.id,
     });
@@ -521,7 +521,7 @@ hackathons.post(
       hackathonId: newId,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.clone',
+      eventType: 'hackathon.clone',
       entityType: 'hackathon',
       entityId: newId,
       changes: { before: {}, after: { cloned_from: hackathon.id } },
@@ -593,7 +593,7 @@ hackathons.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.transfer_ownership',
+      eventType: 'hackathon.transfer_ownership',
       entityType: 'hackathon',
       entityId: hackathon.id,
       changes: {
@@ -678,10 +678,10 @@ hackathons.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'hackathon.asset_upload',
+      eventType: 'hackathon.asset_upload',
       entityType: 'hackathon',
       entityId: hackathon.id,
-      details: { assetType, r2Key, fileName: file.name, fileSize: file.size },
+      metadata: { assetType, r2Key, fileName: file.name, fileSize: file.size },
     });
 
     return successResponse(c, { type: assetType, r2_key: r2Key }, undefined, 201);

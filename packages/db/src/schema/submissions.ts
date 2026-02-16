@@ -15,9 +15,11 @@ export const submissions = sqliteTable('submissions', {
   provider: text('provider').notNull().default('github'),
   repo_full_name: text('repo_full_name').notNull(),
   round_id: text('round_id').notNull().references(() => hackathonRounds.id),
+  demo_url: text('demo_url'),
   status: text('status', {
     enum: ['received', 'validated', 'validation_failed', 'locked', 'under_review', 'scored', 'invalid', 'superseded']
   }).notNull().default('received'),
+  rejection_reason: text('rejection_reason'),
   is_late: integer('is_late').notNull().default(0),
   is_final: integer('is_final').notNull().default(0),
   validation_results: text('validation_results'),

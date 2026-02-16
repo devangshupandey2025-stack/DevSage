@@ -1,9 +1,11 @@
 import { sqliteTable, text, integer, real, unique, index } from 'drizzle-orm/sqlite-core';
 import { hackathons } from './hackathons.js';
+import { hackathonRounds } from './hackathon-rounds.js';
 
 export const rubricCriteria = sqliteTable('rubric_criteria', {
   id: text('id').primaryKey(),
   hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
+  round_id: text('round_id').references(() => hackathonRounds.id, { onDelete: 'cascade' }),
   track_id: text('track_id'),
   round: integer('round').notNull().default(1),
   name: text('name').notNull(),

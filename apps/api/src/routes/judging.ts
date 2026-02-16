@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and } from 'drizzle-orm';
-import { createDbClient, judges, users, rubricCriteria, judgeAssignments, scores } from '@devsage/db';
-import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema, SubmitScoreRequestSchema } from '@devsage/shared';
+import { eq, and, sql } from 'drizzle-orm';
+import { createDbClient, judges, users, rubricCriteria, judgeAssignments, scores, hackathons, submissions, teams } from '@devsage/db';
+import { InviteJudgeRequestSchema, RespondToJudgeInviteRequestSchema, BulkRubricRequestSchema, SubmitScoreRequestSchema, PaginationQuerySchema } from '@devsage/shared';
 import type { AuthAppEnv } from '../types/auth.js';
 import { authMiddleware, optionalAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/role.js';
-import { successResponse, errorResponse } from '../lib/response.js';
+import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { buildJudgeAssignments, validateScoreSubmission, getLeaderboard } from '../services/judging-service.js';
 
@@ -54,7 +54,7 @@ judging.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'judge.invite',
+      eventType: 'judge.invite',
       entityType: 'judge',
       entityId: judgeId,
     });
@@ -148,7 +148,7 @@ judging.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: body.accept ? 'judge.accept' : 'judge.decline',
+      eventType: body.accept ? 'judge.accept' : 'judge.decline',
       entityType: 'judge',
       entityId: judgeRecordId,
     });
@@ -221,10 +221,10 @@ judging.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'rubric.bulk_update',
+      eventType: 'rubric.bulk_update',
       entityType: 'rubric_criteria',
       entityId: hackathon.id,
-      details: { count: newCriteria.length },
+      metadata: { count: newCriteria.length },
     });
 
     const inserted = await db
@@ -276,10 +276,10 @@ judging.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'judges.assign',
+      eventType: 'judges.assign',
       entityType: 'judge_assignment',
       entityId: hackathon.id,
-      details: { count: result.assignments.length },
+      metadata: { count: result.assignments.length },
     });
 
     const inserted = await db
@@ -295,7 +295,7 @@ judging.post(
 judging.post(
   '/:slug/scores',
   authMiddleware,
-  requireRole('anonymous'),
+  requireRole('judge'),
   zValidator('json', SubmitScoreRequestSchema),
   async (c) => {
     const hackathon = c.get('hackathon');
@@ -343,10 +343,10 @@ judging.post(
       hackathonId: hackathon.id,
       actorId: user.sub,
       actorType: 'user',
-      action: 'score.submit',
+      eventType: 'score.submit',
       entityType: 'score',
       entityId: scoreId,
-      details: {
+      metadata: {
         submissionId: body.submissionId,
         criteriaId: body.criteriaId,
         score: body.score,
@@ -381,6 +381,184 @@ judging.get(
 
     const leaderboard = await getLeaderboard(db, hackathon.id);
     return successResponse(c, leaderboard);
+  },
+);
+
+/**
+ * DELETE /:slug/judges/:id — remove a judge
+ * Requires: co_organizer
+ */
+judging.delete(
+  '/:slug/judges/:id',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const judgeId = c.req.param('id');
+    const db = createDbClient(c.env.DB);
+
+    const judge = await db
+      .select()
+      .from(judges)
+      .where(and(eq(judges.id, judgeId), eq(judges.hackathon_id, hackathon.id)))
+      .get();
+
+    if (!judge) {
+      return errorResponse(c, 404, 'NOT_FOUND', 'Judge not found');
+    }
+
+    // Delete assignments first
+    await db.delete(judgeAssignments).where(eq(judgeAssignments.judge_id, judgeId));
+    await db.delete(judges).where(eq(judges.id, judgeId));
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      eventType: 'judge.remove',
+      entityType: 'judge',
+      entityId: judgeId,
+      metadata: { userId: judge.user_id },
+    });
+
+    return successResponse(c, { removed: true });
+  },
+);
+
+/**
+ * GET /:slug/judges/:id/assignments — get a judge's assignments
+ * Requires: judge (own) or co_organizer
+ */
+judging.get(
+  '/:slug/judges/:id/assignments',
+  authMiddleware,
+  requireRole('judge'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const judgeId = c.req.param('id');
+    const db = createDbClient(c.env.DB);
+
+    const judge = await db
+      .select()
+      .from(judges)
+      .where(and(eq(judges.id, judgeId), eq(judges.hackathon_id, hackathon.id)))
+      .get();
+
+    if (!judge) {
+      return errorResponse(c, 404, 'NOT_FOUND', 'Judge not found');
+    }
+
+    const assignments = await db
+      .select({
+        id: judgeAssignments.id,
+        teamId: judgeAssignments.team_id,
+        judgeId: judgeAssignments.judge_id,
+        hackathonId: judgeAssignments.hackathon_id,
+        assignedAt: judgeAssignments.assigned_at,
+      })
+      .from(judgeAssignments)
+      .where(
+        and(
+          eq(judgeAssignments.judge_id, judgeId),
+          eq(judgeAssignments.hackathon_id, hackathon.id),
+        ),
+      )
+      .all();
+
+    return successResponse(c, assignments);
+  },
+);
+
+/**
+ * GET /:slug/scores — list all scores (organizer view)
+ * Requires: co_organizer
+ */
+judging.get(
+  '/:slug/scores',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const db = createDbClient(c.env.DB);
+
+    const parsed = PaginationQuerySchema.safeParse({
+      limit: c.req.query('limit'),
+      offset: c.req.query('offset'),
+    });
+    const { limit, offset } = parsed.success ? parsed.data : { limit: 20, offset: 0 };
+
+    // Get scores with submission and judge info
+    const data = await db
+      .select({
+        id: scores.id,
+        submissionId: scores.submission_id,
+        judgeId: scores.judge_id,
+        criteriaId: scores.criteria_id,
+        score: scores.score,
+        comment: scores.comment,
+        isSubmitted: scores.is_submitted,
+        scoredAt: scores.scored_at,
+      })
+      .from(scores)
+      .innerJoin(submissions, eq(submissions.id, scores.submission_id))
+      .innerJoin(teams, eq(teams.id, submissions.team_id))
+      .where(eq(teams.hackathon_id, hackathon.id))
+      .limit(limit)
+      .offset(offset)
+      .all();
+
+    const totalResult = await db
+      .select({ value: sql<number>`COUNT(*)` })
+      .from(scores)
+      .innerJoin(submissions, eq(submissions.id, scores.submission_id))
+      .innerJoin(teams, eq(teams.id, submissions.team_id))
+      .where(eq(teams.hackathon_id, hackathon.id))
+      .get();
+
+    return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+  },
+);
+
+/**
+ * POST /:slug/results/publish — publish final results
+ * Requires: co_organizer, hackathon must be in judging or completed status
+ */
+judging.post(
+  '/:slug/results/publish',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const user = c.get('user');
+    const db = createDbClient(c.env.DB);
+
+    if (!['judging', 'completed'].includes(hackathon.status)) {
+      return errorResponse(c, 400, 'INVALID_STATUS', 'Results can only be published during judging or completed status');
+    }
+
+    const leaderboard = await getLeaderboard(db, hackathon.id);
+
+    // Transition to completed if still in judging
+    if (hackathon.status === 'judging') {
+      const now = new Date().toISOString();
+      await db
+        .update(hackathons)
+        .set({ status: 'completed', updated_at: now })
+        .where(eq(hackathons.id, hackathon.id));
+    }
+
+    await insertAuditEvent(db, {
+      hackathonId: hackathon.id,
+      actorId: user.sub,
+      actorType: 'user',
+      eventType: 'results.publish',
+      entityType: 'hackathon',
+      entityId: hackathon.id,
+      metadata: { teamCount: leaderboard.length },
+    });
+
+    return successResponse(c, { published: true, leaderboard });
   },
 );
 

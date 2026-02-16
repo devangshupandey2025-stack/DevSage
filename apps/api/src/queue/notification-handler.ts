@@ -118,14 +118,14 @@ export async function handleNotification(message: NotificationMessage, env: Env)
     });
 
     // 4. Log send status to audit_events
-    const action = result.success ? 'notification.sent' : 'notification.failed';
+    const eventAction = result.success ? 'notification.sent' : 'notification.failed';
     await insertAuditEvent(db, {
       hackathonId: 'hackathonId' in message ? message.hackathonId : undefined,
       actorType: 'system',
-      action,
+      eventType: eventAction,
       entityType: 'notification',
       entityId: idempotencyKey,
-      details: {
+      metadata: {
         recipient: recipient.email,
         type: message.type,
         success: result.success,

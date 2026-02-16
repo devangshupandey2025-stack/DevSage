@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const RubricCriteriaSchema = z.object({
   id: z.string(),
   hackathonId: z.string(),
+  roundId: z.string().nullable().optional(),
   trackId: z.string().nullable().optional(),
   round: z.number().int(),
   name: z.string(),

@@ -9,6 +9,7 @@ export const teams = sqliteTable('teams', {
   invite_code: text('invite_code').unique(),
   track_id: text('track_id'),
   ready: integer('ready').notNull().default(0),
+  member_count: integer('member_count').notNull().default(1),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
 }, (table) => ({

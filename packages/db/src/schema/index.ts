@@ -26,6 +26,8 @@ export { organizerRoles } from './organizer-roles.js';
 export { teams } from './teams.js';
 export { teamMembers } from './team-members.js';
 export { teamRepos } from './team-repos.js';
+export { teamInvites } from './team-invites.js';
+export { teamMessages } from './team-messages.js';
 
 // Submissions & Activity
 export { submissions } from './submissions.js';
@@ -34,6 +36,7 @@ export { forcePushEvents } from './force-push-events.js';
 
 // Judging
 export { judges } from './judges.js';
+export { judgeTracks } from './judge-tracks.js';
 export { rubricCriteria } from './rubric-criteria.js';
 export { judgeAssignments } from './judge-assignments.js';
 export { scores } from './scores.js';

@@ -23,7 +23,7 @@ import {
   Play
 } from 'lucide-react';
 
-type HackathonStatus = 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
+type HackathonStatus = 'draft' | 'active' | 'judging' | 'completed' | 'archived';
 
 interface Hackathon {
   id: string;
@@ -31,11 +31,10 @@ interface Hackathon {
   title: string;
   description: string;
   status: HackathonStatus;
-  registration_opens: string;
-  registration_closes: string;
-  submission_deadline: string;
-  judging_starts: string;
-  judging_ends: string;
+  starts_at: string | null;
+  submission_deadline: string | null;
+  judging_starts: string | null;
+  judging_ends: string | null;
   min_team_size: number;
   max_team_size: number;
   created_by: string;
@@ -80,8 +79,6 @@ interface LeaderboardItem {
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
-  registration_open: "Registration Open",
-  registration_closed: "Registration Closed",
   active: "Hacking Active",
   judging: "Judging",
   completed: "Completed",
@@ -90,8 +87,6 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-500",
-  registration_open: "bg-blue-500",
-  registration_closed: "bg-yellow-500",
   active: "bg-green-500",
   judging: "bg-purple-500",
   completed: "bg-indigo-500",
@@ -99,20 +94,16 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const NEXT_STATUS: Record<string, string> = {
-  draft: "registration_open",
-  registration_open: "registration_closed",
-  registration_closed: "active",
+  draft: "active",
   active: "judging",
   judging: "completed",
   completed: "archived",
 };
 
 const NEXT_PHASE_LABEL: Record<string, string> = {
-  draft: "Open Registration",
-  registration_open: "Close Registration",
-  registration_closed: "Start Hacking",
+  draft: "Activate",
   active: "Start Judging",
-  judging: "Complete Hackathon",
+  judging: "Complete",
   completed: "Archive",
 };
 
@@ -291,11 +282,10 @@ function OverviewTab({ hackathon }: { hackathon: Hackathon }) {
           <CardTitle>Timeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <TimelineItem label="Registration Opens" date={hackathon.registration_opens} />
-          <TimelineItem label="Registration Closes" date={hackathon.registration_closes} />
-          <TimelineItem label="Submission Deadline" date={hackathon.submission_deadline} />
-          <TimelineItem label="Judging Starts" date={hackathon.judging_starts} />
-          <TimelineItem label="Judging Ends" date={hackathon.judging_ends} />
+          {hackathon.starts_at && <TimelineItem label="Starts At" date={hackathon.starts_at} />}
+          {hackathon.submission_deadline && <TimelineItem label="Submission Deadline" date={hackathon.submission_deadline} />}
+          {hackathon.judging_starts && <TimelineItem label="Judging Starts" date={hackathon.judging_starts} />}
+          {hackathon.judging_ends && <TimelineItem label="Judging Ends" date={hackathon.judging_ends} />}
         </CardContent>
       </Card>
     </div>
@@ -450,7 +440,7 @@ function RubricTab({ hackathon }: { hackathon: Hackathon }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const isEditable = hackathon.status === 'draft' || hackathon.status === 'registration_open';
+  const isEditable = hackathon.status === 'draft';
 
   const fetchRubric = useCallback(async () => {
     try {

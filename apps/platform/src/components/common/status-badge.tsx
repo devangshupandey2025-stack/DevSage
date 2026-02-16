@@ -3,8 +3,6 @@ import { cn } from '@/lib/utils';
 
 type StatusType =
   | 'draft'
-  | 'registration_open'
-  | 'registration_closed'
   | 'active'
   | 'judging'
   | 'completed'
@@ -16,18 +14,6 @@ const statusConfig: Record<StatusType, { label: string; color: string; bg: strin
     color: 'text-white/60',
     bg: 'bg-white/[0.06] border-white/[0.08]',
     dot: 'bg-white/40',
-  },
-  registration_open: {
-    label: 'Registration Open',
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10 border-emerald-500/20',
-    dot: 'bg-emerald-400',
-  },
-  registration_closed: {
-    label: 'Registration Closed',
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/10 border-amber-500/20',
-    dot: 'bg-amber-400',
   },
   active: {
     label: 'Hacking',

@@ -576,37 +576,45 @@ flowchart LR
 
 ## Document Index
 
-### Architecture Docs
+### Architecture Docs (Phase 1)
 
-| # | Document | Domain | Phase |
-|---|----------|--------|-------|
-| [00](./00-overview.md) | System Overview | Architecture | — |
-| [01](./authentication.md) | Authentication & Sessions | Identity & Access | 1 |
-| [02](./hackathon-lifecycle.md) | Hackathon Lifecycle | Core Platform | 1 |
-| [03](./team-management.md) | Team Management | Core Platform | 1 |
-| [04](./submissions.md) | Submissions & Locking | Core Platform | 1 |
-| [05](./judging.md) | Judging & Scoring | Core Platform | 1 |
-| [06](./roles-permissions.md) | Roles & Permissions | Identity & Access | 1 |
-| [07](./webhooks-integrations.md) | Webhooks & VCS Integration | Integration Layer | 1 |
-| [08](./notifications.md) | Notification System | Integration Layer | 1 |
-| [09](./audit-trail.md) | Audit Trail | Observability | 1 |
-| [10](./data-model.md) | Data Model & Schema | Storage | 1 |
-| [11](./api-design.md) | API Design & Conventions | Interface | 1 |
-| [12](./infrastructure.md) | Infrastructure & Deployment | Operations | 1 |
-| [13](./frontend.md) | Frontend Architecture | Core Platform | 2 |
-| [14](./real-time.md) | Real-Time System | Integration Layer | 2 |
-| [15](./analytics.md) | Analytics & Insights | Observability | 2 |
-| [16](./sponsor-portal.md) | Sponsor Management (Organizer-managed) | Growth & Engagement | 2 |
-| [18](./federation.md) | Collaborative Workspaces | Platform Extensibility | 3 |
+| # | Directory | Domain | Files |
+|---|-----------|--------|-------|
+| [01](./01-authentication/) | Authentication & Sessions | Identity & Access | 7 files |
+| [02](./02-roles-permissions/) | Roles & Permissions | Identity & Access | 6 files |
+| [03](./03-hackathon-lifecycle/) | Hackathon Lifecycle | Core Platform | 8 files |
+| [04](./04-team-management/) | Team Management | Core Platform | 7 files |
+| [05](./05-submissions/) | Submissions & Locking | Core Platform | 8 files |
+| [06](./06-judging/) | Judging & Scoring | Core Platform | 7 files |
+| [07](./07-webhooks/) | Webhooks & VCS Integration | Integration Layer | 7 files |
+| [08](./08-notifications/) | Notification System | Integration Layer | 6 files |
+| [09](./09-audit-trail/) | Audit Trail | Observability | 5 files |
+| [10](./10-data-model/) | Data Model & Schema | Storage | 12 files |
+| [11](./11-api-design/) | API Design & Conventions | Interface | 7 files |
+| [12](./12-infrastructure/) | Infrastructure & Deployment | Operations | 6 files |
+| [13](./13-frontend/) | Frontend Architecture | Core Platform | 8 files |
+
+### Phase 2 Docs
+
+| Document | Feature |
+|----------|---------|
+| [Real-time WebSocket](./phase-2/real-time-websocket.md) | WebSocketGateway DO, presence, SSE fallback |
+| [AI Reviews](./phase-2/ai-reviews.md) | Workers AI code review |
+| [Analytics Dashboards](./phase-2/analytics-dashboards.md) | Analytics Engine, dashboards |
+| [Sponsor Management](./phase-2/sponsor-management.md) | Sponsor tiers, branding |
+| [Team Chat](./phase-2/team-chat.md) | In-team messaging |
+| [Audience Voting](./phase-2/audience-voting.md) | Public voting system |
+| [GDPR Anonymization](./phase-2/gdpr-anonymization.md) | Data anonymization |
+| [Advanced Notifications](./phase-2/advanced-notifications.md) | Push, Slack, Discord |
 
 ### Guide Docs
 
 | Document | Purpose |
 |----------|---------|
-| [Developer Setup](./setup.md) | Local environment, Docker Compose, seed data, VS Code config |
-| [Deployment](./deployment.md) | CI/CD pipeline, staging environments, preview deploys, rollback procedures |
-| [Secrets Management](./secrets.md) | Rotation automation, environment separation, incident response |
-| [Contributing](./contributing.md) | PR workflow, code review, testing standards, release process |
+| [Developer Setup](./guides/setup.md) | Local environment, secrets, first run |
+| [Deployment](./guides/deployment.md) | CI/CD pipeline, preview deploys, rollback |
+| [Secrets Management](./guides/secrets.md) | Secret scanning, rotation, storage |
+| [Contributing](./guides/contributing.md) | PR workflow, code style, testing standards |
 
 ---
 

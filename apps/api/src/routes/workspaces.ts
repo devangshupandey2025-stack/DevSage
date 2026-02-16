@@ -104,10 +104,10 @@ workspacesRouter.post(
     await insertAuditEvent(db, {
       actorId: user.sub,
       actorType: 'user',
-      action: 'workspace.create',
+      eventType: 'workspace.create',
       entityType: 'workspace',
       entityId: id,
-      details: { slug: body.slug, name: body.name },
+      metadata: { slug: body.slug, name: body.name },
     });
 
     const workspace = await db
@@ -197,10 +197,10 @@ workspacesRouter.put(
     await insertAuditEvent(db, {
       actorId: user.sub,
       actorType: 'user',
-      action: 'workspace.update',
+      eventType: 'workspace.update',
       entityType: 'workspace',
       entityId: access.workspace.id,
-      details: { updatedFields: Object.keys(body) },
+      metadata: { updatedFields: Object.keys(body) },
     });
 
     const updated = await db
@@ -248,7 +248,7 @@ workspacesRouter.delete('/:slug', authMiddleware, async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'workspace.delete',
+    eventType: 'workspace.delete',
     entityType: 'workspace',
     entityId: access.workspace.id,
   });
@@ -305,10 +305,10 @@ workspacesRouter.post(
     await insertAuditEvent(db, {
       actorId: user.sub,
       actorType: 'user',
-      action: 'workspace.member_added',
+      eventType: 'workspace.member_added',
       entityType: 'workspace_member',
       entityId: id,
-      details: { userId: body.userId, role: body.role, workspace_id: access.workspace.id },
+      metadata: { userId: body.userId, role: body.role, workspace_id: access.workspace.id },
     });
 
     return successResponse(c, { id, userId: body.userId, role: body.role }, undefined, 201);
@@ -377,10 +377,10 @@ workspacesRouter.delete('/:slug/members/:userId', authMiddleware, async (c) => {
   await insertAuditEvent(db, {
     actorId: user.sub,
     actorType: 'user',
-    action: 'workspace.member_removed',
+    eventType: 'workspace.member_removed',
     entityType: 'workspace_member',
     entityId: targetMember.id,
-    details: { userId: targetUserId, workspace_id: access.workspace.id },
+    metadata: { userId: targetUserId, workspace_id: access.workspace.id },
   });
 
   return c.body(null, 204);
@@ -420,6 +420,114 @@ workspacesRouter.get('/:slug/hackathons', authMiddleware, async (c) => {
     .get();
 
   return paginatedResponse(c, data, totalResult?.value ?? 0, limit, offset);
+});
+
+/**
+ * PUT /:slug/members/:userId — update a member's role
+ */
+workspacesRouter.put('/:slug/members/:userId', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const targetUserId = c.req.param('userId');
+  const slug = c.req.param('slug');
+  const db = createDbClient(c.env.DB);
+
+  const body = await c.req.json<{ role: string }>();
+  const validRoles = ['workspace_admin', 'workspace_member'] as const;
+  if (!body.role || !validRoles.includes(body.role as (typeof validRoles)[number])) {
+    return errorResponse(c, 400, 'INVALID_ROLE', `Role must be one of: ${validRoles.join(', ')}`);
+  }
+
+  const access = await resolveWorkspaceAccess(db, slug, user.sub);
+  if (!access) {
+    return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
+  }
+  if (!access.member || !isWsRoleAtLeast(access.member.role, 'workspace_admin')) {
+    return errorResponse(c, 403, 'INSUFFICIENT_ROLE', 'Requires workspace_admin role or higher');
+  }
+
+  const targetMember = await db
+    .select()
+    .from(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspace_id, access.workspace.id), eq(workspaceMembers.user_id, targetUserId)))
+    .get();
+
+  if (!targetMember) {
+    return errorResponse(c, 404, 'MEMBER_NOT_FOUND', 'Member not found');
+  }
+
+  if (targetMember.role === 'workspace_owner') {
+    return errorResponse(c, 403, 'CANNOT_CHANGE_OWNER_ROLE', 'Cannot change the owner role. Use transfer instead.');
+  }
+
+  await db
+    .update(workspaceMembers)
+    .set({ role: body.role as 'workspace_admin' | 'workspace_member' })
+    .where(eq(workspaceMembers.id, targetMember.id));
+
+  await insertAuditEvent(db, {
+    actorId: user.sub,
+    actorType: 'user',
+    eventType: 'workspace.member_role_updated',
+    entityType: 'workspace_member',
+    entityId: targetMember.id,
+    metadata: { userId: targetUserId, previousRole: targetMember.role, newRole: body.role },
+  });
+
+  return successResponse(c, { updated: true, role: body.role });
+});
+
+/**
+ * POST /:slug/transfer — transfer workspace ownership
+ */
+workspacesRouter.post('/:slug/transfer', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const slug = c.req.param('slug');
+  const db = createDbClient(c.env.DB);
+
+  const body = await c.req.json<{ userId: string }>();
+  if (!body.userId) {
+    return errorResponse(c, 400, 'MISSING_USER_ID', 'userId is required');
+  }
+
+  const access = await resolveWorkspaceAccess(db, slug, user.sub);
+  if (!access) {
+    return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
+  }
+  if (!access.member || access.member.role !== 'workspace_owner') {
+    return errorResponse(c, 403, 'NOT_OWNER', 'Only the workspace owner can transfer ownership');
+  }
+
+  const newOwnerMember = await db
+    .select()
+    .from(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspace_id, access.workspace.id), eq(workspaceMembers.user_id, body.userId)))
+    .get();
+
+  if (!newOwnerMember) {
+    return errorResponse(c, 404, 'MEMBER_NOT_FOUND', 'Target user is not a member of this workspace');
+  }
+
+  const now = new Date().toISOString();
+  await db.batch([
+    db.update(workspaceMembers).set({ role: 'workspace_admin' }).where(
+      and(eq(workspaceMembers.workspace_id, access.workspace.id), eq(workspaceMembers.user_id, user.sub)),
+    ),
+    db.update(workspaceMembers).set({ role: 'workspace_owner' }).where(
+      and(eq(workspaceMembers.workspace_id, access.workspace.id), eq(workspaceMembers.user_id, body.userId)),
+    ),
+    db.update(workspaces).set({ created_by: body.userId, updated_at: now }).where(eq(workspaces.id, access.workspace.id)),
+  ]);
+
+  await insertAuditEvent(db, {
+    actorId: user.sub,
+    actorType: 'user',
+    eventType: 'workspace.transfer_ownership',
+    entityType: 'workspace',
+    entityId: access.workspace.id,
+    metadata: { previousOwner: user.sub, newOwner: body.userId },
+  });
+
+  return successResponse(c, { transferred: true });
 });
 
 export default workspacesRouter;

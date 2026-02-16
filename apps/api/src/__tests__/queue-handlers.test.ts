@@ -39,7 +39,7 @@ async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS idx_submissions_hackathon ON submissions (hackathon_id)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions (hackathon_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_webhook ON submissions (webhook_delivery_id)`,
-    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT, team_id TEXT, actor_id TEXT, actor_type TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, metadata TEXT, ip_address TEXT, created_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS organizer_roles (id TEXT PRIMARY KEY NOT NULL, hackathon_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'admin' NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
     `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS team_members (id TEXT PRIMARY KEY NOT NULL, team_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT DEFAULT 'member' NOT NULL, joined_at TEXT NOT NULL, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id))`,
@@ -210,7 +210,7 @@ describe('queue handlers', () => {
       expect(forceEvents.results[0].webhook_delivery_id).toBe('delivery-force-1');
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'force_push.detected'"
+        "SELECT * FROM audit_events WHERE event_type = 'force_push.detected'"
       ).all();
       expect(audits.results).toHaveLength(1);
     });
@@ -489,7 +489,7 @@ describe('queue handlers', () => {
       expect(subs.results[0].version).toBe(1);
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'submission.received'"
+        "SELECT * FROM audit_events WHERE event_type = 'submission.received'"
       ).all();
       expect(audits.results).toHaveLength(1);
     });
@@ -599,7 +599,7 @@ describe('queue handlers', () => {
       expect(subs?.cnt).toBe(0);
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'submission.rejected'"
+        "SELECT * FROM audit_events WHERE event_type = 'submission.rejected'"
       ).all();
       expect(audits.results).toHaveLength(1);
     });
@@ -719,7 +719,7 @@ describe('queue handlers', () => {
       await handleTagDelete(event, env);
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'tag.deleted'"
+        "SELECT * FROM audit_events WHERE event_type = 'tag.deleted'"
       ).all();
       expect(audits.results).toHaveLength(1);
 
@@ -750,7 +750,7 @@ describe('queue handlers', () => {
       expect(team?.bot_active).toBe(1);
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'installation.created'"
+        "SELECT * FROM audit_events WHERE event_type = 'installation.created'"
       ).all();
       expect(audits.results).toHaveLength(1);
     });
@@ -856,7 +856,7 @@ describe('queue handlers', () => {
       await handleInstallation(event, env);
 
       const audits = await env.DB.prepare(
-        "SELECT * FROM audit_events WHERE action = 'installation.created'"
+        "SELECT * FROM audit_events WHERE event_type = 'installation.created'"
       ).all();
       expect(audits.results).toHaveLength(1);
     });

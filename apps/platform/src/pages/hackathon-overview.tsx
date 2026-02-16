@@ -26,29 +26,26 @@ interface Hackathon {
   title: string;
   description: string;
   status: string;
-  registration_opens: string;
-  registration_closes: string;
-  submission_deadline: string;
+  starts_at: string | null;
+  submission_deadline: string | null;
+  judging_starts: string | null;
+  judging_ends: string | null;
   max_team_size: number;
   created_at: string;
   updated_at: string;
 }
 
 const NEXT_STATUS: Record<string, string> = {
-  draft: 'registration_open',
-  registration_open: 'registration_closed',
-  registration_closed: 'active',
+  draft: 'active',
   active: 'judging',
   judging: 'completed',
   completed: 'archived',
 };
 
 const NEXT_PHASE_LABEL: Record<string, string> = {
-  draft: 'Open Registration',
-  registration_open: 'Close Registration',
-  registration_closed: 'Start Hacking',
+  draft: 'Activate',
   active: 'Start Judging',
-  judging: 'Complete Hackathon',
+  judging: 'Complete',
   completed: 'Archive',
 };
 
@@ -90,7 +87,7 @@ export function HackathonOverviewPage() {
     try {
       await apiRequest(`/api/v1/hackathons/${slug}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ targetStatus: nextStatus }),
       });
       toast.success(`Phase advanced to ${nextStatus.replace(/_/g, ' ')}`);
       fetchHackathon();
@@ -125,7 +122,7 @@ export function HackathonOverviewPage() {
   ];
 
   // State machine visualization
-  const phases = ['draft', 'registration_open', 'registration_closed', 'active', 'judging', 'completed', 'archived'];
+  const phases = ['draft', 'active', 'judging', 'completed', 'archived'];
   const currentIdx = phases.indexOf(hackathon.status);
 
   return (
@@ -261,12 +258,12 @@ export function HackathonOverviewPage() {
           </h3>
           <div className="space-y-4">
             {[
-              { label: 'Registration Opens', date: hackathon.registration_opens, icon: Globe },
-              { label: 'Registration Closes', date: hackathon.registration_closes, icon: Clock },
+              { label: 'Starts At', date: hackathon.starts_at, icon: Globe },
               { label: 'Submission Deadline', date: hackathon.submission_deadline, icon: GitBranch },
-            ].map((event) => {
+              { label: 'Judging Starts', date: hackathon.judging_starts, icon: Clock },
+            ].filter((event) => event.date != null).map((event) => {
               const EventIcon = event.icon;
-              const isPast = new Date(event.date) < new Date();
+              const isPast = new Date(event.date!) < new Date();
               return (
                 <div key={event.label} className="flex items-center gap-3">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isPast ? 'bg-[#CCFF00]/10 text-[#CCFF00]' : 'bg-white/[0.04] text-white/25'}`}>
@@ -275,7 +272,7 @@ export function HackathonOverviewPage() {
                   <div className="flex-1">
                     <p className={`text-sm font-medium ${isPast ? 'text-white/60' : 'text-white/40'}`}>{event.label}</p>
                     <p className="text-xs text-white/25">
-                      {new Date(event.date).toLocaleDateString('en-US', {
+                      {new Date(event.date!).toLocaleDateString('en-US', {
                         weekday: 'short',
                         month: 'short',
                         day: 'numeric',

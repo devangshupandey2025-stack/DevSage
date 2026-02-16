@@ -25,12 +25,11 @@ interface Hackathon {
   primary_color?: string | null;
   banner_r2_key?: string | null;
   logo_r2_key?: string | null;
-  status: 'draft' | 'registration_open' | 'registration_closed' | 'active' | 'judging' | 'completed' | 'archived';
-  registration_opens: string;
-  registration_closes: string;
+  status: 'draft' | 'active' | 'judging' | 'completed' | 'archived';
+  starts_at: string | null;
   submission_deadline: string;
-  judging_starts?: string;
-  judging_ends?: string;
+  judging_starts?: string | null;
+  judging_ends?: string | null;
   min_team_size?: number;
   max_team_size: number;
   max_teams?: number;
@@ -291,9 +290,10 @@ export function HackathonDetailPage() {
               </DialogHeader>
               <div className="mt-4 text-sm text-muted-foreground">
                 <ul className="list-disc pl-5 space-y-2">
-                  <li>Registration opens: {formatDate(hackathon.registration_opens)}</li>
-                  <li>Registration closes: {formatDate(hackathon.registration_closes)}</li>
+                  <li>Starts at: {formatDate(hackathon.starts_at ?? undefined)}</li>
                   <li>Submission deadline: {formatDate(hackathon.submission_deadline)}</li>
+                  {hackathon.judging_starts && <li>Judging starts: {formatDate(hackathon.judging_starts)}</li>}
+                  {hackathon.judging_ends && <li>Judging ends: {formatDate(hackathon.judging_ends)}</li>}
                 </ul>
               </div>
               <DialogFooter>
@@ -369,17 +369,19 @@ export function HackathonDetailPage() {
             <p className="text-sm text-muted-foreground">{hackathon.description}</p>
             <div className="pt-4 space-y-1 text-sm">
               <div className="flex justify-between border-b py-1">
-                <span>Registration Start:</span>
-                <span className="font-medium">{formatDate(hackathon.registration_opens)}</span>
+                <span>Starts At:</span>
+                <span className="font-medium">{formatDate(hackathon.starts_at ?? undefined)}</span>
               </div>
               <div className="flex justify-between border-b py-1">
-                <span>Registration Closes:</span>
-                <span className="font-medium">{formatDate(hackathon.registration_closes)}</span>
-              </div>
-              <div className="flex justify-between border-b py-1">
-                <span>Deadline:</span>
+                <span>Submission Deadline:</span>
                 <span className="font-medium">{formatDate(hackathon.submission_deadline)}</span>
               </div>
+              {hackathon.judging_starts && (
+                <div className="flex justify-between border-b py-1">
+                  <span>Judging Starts:</span>
+                  <span className="font-medium">{formatDate(hackathon.judging_starts)}</span>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

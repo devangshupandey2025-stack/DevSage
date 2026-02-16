@@ -101,7 +101,7 @@ export function JudgingPage() {
     try {
       await apiRequest(`/api/v1/hackathons/${slug}/judges`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: inviteUserId }),
+        body: JSON.stringify({ userId: inviteUserId }),
       });
       toast.success('Judge invited!');
       setInviteDialogOpen(false);

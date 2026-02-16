@@ -30,48 +30,46 @@ import {
   BarChart3,
 } from 'lucide-react';
 
-type HackathonStatus =
-  | 'draft'
-  | 'registration_open'
-  | 'registration_closed'
-  | 'active'
-  | 'judging'
-  | 'completed'
-  | 'archived';
+type HackathonStatus = 'draft' | 'active' | 'judging' | 'completed' | 'archived';
 
 interface Hackathon {
   id: string;
+  workspace_id: string;
   slug: string;
   title: string;
   description: string;
   status: HackathonStatus;
-  registration_opens: string;
-  registration_closes: string;
-  submission_deadline: string;
+  starts_at: string | null;
+  submission_deadline: string | null;
+  judging_starts: string | null;
+  judging_ends: string | null;
   max_team_size: number;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
+interface Workspace {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 interface HackathonListResponse {
+  ok: boolean;
   data: Hackathon[];
-  total: number;
+  meta: { total: number; limit: number; offset: number };
 }
 
 const NEXT_STATUS: Record<string, string> = {
-  draft: 'registration_open',
-  registration_open: 'registration_closed',
-  registration_closed: 'active',
+  draft: 'active',
   active: 'judging',
   judging: 'completed',
   completed: 'archived',
 };
 
 const NEXT_PHASE_LABEL: Record<string, string> = {
-  draft: 'Open Registration',
-  registration_open: 'Close Registration',
-  registration_closed: 'Start Hacking',
+  draft: 'Activate',
   active: 'Start Judging',
   judging: 'Complete',
   completed: 'Archive',
@@ -98,18 +96,28 @@ export function DashboardPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    registrationOpens: '',
-    registrationCloses: '',
+    startsAt: '',
     submissionDeadline: '',
     maxTeamSize: '4',
   });
 
   useEffect(() => {
     fetchHackathons();
+    fetchWorkspaces();
   }, []);
+
+  const fetchWorkspaces = async () => {
+    try {
+      const response = await apiRequest<{ ok: boolean; data: Workspace[] }>('/api/v1/workspaces');
+      setWorkspaces(response.data);
+    } catch (_error) {
+      // Workspaces may not be accessible for all users
+    }
+  };
 
   const fetchHackathons = async () => {
     try {
@@ -128,26 +136,32 @@ export function DashboardPage() {
   };
 
   const createHackathon = async () => {
-    if (!formData.title || !formData.registrationOpens || !formData.registrationCloses || !formData.submissionDeadline) {
+    if (!formData.title || !formData.startsAt || !formData.submissionDeadline) {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (workspaces.length === 0) {
+      toast.error('No workspace available. Please contact an admin.');
+      return;
+    }
+    const slug = formData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     setCreating(true);
     try {
       await apiRequest('/api/v1/hackathons', {
         method: 'POST',
         body: JSON.stringify({
+          workspaceId: workspaces[0].id,
+          slug,
           title: formData.title,
           description: formData.description,
-          registration_opens: new Date(formData.registrationOpens).toISOString(),
-          registration_closes: new Date(formData.registrationCloses).toISOString(),
-          submission_deadline: new Date(formData.submissionDeadline).toISOString(),
-          max_team_size: parseInt(formData.maxTeamSize, 10),
+          startsAt: new Date(formData.startsAt).toISOString(),
+          submissionDeadline: new Date(formData.submissionDeadline).toISOString(),
+          maxTeamSize: parseInt(formData.maxTeamSize, 10),
         }),
       });
       toast.success('Hackathon created!');
       setCreateDialogOpen(false);
-      setFormData({ title: '', description: '', registrationOpens: '', registrationCloses: '', submissionDeadline: '', maxTeamSize: '4' });
+      setFormData({ title: '', description: '', startsAt: '', submissionDeadline: '', maxTeamSize: '4' });
       fetchHackathons();
     } catch (_error) {
       toast.error('Failed to create hackathon');
@@ -162,7 +176,7 @@ export function DashboardPage() {
     try {
       await apiRequest(`/api/v1/hackathons/${slug}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ targetStatus: nextStatus }),
       });
       toast.success(`Phase advanced to ${nextStatus.replace(/_/g, ' ')}`);
       fetchHackathons();
@@ -218,19 +232,15 @@ export function DashboardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Registration Opens *</label>
-                    <Input type="datetime-local" value={formData.registrationOpens} onChange={(e) => setFormData((f) => ({ ...f, registrationOpens: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Starts At *</label>
+                    <Input type="datetime-local" value={formData.startsAt} onChange={(e) => setFormData((f) => ({ ...f, startsAt: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Registration Closes *</label>
-                    <Input type="datetime-local" value={formData.registrationCloses} onChange={(e) => setFormData((f) => ({ ...f, registrationCloses: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Submission Deadline *</label>
                     <Input type="datetime-local" value={formData.submissionDeadline} onChange={(e) => setFormData((f) => ({ ...f, submissionDeadline: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Max Team Size</label>
                     <Input type="number" min={1} max={10} value={formData.maxTeamSize} onChange={(e) => setFormData((f) => ({ ...f, maxTeamSize: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
@@ -308,7 +318,6 @@ export function DashboardPage() {
                 <div className={`absolute top-0 left-0 right-0 h-[2px] transition-all duration-300 ${
                   hackathon.status === 'active' ? 'bg-[#CCFF00]'
                   : hackathon.status === 'judging' ? 'bg-violet-500'
-                  : hackathon.status === 'registration_open' ? 'bg-emerald-500'
                   : 'bg-white/10'
                 }`} />
                 <div className="p-6">

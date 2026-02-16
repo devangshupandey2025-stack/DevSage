@@ -18,10 +18,10 @@ export async function handleInstallation(event: NormalizedInstallationEvent, env
 
   await insertAuditEvent(db, {
     actorType: 'bot',
-    action: `installation.${event.action}`,
+    eventType: `installation.${event.action}`,
     entityType: 'installation',
     entityId: String(event.installationId),
-    details: {
+    metadata: {
       repositories: event.repositories.map((r) => r.fullName),
       senderLogin: event.senderLogin,
     },

@@ -23,7 +23,7 @@ audit.get(
 
     const limitParam = c.req.query('limit');
     const cursor = c.req.query('cursor');
-    const actionFilter = c.req.query('action');
+    const actionFilter = c.req.query('action') || c.req.query('event_type');
     const entityTypeFilter = c.req.query('entity_type');
     const entityIdFilter = c.req.query('entity_id');
     const actorIdFilter = c.req.query('actor_id');
@@ -35,7 +35,7 @@ audit.get(
       conditions.push(lt(auditEvents.created_at, cursor));
     }
     if (actionFilter) {
-      conditions.push(eq(auditEvents.action, actionFilter));
+      conditions.push(eq(auditEvents.event_type, actionFilter));
     }
     if (entityTypeFilter) {
       conditions.push(eq(auditEvents.entity_type, entityTypeFilter));
@@ -177,6 +177,32 @@ audit.get(
       : null;
 
     return cursorPaginatedResponse(c, data, limit, nextCursor);
+  },
+);
+
+/**
+ * GET /:slug/audit/export — Export audit data as JSON (all events, no pagination)
+ * Requires co_organizer role. Streams all audit events for the hackathon.
+ */
+audit.get(
+  '/:slug/audit/export',
+  authMiddleware,
+  requireRole('co_organizer'),
+  async (c) => {
+    const hackathon = c.get('hackathon');
+    const db = createDbClient(c.env.DB);
+
+    const data = await db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.hackathon_id, hackathon.id))
+      .orderBy(desc(auditEvents.created_at))
+      .all();
+
+    c.header('Content-Type', 'application/json');
+    c.header('Content-Disposition', `attachment; filename="audit-${hackathon.slug}-${new Date().toISOString().split('T')[0]}.json"`);
+
+    return c.json({ ok: true, data, meta: { total: data.length, hackathonId: hackathon.id, exportedAt: new Date().toISOString() } });
   },
 );
 

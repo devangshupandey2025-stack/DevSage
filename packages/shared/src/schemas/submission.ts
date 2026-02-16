@@ -26,6 +26,8 @@ export const SubmissionSchema = z.object({
   repoFullName: z.string(),
   roundId: z.string(),
   status: SubmissionStatusEnum,
+  demoUrl: z.string().nullable().optional(),
+  rejectionReason: z.string().nullable().optional(),
   isLate: z.number().int(),
   isFinal: z.number().int(),
   validationResults: z.string().nullable().optional(),

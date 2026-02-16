@@ -11,10 +11,10 @@ export const webhookDeliveries = sqliteTable('webhook_deliveries', {
   repo_full_name: text('repo_full_name').notNull(),
   hackathon_id: text('hackathon_id').references(() => hackathons.id),
   team_id: text('team_id').references(() => teams.id),
-  payload_hash: text('payload_hash').notNull(),
+  payload_summary: text('payload_summary'),
   error_message: text('error_message'),
   processing_ms: integer('processing_ms'),
-  attempts: integer('attempts').notNull().default(0),
+  retry_count: integer('retry_count').notNull().default(0),
   received_at: text('received_at').notNull(),
   processed_at: text('processed_at'),
 }, (table) => ({

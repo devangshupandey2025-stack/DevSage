@@ -8,10 +8,10 @@ export async function handleTagDelete(event: NormalizedTagDeleteEvent, env: Env)
 
   await insertAuditEvent(db, {
     actorType: 'bot',
-    action: 'tag.deleted',
+    eventType: 'tag.deleted',
     entityType: 'tag',
     entityId: event.tagName,
-    details: {
+    metadata: {
       repoFullName: event.repoFullName,
       tagName: event.tagName,
       senderLogin: event.senderLogin,
