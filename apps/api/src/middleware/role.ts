@@ -63,6 +63,12 @@ export async function resolveRole(
  */
 export function requireRole(minRole: HackathonRole): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    // Dev bypass: grant organizer (highest) role
+    if (c.env.DEV_AUTH_BYPASS) {
+      c.set('role', 'organizer');
+      return next();
+    }
+
     const user = c.get('user');
     const hackathon = c.get('hackathon');
 
@@ -103,6 +109,12 @@ export function requireRole(minRole: HackathonRole): MiddlewareHandler<AppEnv> {
  */
 export function requireExactRole(...roles: HackathonRole[]): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    // Dev bypass: grant organizer (highest) role
+    if (c.env.DEV_AUTH_BYPASS) {
+      c.set('role', 'organizer');
+      return next();
+    }
+
     const user = c.get('user');
     const hackathon = c.get('hackathon');
 

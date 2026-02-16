@@ -5,3 +5,5 @@ GITHUB_CLIENT_ID=dev-github-client-id
 GITHUB_CLIENT_SECRET=dev-github-client-secret
 GITHUB_WEBHOOK_SECRET=dev-webhook-secret-min-32-chars!!
 FRONTEND_URL=http://localhost:5173
+# Set to "true" to bypass OAuth in dev — all requests treated as authenticated dev user
+DEV_AUTH_BYPASS=true
