@@ -28,7 +28,7 @@ VALUES (
 );
 --> statement-breakpoint
 
--- 3. Organizer (organizer on hack001)
+-- 3. Organizer
 INSERT OR IGNORE INTO `users` (`id`, `email`, `name`, `password_hash`, `created_at`)
 VALUES (
   'seed-0000-0000-0000-000000000003',
@@ -39,7 +39,7 @@ VALUES (
 );
 --> statement-breakpoint
 
--- 4. Co-Organizer (co_organizer on hack001)
+-- 4. Co-Organizer
 INSERT OR IGNORE INTO `users` (`id`, `email`, `name`, `password_hash`, `created_at`)
 VALUES (
   'seed-0000-0000-0000-000000000004',
@@ -50,7 +50,7 @@ VALUES (
 );
 --> statement-breakpoint
 
--- 5. Judge (judge on hack001)
+-- 5. Judge
 INSERT OR IGNORE INTO `users` (`id`, `email`, `name`, `password_hash`, `created_at`)
 VALUES (
   'seed-0000-0000-0000-000000000005',
@@ -61,7 +61,7 @@ VALUES (
 );
 --> statement-breakpoint
 
--- 6. Team Lead (team leader on hack001)
+-- 6. Team Lead
 INSERT OR IGNORE INTO `users` (`id`, `email`, `name`, `password_hash`, `created_at`)
 VALUES (
   'seed-0000-0000-0000-000000000006',
@@ -72,7 +72,7 @@ VALUES (
 );
 --> statement-breakpoint
 
--- 7. Participant (team member on hack001)
+-- 7. Participant
 INSERT OR IGNORE INTO `users` (`id`, `email`, `name`, `password_hash`, `created_at`)
 VALUES (
   'seed-0000-0000-0000-000000000007',
@@ -108,14 +108,33 @@ VALUES (
 --> statement-breakpoint
 
 -- ============================================================
--- WORKSPACE MEMBERS (on existing 'ws-000' DevSage workspace)
+-- WORKSPACE (created by Srijan)
+-- ============================================================
+
+INSERT OR IGNORE INTO `workspaces` (`id`, `name`, `slug`, `description`, `logo_url`, `website`, `settings`, `created_by`, `created_at`, `updated_at`)
+VALUES (
+  'ws-seed-0000-0000-000000000001',
+  'DevSage',
+  'devsage',
+  'DevSage hackathon platform workspace',
+  NULL,
+  NULL,
+  '{}',
+  'seed-0000-0000-0000-000000000001',
+  '2026-02-16T00:00:00.000Z',
+  '2026-02-16T00:00:00.000Z'
+);
+--> statement-breakpoint
+
+-- ============================================================
+-- WORKSPACE MEMBERS
 -- ============================================================
 
 -- Srijan → workspace_owner
 INSERT OR IGNORE INTO `workspace_members` (`id`, `workspace_id`, `user_id`, `role`, `invited_by`, `created_at`, `updated_at`)
 VALUES (
   'wm-seed-0000-0000-000000000001',
-  'ws-000',
+  'ws-seed-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000001',
   'workspace_owner',
   NULL,
@@ -128,7 +147,7 @@ VALUES (
 INSERT OR IGNORE INTO `workspace_members` (`id`, `workspace_id`, `user_id`, `role`, `invited_by`, `created_at`, `updated_at`)
 VALUES (
   'wm-seed-0000-0000-000000000003',
-  'ws-000',
+  'ws-seed-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000003',
   'workspace_member',
   'seed-0000-0000-0000-000000000001',
@@ -138,25 +157,80 @@ VALUES (
 --> statement-breakpoint
 
 -- ============================================================
--- ORGANIZER ROLES (on existing hack001)
+-- HACKATHON (seed-hack001, created by organizer)
 -- ============================================================
 
--- organizer@devsage.org → organizer on hack001
+INSERT OR IGNORE INTO `hackathons` (`id`, `workspace_id`, `slug`, `title`, `tagline`, `description`, `rules_md`, `status`, `starts_at`, `judging_starts`, `judging_ends`, `min_team_size`, `max_team_size`, `max_teams`, `submission_tag_pattern`, `allow_resubmission`, `allow_registration_during_active`, `notify_all_on_deadline`, `show_judge_comments_to_participants`, `registration_mode`, `allowed_email_domains`, `require_repo`, `timezone`, `template_id`, `tracks`, `prizes`, `settings`, `created_by`, `created_at`, `updated_at`)
+VALUES (
+  'seed-hack-0000-0000-000000000001',
+  'ws-seed-0000-0000-000000000001',
+  'seed-hack001',
+  'Seed Hackathon',
+  'Test hackathon for development',
+  'A seed hackathon with all role types pre-configured.',
+  NULL,
+  'active',
+  '2026-02-16T00:00:00.000Z',
+  NULL,
+  NULL,
+  1,
+  5,
+  NULL,
+  'submission_v%',
+  0,
+  0,
+  0,
+  0,
+  'open',
+  '[]',
+  1,
+  'UTC',
+  NULL,
+  '[]',
+  '[]',
+  '{}',
+  'seed-0000-0000-0000-000000000003',
+  '2026-02-16T00:00:00.000Z',
+  '2026-02-16T00:00:00.000Z'
+);
+--> statement-breakpoint
+
+INSERT OR IGNORE INTO `hackathon_rounds` (`id`, `hackathon_id`, `round_number`, `name`, `type`, `status`, `submission_deadline`, `started_at`, `completed_at`, `created_at`, `updated_at`)
+VALUES (
+  'round-seed-0000-0000-000000000001',
+  'seed-hack-0000-0000-000000000001',
+  1,
+  'Round 1',
+  'standard',
+  'active',
+  NULL,
+  '2026-02-16T00:00:00.000Z',
+  NULL,
+  '2026-02-16T00:00:00.000Z',
+  '2026-02-16T00:00:00.000Z'
+);
+--> statement-breakpoint
+
+-- ============================================================
+-- ORGANIZER ROLES (on seed-hack001)
+-- ============================================================
+
+-- organizer@devsage.org → organizer
 INSERT OR IGNORE INTO `organizer_roles` (`id`, `hackathon_id`, `user_id`, `role`, `created_at`)
 VALUES (
   'org-seed-0000-0000-000000000003',
-  '11111111-1111-1111-1111-111111111111',
+  'seed-hack-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000003',
   'organizer',
   '2026-02-16T00:00:00.000Z'
 );
 --> statement-breakpoint
 
--- coorganizer@devsage.org → co_organizer on hack001
+-- coorganizer@devsage.org → co_organizer
 INSERT OR IGNORE INTO `organizer_roles` (`id`, `hackathon_id`, `user_id`, `role`, `created_at`)
 VALUES (
   'org-seed-0000-0000-000000000004',
-  '11111111-1111-1111-1111-111111111111',
+  'seed-hack-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000004',
   'co_organizer',
   '2026-02-16T00:00:00.000Z'
@@ -164,14 +238,14 @@ VALUES (
 --> statement-breakpoint
 
 -- ============================================================
--- JUDGES (on existing hack001)
+-- JUDGES (on seed-hack001)
 -- ============================================================
 
--- judge@devsage.org → accepted judge on hack001
+-- judge@devsage.org → accepted judge
 INSERT OR IGNORE INTO `judges` (`id`, `hackathon_id`, `user_id`, `invite_status`, `track_id`, `invited_by`, `invited_at`, `responded_at`)
 VALUES (
   'judge-seed-0000-0000-000000000005',
-  '11111111-1111-1111-1111-111111111111',
+  'seed-hack-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000005',
   'accepted',
   NULL,
@@ -182,14 +256,13 @@ VALUES (
 --> statement-breakpoint
 
 -- ============================================================
--- TEAM + TEAM MEMBERS (on existing hack001)
+-- TEAM + TEAM MEMBERS (on seed-hack001)
 -- ============================================================
 
--- Seed team for hack001
 INSERT OR IGNORE INTO `teams` (`id`, `hackathon_id`, `name`, `description`, `invite_code`, `track_id`, `ready`, `created_at`, `updated_at`)
 VALUES (
   'team-seed-0000-0000-000000000001',
-  '11111111-1111-1111-1111-111111111111',
+  'seed-hack-0000-0000-000000000001',
   'Seed Team',
   'Test team with all participant roles',
   'SEED-TEAM-001',
