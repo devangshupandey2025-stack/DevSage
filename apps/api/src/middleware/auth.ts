@@ -2,13 +2,23 @@ import type { MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { AppEnv } from '../types/env.js';
 import { verifyJWT } from '../lib/jwt.js';
+import { DEV_USER } from '../lib/constants.js';
 
 /**
  * Global middleware: extracts and validates JWT from HttpOnly cookie.
  * Sets c.set('user', ...) on success, c.set('user', null) on failure.
  * Never rejects — downstream handlers check user themselves.
+ *
+ * When DEV_AUTH_BYPASS is set (local dev only), always sets a dev user
+ * so all routes pass auth checks without real OAuth.
  */
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+  // Dev bypass: skip JWT validation, always set a dev user
+  if (c.env.DEV_AUTH_BYPASS) {
+    c.set('user', { ...DEV_USER });
+    return next();
+  }
+
   const token = getCookie(c, 'access_token');
 
   if (!token) {
