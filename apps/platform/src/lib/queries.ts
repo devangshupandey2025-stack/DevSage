@@ -196,6 +196,50 @@ export const notificationQueries = {
       queryKey: ['notifications'],
       queryFn: () => apiRequest<ApiResponse<unknown[]>>('/api/v1/notifications'),
     }),
+  unreadCount: () =>
+    queryOptions({
+      queryKey: ['notifications', 'unread-count'],
+      queryFn: () => apiRequest<ApiResponse<{ count: number }>>('/api/v1/notifications/unread-count'),
+    }),
+};
+
+interface Round {
+  id: string;
+  hackathon_id: string;
+  name: string;
+  round_number: number;
+  type: string | null;
+  status: string;
+  submission_deadline: string | null;
+  created_at: string;
+}
+
+interface Organizer {
+  id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  name: string;
+  email: string;
+  avatar_url: string | null;
+}
+
+export const roundQueries = {
+  list: (slug: string) =>
+    queryOptions({
+      queryKey: ['hackathons', slug, 'rounds'],
+      queryFn: () => apiRequest<ApiResponse<Round[]>>(`/api/v1/hackathons/${slug}/rounds`),
+      enabled: !!slug,
+    }),
+};
+
+export const organizerQueries = {
+  list: (slug: string) =>
+    queryOptions({
+      queryKey: ['hackathons', slug, 'organizers'],
+      queryFn: () => apiRequest<ApiResponse<Organizer[]>>(`/api/v1/hackathons/${slug}/organizers`),
+      enabled: !!slug,
+    }),
 };
 
 // Re-export types for use in components
@@ -209,6 +253,8 @@ export type {
   LeaderboardEntry,
   AuditEvent,
   JudgeAssignment,
+  Round,
+  Organizer,
   ApiResponse,
   PaginatedResponse,
 };

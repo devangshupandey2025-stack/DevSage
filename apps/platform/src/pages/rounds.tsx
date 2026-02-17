@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { PageHeader, EmptyState } from '@/components/common';
+import { apiRequest } from '@/lib/api';
+import { toast } from 'sonner';
 import {
   Award,
   Trophy,
@@ -9,24 +11,19 @@ import {
   CheckCircle,
   Clock,
   ArrowRight,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 interface Round {
   id: string;
   name: string;
   round_number: number;
-  status: 'upcoming' | 'active' | 'completed';
-  teams_count: number;
-  eliminated_count: number;
-  deadline: string;
+  status: string;
+  type: string | null;
+  submission_deadline: string | null;
+  created_at: string;
 }
-
-// Mock data for UI demonstration
-const mockRounds: Round[] = [
-  { id: '1', name: 'Qualification Round', round_number: 1, status: 'completed', teams_count: 50, eliminated_count: 20, deadline: '2026-03-15T23:59:00Z' },
-  { id: '2', name: 'Semi-Finals', round_number: 2, status: 'active', teams_count: 30, eliminated_count: 0, deadline: '2026-03-20T23:59:00Z' },
-  { id: '3', name: 'Finals', round_number: 3, status: 'upcoming', teams_count: 0, eliminated_count: 0, deadline: '2026-03-25T23:59:00Z' },
-];
 
 const container = {
   hidden: { opacity: 0 },
@@ -40,15 +37,94 @@ const item = {
 
 export function RoundsPage() {
   const { slug } = useParams<{ slug: string }>();
-  const rounds = mockRounds; // Replace with API call
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  const fetchRounds = async () => {
+    if (!slug) return;
+    try {
+      const res = await apiRequest<{ data: Round[] }>(`/api/v1/hackathons/${slug}/rounds`);
+      setRounds(res.data ?? []);
+    } catch {
+      setRounds([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchRounds(); }, [slug]);
+
+  const handleCreate = async () => {
+    if (!slug || !newName.trim()) return;
+    setCreating(true);
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim(), round_number: rounds.length + 1 }),
+      });
+      toast.success('Round created');
+      setNewName('');
+      fetchRounds();
+    } catch {
+      toast.error('Failed to create round');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (roundId: string) => {
+    if (!slug) return;
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds/${roundId}`, { method: 'DELETE' });
+      toast.success('Round deleted');
+      fetchRounds();
+    } catch {
+      toast.error('Failed to delete round');
+    }
+  };
 
   return (
     <div>
       <PageHeader
         title="Rounds"
         description="Track elimination rounds and team progression."
+        actions={
+          <div className="flex items-center gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Round name..."
+              className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 w-40"
+            />
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newName.trim()}
+              className="flex items-center gap-1 rounded-xl bg-[#CCFF00] px-3 py-2 text-sm font-bold text-black disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" /> Add
+            </button>
+          </div>
+        }
       />
 
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            className="h-6 w-6 rounded-full border-2 border-white/10 border-t-[#CCFF00]"
+          />
+        </div>
+      ) : rounds.length === 0 ? (
+        <EmptyState
+          icon={Award}
+          title="No rounds yet"
+          description="Create judging rounds to organize your hackathon's evaluation process."
+        />
+      ) : (
       <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
         {rounds.map((round, i) => (
           <motion.div
@@ -97,45 +173,27 @@ export function RoundsPage() {
                 </div>
                 <div className="flex items-center gap-4 text-xs text-white/25">
                   <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" /> {round.teams_count} teams
-                  </span>
-                  {round.eliminated_count > 0 && (
-                    <span className="text-red-400/60">
-                      {round.eliminated_count} eliminated
-                    </span>
-                  )}
-                  <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {new Date(round.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {round.submission_deadline
+                      ? new Date(round.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : 'No deadline'}
                   </span>
                 </div>
               </div>
 
-              {/* Progress */}
-              {round.status !== 'upcoming' && (
-                <div className="shrink-0 text-right">
-                  <p className="text-2xl font-black tabular-nums text-white/60">
-                    {round.status === 'completed' ? '100' : '67'}%
-                  </p>
-                  <p className="text-[10px] text-white/20 uppercase tracking-wider">Progress</p>
-                </div>
-              )}
+              {/* Delete */}
+              <button
+                onClick={() => handleDelete(round.id)}
+                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-white/20 hover:bg-red-500/10 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
 
-            {/* Progress bar */}
-            {round.status !== 'upcoming' && (
-              <div className="mt-4 h-1 rounded-full bg-white/[0.06] overflow-hidden">
-                <motion.div
-                  className={`h-full rounded-full ${round.status === 'completed' ? 'bg-emerald-400' : 'bg-[#CCFF00]'}`}
-                  initial={{ width: 0 }}
-                  animate={{ width: round.status === 'completed' ? '100%' : '67%' }}
-                  transition={{ duration: 1, delay: 0.2 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
-                />
-              </div>
-            )}
           </motion.div>
         ))}
       </motion.div>
+      )}
     </div>
   );
 }

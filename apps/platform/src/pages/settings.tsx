@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader } from '@/components/common';
 import {
@@ -15,6 +15,7 @@ import {
   Image,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiRequest } from '@/lib/api';
 
 const container = {
   hidden: { opacity: 0 },
@@ -82,26 +83,105 @@ function ToggleField({ label, description, checked, onChange }: {
   );
 }
 
+interface HackathonSettings {
+  title: string;
+  tagline: string | null;
+  min_team_size: number;
+  max_team_size: number;
+  starts_at: string | null;
+  submission_deadline: string | null;
+  registration_mode: string | null;
+  allow_resubmission: boolean;
+  status: string;
+}
+
 export function SettingsPage() {
   const { slug } = useParams<{ slug: string }>();
-  const [name, setName] = useState('DevSage Hackathon 2026');
-  const [tagline, setTagline] = useState('Build the future');
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
+  const [tagline, setTagline] = useState('');
   const [maxTeamSize, setMaxTeamSize] = useState('5');
   const [minTeamSize, setMinTeamSize] = useState('1');
-  const [regDeadline, setRegDeadline] = useState('2026-03-20T23:59');
-  const [subDeadline, setSubDeadline] = useState('2026-03-25T23:59');
+  const [startsAt, setStartsAt] = useState('');
+  const [subDeadline, setSubDeadline] = useState('');
   const [publicListing, setPublicListing] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [allowLateSubmissions, setAllowLateSubmissions] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [hackathonStatus, setHackathonStatus] = useState('draft');
+
+  useEffect(() => {
+    if (!slug) return;
+    (async () => {
+      try {
+        const res = await apiRequest<{ data: HackathonSettings }>(`/api/v1/hackathons/${slug}`);
+        const h = res.data;
+        setName(h.title ?? '');
+        setTagline(h.tagline ?? '');
+        setMinTeamSize(String(h.min_team_size ?? 1));
+        setMaxTeamSize(String(h.max_team_size ?? 5));
+        setStartsAt(h.starts_at ? h.starts_at.slice(0, 16) : '');
+        setSubDeadline(h.submission_deadline ? h.submission_deadline.slice(0, 16) : '');
+        setRequireApproval(h.registration_mode === 'approval');
+        setAllowLateSubmissions(h.allow_resubmission ?? false);
+        setHackathonStatus(h.status);
+      } catch {
+        toast.error('Failed to load settings');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [slug]);
 
   const handleSave = async () => {
+    if (!slug) return;
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSaving(false);
-    toast.success('Settings saved successfully.');
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: name,
+          tagline,
+          min_team_size: parseInt(minTeamSize),
+          max_team_size: parseInt(maxTeamSize),
+          starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+          registration_mode: requireApproval ? 'approval' : 'open',
+          allow_resubmission: allowLateSubmissions,
+        }),
+      });
+      toast.success('Settings saved successfully.');
+    } catch {
+      toast.error('Failed to save settings.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handleDelete = async () => {
+    if (!slug) return;
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}`, { method: 'DELETE' });
+      toast.success('Hackathon deleted.');
+      navigate('/dashboard');
+    } catch {
+      toast.error('Failed to delete hackathon. Only draft hackathons can be deleted.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          className="h-6 w-6 rounded-full border-2 border-white/10 border-t-[#CCFF00]"
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -142,7 +222,7 @@ export function SettingsPage() {
         {/* Dates */}
         <SettingsSection title="Dates & Deadlines" icon={Calendar}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InputField label="Registration Deadline" value={regDeadline} onChange={setRegDeadline} type="datetime-local" />
+            <InputField label="Starts At" value={startsAt} onChange={setStartsAt} type="datetime-local" />
             <InputField label="Submission Deadline" value={subDeadline} onChange={setSubDeadline} type="datetime-local" />
           </div>
         </SettingsSection>
@@ -209,7 +289,7 @@ export function SettingsPage() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => toast.error('Deletion is disabled in demo mode.')}
+                    onClick={() => handleDelete()}
                     className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-500 transition-colors"
                   >
                     Confirm Delete

@@ -1,20 +1,58 @@
 import { useState, useRef, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/auth-context';
-import { LogOut, User, ChevronDown } from 'lucide-react';
+import { apiRequest } from '@/lib/api';
+import { LogOut, User, ChevronDown, Bell } from 'lucide-react';
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 export function DashboardLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    apiRequest<{ data: { count: number } }>('/api/v1/notifications/unread-count')
+      .then((res) => setUnreadCount(res.data.count))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (notifOpen) {
+      apiRequest<{ data: Notification[] }>('/api/v1/notifications?limit=10')
+        .then((res) => setNotifications(res.data ?? []))
+        .catch(() => {});
+    }
+  }, [notifOpen]);
+
+  const markAllRead = async () => {
+    try {
+      await apiRequest('/api/v1/notifications/read-all', { method: 'PATCH' });
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {}
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClick);
@@ -56,7 +94,53 @@ export function DashboardLayout() {
             </nav>
           </div>
 
-          {/* Right — profile dropdown */}
+          {/* Right — notification + profile */}
+          <div className="flex items-center gap-3">
+            {/* Notification bell */}
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => setNotifOpen((p) => !p)}
+                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition hover:border-[#CCFF00]/40 hover:text-white"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#CCFF00] text-[8px] font-bold text-black">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-white/10 bg-black/95 shadow-2xl backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-white">Notifications</p>
+                    {unreadCount > 0 && (
+                      <button onClick={markAllRead} className="text-[10px] text-[#CCFF00] hover:underline">
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-xs text-white/30">No notifications</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <div key={n.id} className={`px-4 py-3 border-b border-white/5 ${n.is_read ? 'opacity-50' : ''}`}>
+                          <p className="text-xs font-medium text-white/80">{n.title}</p>
+                          {n.body && <p className="text-[10px] text-white/30 mt-0.5">{n.body}</p>}
+                          <p className="text-[9px] text-white/20 mt-0.5">
+                            {new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          {/* Profile dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
@@ -111,6 +195,7 @@ export function DashboardLayout() {
                 </div>
               </div>
             )}
+          </div>
           </div>
         </div>
       </header>
