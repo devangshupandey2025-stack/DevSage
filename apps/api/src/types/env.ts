@@ -15,8 +15,6 @@ export interface AppEnv {
     JWT_SECRET: string;
     GITHUB_WEBHOOK_SECRET: string;
     RESEND_API_KEY: string;
-    // Dev-only (set in .dev.vars, never in production)
-    DEV_AUTH_BYPASS?: string;
     // Vars
     FRONTEND_URL: string;
     PLATFORM_URL: string;

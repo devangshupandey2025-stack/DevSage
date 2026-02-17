@@ -15,7 +15,6 @@ export default defineWorkersConfig({
             FRONTEND_URL: 'http://localhost:5173',
             PLATFORM_URL: 'http://localhost:5174',
             ADMIN_URL: 'http://localhost:5175',
-            DEV_AUTH_BYPASS: '',
           },
         },
       },

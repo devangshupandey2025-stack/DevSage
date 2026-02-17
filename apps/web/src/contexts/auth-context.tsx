@@ -23,14 +23,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-const DEV_USER: User = {
-  id: '00000000-0000-0000-0000-dev000000000',
-  email: 'dev@localhost',
-  name: 'Dev User',
-  avatar_url: null,
-  created_at: new Date().toISOString(),
-};
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -38,13 +30,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // In dev mode, skip OAuth entirely and use a mock user
-    if (import.meta.env.DEV) {
-      setUser(DEV_USER);
-      setIsLoading(false);
-      return;
-    }
-
     async function checkAuth() {
       try {
         const response = await apiRequest<{ ok: boolean; data: { user: User }; meta: unknown }>('/auth/me');
