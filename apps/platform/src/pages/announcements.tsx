@@ -49,7 +49,8 @@ export function AnnouncementsPage() {
 
   const fetchAnnouncements = async () => {
     try {
-      const res = await apiRequest<{ data: Announcement[] }>(`/api/v1/hackathons/${slug}/announcements`);
+      const res = await apiRequest<{ data: Announcement[]; ok: boolean }>(`/api/v1/hackathons/${slug}/announcements`);
+      console.log('[announcements] Fetch result:', { ok: res.ok, count: res.data?.length ?? 0, data: res.data });
       setAnnouncements(res.data ?? []);
     } catch (_err) {
       toast.error('Failed to load announcements');
@@ -64,10 +65,11 @@ export function AnnouncementsPage() {
       return;
     }
     try {
-      await apiRequest(`/api/v1/hackathons/${slug}/announcements`, {
+      const res = await apiRequest<{ data: unknown; ok: boolean }>(`/api/v1/hackathons/${slug}/announcements`, {
         method: 'POST',
         body: JSON.stringify({ title: title.trim(), content: content.trim() }),
       });
+      console.log('[announcements] Create result:', res);
       toast.success('Announcement published!');
       setShowCompose(false);
       setTitle('');
@@ -118,7 +120,7 @@ export function AnnouncementsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
-            className="mb-8 rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/[0.03] p-6"
+            className="mb-8 rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/3 p-6"
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white/80">Compose Announcement</h3>
@@ -131,14 +133,14 @@ export function AnnouncementsPage() {
               placeholder="Title..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mb-3 w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-[#CCFF00]/30 transition-colors"
+              className="mb-3 w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-[#CCFF00]/30 transition-colors"
             />
             <textarea
               placeholder="Write your announcement..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={4}
-              className="mb-4 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-[#CCFF00]/30 transition-colors"
+              className="mb-4 w-full resize-none rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-[#CCFF00]/30 transition-colors"
             />
             <div className="flex justify-end">
               <motion.button
@@ -176,7 +178,7 @@ export function AnnouncementsPage() {
             <motion.div
               key={a.id}
               variants={item}
-              className="group relative rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/[0.03] p-5 transition-all duration-300 hover:bg-[#CCFF00]/[0.05]"
+              className="group relative rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/3 p-5 transition-all duration-300 hover:bg-[#CCFF00]/5"
             >
               <button
                 onClick={() => handleDelete(a.id)}
@@ -215,7 +217,7 @@ export function AnnouncementsPage() {
             <motion.div
               key={a.id}
               variants={item}
-              className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.04]"
+              className="group relative rounded-2xl border border-white/6 bg-white/2 p-5 transition-all duration-300 hover:border-white/10 hover:bg-white/4"
             >
               <button
                 onClick={() => handleDelete(a.id)}
@@ -225,7 +227,7 @@ export function AnnouncementsPage() {
                 <Trash2 className="h-4 w-4" />
               </button>
               <div className="flex items-start gap-4">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/4">
                   <Megaphone className="h-4 w-4 text-white/30" />
                 </div>
                 <div className="flex-1 min-w-0">
