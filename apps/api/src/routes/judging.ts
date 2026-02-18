@@ -158,8 +158,8 @@ judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async 
   return successResponse(c, results, { status: 201 });
 });
 
-// List judges
-judging.get('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
+// List judges (public - for overview metrics)
+judging.get('/judges', async (c) => {
   const hackathon = c.get('hackathon')!;
   const judges = await c.env.DB.prepare(`
     SELECT j.id, j.invite_status, j.user_id, j.track_id, j.invited_at, j.responded_at,
