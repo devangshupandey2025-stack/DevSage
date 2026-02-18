@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import logo from '@/photos/logo.png';
 
 interface NavItem {
   label: string;
@@ -75,8 +76,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Brand */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-white/[0.06]">
         <Link to="/dashboard" className="flex items-center gap-2 overflow-hidden">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#CCFF00] text-black">
-            <Trophy className="h-4.5 w-4.5" strokeWidth={2.5} />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-black">
+            <img src={logo} alt="Logo" className="h-5 w-5" />
           </div>
           <AnimatePresence>
             {!collapsed && (
