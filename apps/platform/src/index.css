@@ -183,3 +183,29 @@
 .stagger-fade-in > *:nth-child(6) { animation-delay: 250ms; }
 .stagger-fade-in > *:nth-child(7) { animation-delay: 300ms; }
 .stagger-fade-in > *:nth-child(8) { animation-delay: 350ms; }
+
+/* ── Glitter border animation for region map popup ── */
+@keyframes glitter-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.glitter-gradient {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    #38bdf8 8%,
+    #818cf8 16%,
+    transparent 24%,
+    #c084fc 32%,
+    transparent 40%,
+    #38bdf8 48%,
+    transparent 56%,
+    #818cf8 64%,
+    #c084fc 72%,
+    transparent 80%,
+    #38bdf8 88%,
+    transparent 96%
+  );
+  animation: glitter-rotate 3s linear infinite;
+}

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader } from '@/components/common';
 import {
   Users,
@@ -79,6 +80,150 @@ function StatCard({ icon: Icon, label, value, trend, color, bgColor }: {
         <p className="text-xs text-white/40 mt-1 font-medium">{label}</p>
       </div>
     </motion.div>
+  );
+}
+
+// Online map images from Wikimedia Commons (CC0 licensed)
+const regionMapImages: Record<string, string> = {
+  'North America':
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Outline_of_the_map_of_North_America.png/400px-Outline_of_the_map_of_North_America.png',
+  'Europe':
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Blank_political_map_of_Europe_%28polar_stereographic_projection%29_cropped.svg/400px-Blank_political_map_of_Europe_%28polar_stereographic_projection%29_cropped.svg.png',
+  'Asia':
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Outline_of_the_map_of_Asia.png/400px-Outline_of_the_map_of_Asia.png',
+  'South America':
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Outline_of_the_map_of_South_America.png/400px-Outline_of_the_map_of_South_America.png',
+  'Others':
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Blank_world_map.svg/400px-Blank_world_map.svg.png',
+};
+
+// Sparkle positions scattered around the popup
+const sparklePositions = [
+  { top: '10%', left: '5%', delay: 0 },
+  { top: '5%', right: '15%', delay: 0.5 },
+  { bottom: '15%', left: '10%', delay: 1 },
+  { bottom: '8%', right: '8%', delay: 1.5 },
+  { top: '50%', left: '2%', delay: 0.8 },
+  { top: '30%', right: '3%', delay: 1.2 },
+];
+
+// Region row with hover-triggered map popup + glittering border
+function RegionRow({
+  row,
+  maxCount,
+  isLast,
+}: {
+  row: { region: string; count: number; emoji: string };
+  maxCount: number;
+  isLast: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const mapUrl = regionMapImages[row.region];
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Row */}
+      <div
+        className={`flex items-center justify-between py-2 cursor-pointer transition-all duration-200 ${
+          !isLast ? 'border-b border-white/[0.03]' : ''
+        } ${hovered ? 'bg-white/[0.04] -mx-2 px-2 rounded-lg' : ''}`}
+      >
+        <div className="flex items-center gap-2.5">
+          <span className={`text-sm filter transition-all duration-200 ${hovered ? '' : 'grayscale'}`}>
+            {row.emoji}
+          </span>
+          <span className={`text-xs transition-colors duration-200 ${hovered ? 'text-white/70' : 'text-white/45'}`}>
+            {row.region}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-12 h-1 rounded-full bg-white/[0.04] overflow-hidden">
+            <div className="h-full bg-sky-400/40" style={{ width: `${(row.count / maxCount) * 100}%` }} />
+          </div>
+          <span className="text-[11px] font-bold tabular-nums text-white/50">{row.count}</span>
+        </div>
+      </div>
+
+      {/* Floating map popup */}
+      <AnimatePresence>
+        {hovered && mapUrl && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 pointer-events-none"
+          >
+            {/* Glitter border wrapper */}
+            <div className="relative p-[2px] rounded-2xl">
+              {/* Spinning conic-gradient = glittering border */}
+              <div className="absolute inset-0 rounded-2xl overflow-hidden">
+                <div className="absolute inset-[-100%] glitter-gradient" />
+              </div>
+
+              {/* Inner card */}
+              <div className="relative rounded-[14px] bg-[#0a0a0a] p-5 w-52 z-10">
+                {/* Sparkle particles */}
+                {sparklePositions.map((pos, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute w-1 h-1 rounded-full bg-sky-400"
+                    style={pos as React.CSSProperties}
+                    animate={{ opacity: [0, 1, 0], scale: [0, 1.2, 0] }}
+                    transition={{
+                      duration: 2,
+                      delay: pos.delay,
+                      repeat: Infinity,
+                      ease: 'easeInOut',
+                    }}
+                  />
+                ))}
+
+                {/* Online map image */}
+                <div className="relative mb-3 rounded-lg overflow-hidden">
+                  {/* Subtle dot-grid overlay */}
+                  <div
+                    className="absolute inset-0 z-10 pointer-events-none"
+                    style={{
+                      backgroundImage:
+                        'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)',
+                      backgroundSize: '10px 10px',
+                    }}
+                  />
+                  {/* Gradient overlay for tinting */}
+                  <div className="absolute inset-0 z-10 pointer-events-none bg-gradient-to-br from-sky-500/10 via-transparent to-violet-500/10" />
+                  <img
+                    src={mapUrl}
+                    alt={`Map of ${row.region}`}
+                    className="w-full h-auto max-h-36 object-contain invert brightness-75 opacity-50"
+                    loading="eager"
+                    draggable={false}
+                  />
+                </div>
+
+                {/* Label */}
+                <div className="text-center">
+                  <span className="text-sm font-bold text-white/80">
+                    {row.emoji} {row.region}
+                  </span>
+                  <div className="flex items-center justify-center gap-1.5 mt-1">
+                    <span className="text-xs text-sky-400/70 font-medium">{row.count}</span>
+                    <span className="text-[10px] text-white/30">participants</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Down-arrow caret */}
+            <div className="absolute left-1/2 -translate-x-1/2 -bottom-[5px] w-2.5 h-2.5 bg-[#0a0a0a] rotate-45 border-r border-b border-sky-400/20" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -284,7 +429,7 @@ export function AnalyticsPage() {
               </div>
               <h3 className="text-sm font-bold text-white/80">Regions</h3>
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-0.5">
               {[
                 { region: 'North America', count: 65, emoji: '🌎' },
                 { region: 'Europe', count: 48, emoji: '🌍' },
@@ -292,18 +437,12 @@ export function AnalyticsPage() {
                 { region: 'South America', count: 12, emoji: '🌎' },
                 { region: 'Others', count: 8, emoji: '🌐' },
               ].map((row, idx, arr) => (
-                <div key={row.region} className="flex items-center justify-between py-2 border-b border-white/[0.03] last:border-0 last:pb-0">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-sm filter grayscale">{row.emoji}</span>
-                    <span className="text-xs text-white/45">{row.region}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-12 h-1 rounded-full bg-white/[0.04] overflow-hidden">
-                       <div className="h-full bg-sky-400/40" style={{ width: `${(row.count / 65) * 100}%` }} />
-                    </div>
-                    <span className="text-[11px] font-bold tabular-nums text-white/50">{row.count}</span>
-                  </div>
-                </div>
+                <RegionRow
+                  key={row.region}
+                  row={row}
+                  maxCount={65}
+                  isLast={idx === arr.length - 1}
+                />
               ))}
             </div>
           </motion.div>

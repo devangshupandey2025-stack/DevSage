@@ -626,9 +626,10 @@ const HackathonGallery = () => {
             className="hidden md:flex items-center gap-2 text-[#CCFF00] text-sm font-semibold uppercase tracking-wider cursor-pointer hover:gap-3 transition-all"
             whileHover={{ x: 4 }}
           >
-            View all <ArrowRight className="w-4 h-4" 
-            onClick={() => window.open("https://eventhubcc.vit.ac.in/EventHub/", "_blank")}
-            />
+            <a href="https://eventhubcc.vit.ac.in/EventHub/" target="_blank" className="text-[#CCFF00] hover:text-white transition-colors">
+              View all
+            </a>
+            <ArrowRight className="w-4 h-4 text-[#CCFF00]" />
           </motion.span>
         </motion.div>
       </div>
