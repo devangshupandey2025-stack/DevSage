@@ -127,22 +127,14 @@ const Navbar = () => {
               </motion.button>
             ))}
           </div>
-
           <div className="hidden lg:flex items-center gap-3">
-            <motion.button
-              className="text-sm font-medium text-white/50 hover:text-white transition-all px-4 py-2 rounded-lg hover:bg-white/5"
-              whileHover={{ scale: 1.03 }}
-              onClick={() => navigate('/login')}
-            >
-              Sign In
-            </motion.button>
             <motion.button
               className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/login')}
+              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
-              Get Started
+              Get in Touch
             </motion.button>
           </div>
 
@@ -294,9 +286,9 @@ const Hero = () => {
                 className="group bg-[#CCFF00] text-black font-bold px-8 py-4 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/login')}
+                onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
               >
-                Start Building
+                Host with us
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </motion.button>
             </motion.div>
@@ -906,12 +898,6 @@ const SplitSection = () => {
               </div>
               <span className="text-white/35 text-sm">12,000+ teams active</span>
             </div>
-            <motion.span
-              className="inline-flex items-center gap-2 mt-8 text-[#CCFF00] text-sm font-semibold cursor-pointer"
-              whileHover={{ x: 4 }}
-            >
-              Explore Teams <ExternalLink className="w-4 h-4" />
-            </motion.span>
           </div>
         </motion.div>
 
@@ -953,8 +939,8 @@ const SplitSection = () => {
             <motion.span
               className="inline-flex items-center gap-2 mt-8 text-black text-sm font-semibold cursor-pointer"
               whileHover={{ x: 4 }}
+              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
-              Start Solo <ExternalLink className="w-4 h-4" />
             </motion.span>
           </div>
         </motion.div>
@@ -1113,7 +1099,7 @@ const CTASection = () => {
               className="bg-[#CCFF00] text-black font-bold px-12 py-5 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/login')}
+              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
               Get Started For Free
               <ArrowRight className="w-5 h-5" />
