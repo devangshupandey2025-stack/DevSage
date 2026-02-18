@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DevSage - Founders' Collaboration &amp; IP Assignment Agreement</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #1a4d2e;
+            --secondary-green: #2d6a4f;
+            --accent-lime: #65a30d;
+            --light-sage: #f0fdf4;
+            --text-primary: #14532d;
+            --text-secondary: #365314;
+            --border-light: #bbf7d0;
+            --bg-warm: #f7fee7;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.8;
+            color: var(--text-primary);
+            background-color: #f1f5f9;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(180deg, var(--primary-green) 0%, var(--secondary-green) 100%);
+            color: white;
+            padding: 30px 40px;
+            border-bottom: 4px solid var(--accent-lime);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'Crimson Text', serif;
+            font-size: 2.2em;
+            font-weight: 700;
+            letter-spacing: 3px;
+        }
+
+        .logo-accent {
+            color: var(--accent-lime);
+        }
+
+        .doc-type {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0.8;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 20px;
+            border-radius: 2px;
+        }
+
+        /* Layout */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            min-height: calc(100vh - 120px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: white;
+            border-right: 1px solid var(--border-light);
+            padding: 0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            background: var(--secondary-green);
+            color: white;
+            padding: 25px;
+            border-bottom: 3px solid var(--accent-lime);
+        }
+
+        .sidebar-header h3 {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.1em;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-nav {
+            padding: 20px 0;
+        }
+
+        .sidebar-nav ul {
+            list-style: none;
+        }
+
+        .sidebar-nav li {
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .sidebar-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            display: block;
+            padding: 14px 25px;
+            font-size: 0.9em;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-nav a:hover {
+            background-color: var(--light-sage);
+            color: var(--primary-green);
+            border-left-color: var(--accent-lime);
+            padding-left: 28px;
+        }
+
+        .sidebar-nav .section-group {
+            padding: 10px 25px;
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            background: white;
+            margin: 30px;
+            padding: 60px 70px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid var(--border-light);
+            border-radius: 2px;
+        }
+
+        /* Document Header */
+.document-header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 2px solid var(--primary-green);
+        }
+
+        .document-header h1 {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.9em;
+            color: var(--primary-green);
+            font-weight: 700;
+            line-height: 1.4;
+            margin-bottom: 25px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .effective-date-box {
+            background: var(--bg-warm);
+            padding: 20px 40px;
+            display: inline-block;
+            border: 1px solid var(--border-light);
+            font-size: 0.95em;
+            color: var(--text-secondary);
+        }
+
+        .parties-section {
+            margin: 40px 0;
+        }
+
+        .parties-section h3 {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.1em;
+            color: var(--primary-green);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .founders-list {
+            list-style: none;
+            margin: 20px 0;
+            padding-left: 0;
+        }
+
+        .founders-list li {
+            padding: 12px 0;
+            border-bottom: 1px dotted var(--border-light);
+            font-size: 0.95em;
+        }
+
+        .founders-list li:last-child {
+            border-bottom: none;
+        }
+
+        /* Whereas Section */
+        .whereas-section {
+            background: var(--bg-warm);
+            border: 1px solid var(--border-light);
+            border-left: 4px solid var(--accent-lime);
+            padding: 30px 35px;
+            margin: 40px 0;
+        }
+
+        .whereas-title {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: var(--primary-green);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .whereas-letter {
+            font-weight: 600;
+            color: var(--primary-green);
+            min-width: 25px;
+        }
+
+        .whereas-title {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: var(--primary-navy);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .whereas-item {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .whereas-letter {
+            font-weight: 600;
+            color: var(--primary-navy);
+            min-width: 25px;
+        }
+
+        .now-therefore {
+            text-align: center;
+            margin: 40px 0;
+            font-weight: 600;
+            color: var(--primary-green);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Articles */
+        article {
+            margin-bottom: 50px;
+            page-break-inside: avoid;
+        }
+
+        article h2 {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.4em;
+            color: var(--primary-green);
+            font-weight: 700;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--accent-lime);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        article h3 {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.1em;
+            color: var(--text-primary);
+            font-weight: 600;
+            margin: 30px 0 15px 0;
+        }
+
+        article p {
+            margin-bottom: 16px;
+            text-align: justify;
+            font-size: 0.95em;
+            line-height: 1.9;
+        }
+
+        article ul, article ol {
+            margin: 15px 0 20px 30px;
+        }
+
+        article li {
+            margin-bottom: 10px;
+            font-size: 0.95em;
+            line-height: 1.8;
+        }
+
+        .section-number {
+            color: var(--accent-lime);
+            font-weight: 700;
+            margin-right: 8px;
+        }
+
+        /* Tables */
+        .table-container {
+            margin: 30px 0;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            margin: 20px 0;
+        }
+
+        thead {
+            background: var(--primary-green);
+            color: white;
+        }
+
+        th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.85em;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        tbody tr:hover {
+            background-color: var(--light-sage);
+        }
+
+        .table-footer {
+            background: var(--secondary-green);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Schedules & Exhibits */
+        .schedule-section {
+            margin: 50px 0;
+            padding: 40px;
+            background: var(--bg-warm);
+            border: 1px solid var(--border-light);
+            border-top: 4px solid var(--primary-green);
+        }
+
+        .schedule-header {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.3em;
+            color: var(--primary-green);
+            font-weight: 700;
+            margin-bottom: 25px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--accent-lime);
+        }
+
+        /* Signatures */
+        .signatures-section {
+            margin-top: 60px;
+            padding-top: 50px;
+            border-top: 3px solid var(--primary-green);
+        }
+
+        .signatures-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .signatures-header h2 {
+            font-family: 'Crimson Text', serif;
+            font-size: 1.4em;
+            color: var(--primary-green);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .signatures-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 40px;
+        }
+
+        .signature-block {
+            border: 1px solid var(--border-light);
+            padding: 30px;
+            background: white;
+        }
+
+        .signature-name {
+            font-weight: 600;
+            color: var(--primary-green);
+            margin-bottom: 40px;
+            font-size: 0.95em;
+        }
+
+        .signature-line {
+            border-bottom: 1px solid var(--text-primary);
+            margin-bottom: 10px;
+            height: 40px;
+        }
+
+        .signature-label {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Footer */
+        .document-footer {
+            margin-top: 80px;
+            padding-top: 30px;
+            border-top: 1px solid var(--border-light);
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+        }
+
+        /* Utility */
+        .text-center {
+            text-align: center;
+        }
+
+        .font-serif {
+            font-family: 'Crimson Text', serif;
+        }
+
+        /* Print Styles */
+        @media print {
+            .sidebar {
+                display: none;
+            }
+            .main-content {
+                margin: 0;
+                box-shadow: none;
+                border: none;
+                padding: 40px;
+            }
+            .header {
+                position: static;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            .main-content {
+                margin: 20px;
+                padding: 40px;
+            }
+            .signatures-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<div class="logo">D<span class="logo-accent">ev</span>S<span class="logo-accent">age</span></div>
+<div class="doc-type">Legal Document</div>
+</div>
+</header>
+<div class="container">
+<aside class="sidebar">
+<div class="sidebar-header">
+<h3>Table of Contents</h3>
+</div>
+<nav class="sidebar-nav">
+<div class="section-group">Agreement Sections</div>
+<ul>
+<li><a href="#article1">Article 1: IP Assignment</a></li>
+<li><a href="#article2">Article 2: Equity &amp; Vesting</a></li>
+<li><a href="#article3">Article 3: Roles &amp; Commitment</a></li>
+<li><a href="#article4">Article 4: Decision Making</a></li>
+<li><a href="#article5">Article 5: Departure &amp; Termination</a></li>
+<li><a href="#article6">Article 6: Confidentiality</a></li>
+<li><a href="#article7">Article 7: Non-Compete</a></li>
+<li><a href="#article8">Article 8: General Provisions</a></li>
+</ul>
+<div class="section-group">Schedules &amp; Exhibits</div>
+<ul>
+<li><a href="#signatures">Signatures</a></li>
+<li><a href="#schedulea">Schedule A: Cap Table</a></li>
+<li><a href="#scheduleb">Schedule B: Vesting</a></li>
+<li><a href="#exhibita">Exhibit A: IP Form</a></li>
+</ul>
+</nav>
+</aside>
+<main class="main-content">
+<header class="document-header">
+<h1>Founders' Collaboration &amp;<br/>Intellectual Property Assignment Agreement</h1>
+<div class="effective-date-box">
+                    THIS AGREEMENT is made and entered into on this ______ day of ______, 20__ (the "Effective Date")
+                </div>
+</header>
+<section class="parties-section">
+<h3>By and Between:</h3>
+<p style="margin-bottom: 20px;">The following individuals (collectively referred to as the "Founders" and individually as a "Founder"):</p>
+<ul class="founders-list">
+<li>[Name of Founder 1], residing at [Address/Hostel]</li>
+<li>[Name of Founder 2], residing at [Address/Hostel]</li>
+<li>[Name of Founder 3], residing at [Address/Hostel]</li>
+<li>[Name of Founder 4], residing at [Address/Hostel]</li>
+<li>[Name of Founder 5], residing at [Address/Hostel]</li>
+<li>[Name of Founder 6], residing at [Address/Hostel]</li>
+</ul>
+</section>
+<section class="whereas-section">
+<div class="whereas-title">Whereas</div>
+<div class="whereas-item">
+<span class="whereas-letter">A.</span>
+<span>The Founders are collaborating to develop a business concept and related technology tentatively known as "[Project / Startup Name]" (the "Project");</span>
+</div>
+<div class="whereas-item">
+<span class="whereas-letter">B.</span>
+<span>The Founders intend to incorporate the Project as a private limited company (the "Company") and seek incubation support from [Incubator Name];</span>
+</div>
+<div class="whereas-item">
+<span class="whereas-letter">C.</span>
+<span>The Founders wish to establish their respective rights and obligations regarding the Intellectual Property (IP), equity ownership, and management of the Project prior to formal incorporation.</span>
+</div>
+</section>
+<div class="now-therefore">
+                Now, Therefore, the Founders agree as follows:
+            </div>
+<article id="article1">
+<h2><span class="section-number">1.</span>Intellectual Property Assignment</h2>
+<h3>1.1. Assignment of IP</h3>
+<p>Each Founder hereby irrevocably assigns, transfers, and conveys to the Project (and effectively to the future Company upon incorporation) all right, title, and interest in and to any and all "Work Product."</p>
+<h3>1.2. Definition of Work Product</h3>
+<p>"Work Product" includes, but is not limited to:</p>
+<ul>
+<li>Source code, algorithms, and software architecture (specifically including [List key tech, e.g., Python backend, LLaMA integration, TypeScript frontend]);</li>
+<li>Business plans, pitch decks, and financial models;</li>
+<li>Brand names, logos, and domain names;</li>
+<li>Customer lists and vendor data.</li>
+</ul>
+<h3>1.3. No Prior Claims</h3>
+<p>Each Founder represents that the Work Product contributed by them is original and does not infringe upon the intellectual property rights of any third party, including academic institutions or previous employers.</p>
+<h3>1.4. Academic Exception</h3>
+<p>Work submitted strictly for academic credit (e.g., course assignments) remains the property of the student/institution <em>unless</em> it is substantially incorporated into the Project's commercial product, in which case it is assigned to the Project to the fullest extent legally permissible.</p>
+</article>
+<article id="article2">
+<h2><span class="section-number">2.</span>Equity Ownership &amp; Vesting</h2>
+<h3>2.1. Initial Equity Split</h3>
+<p>Upon incorporation, the initial shareholding of the Company shall be allocated as set forth in Schedule A (attached hereto).</p>
+<h3>2.2. Vesting Schedule</h3>
+<p>The Founders agree that their equity is subject to a "Vesting Schedule" to ensure long-term commitment.</p>
+<ul>
+<li><strong>Total Vesting Period:</strong> 4 Years (48 Months).</li>
+<li><strong>Cliff Period:</strong> 1 Year (12 Months).</li>
+<li><strong>Cliff Condition:</strong> If a Founder leaves the Project for any reason before the 1st anniversary of the Effective Date, they shall forfeit <strong>100%</strong> of their equity.</li>
+<li><strong>Post-Cliff:</strong> After 12 months, 25% of the Founder's equity vests immediately. The remaining 75% vests in equal monthly installments over the following 36 months.</li>
+</ul>
+<h3>2.3. Accelerated Vesting</h3>
+<p>In the event of a "Liquidity Event" (e.g., acquisition of the Company) prior to full vesting, 100% of the unvested shares shall immediately vest.</p>
+</article>
+<article id="article3">
+<h2><span class="section-number">3.</span>Roles &amp; Commitment</h2>
+<h3>3.1. Roles</h3>
+<p>The Founders agree to the following primary responsibilities:</p>
+<ul>
+<li>[Founder 1 Name] (CEO): Strategy, Fundraising, Investor Relations.</li>
+<li>[Founder 2 Name] (CTO): Technical Architecture, Code Review, Product Development.</li>
+<li>[Founder 3 Name]: [Specific Role, e.g., Frontend Development].</li>
+<li>[Founder 4 Name]: [Specific Role, e.g., Marketing &amp; Growth].</li>
+</ul>
+<h3>3.2. Time Commitment</h3>
+<p>The Founders acknowledge they are currently students. However, each Founder agrees to dedicate a minimum of [e.g., 20] hours per week to the Project.</p>
+<h3>3.3. Moonlighting</h3>
+<p>Founders may hold internships or other employment provided such activities do not conflict with the interests of the Project or prevent the Founder from fulfilling their time commitment.</p>
+</article>
+<article id="article4">
+<h2><span class="section-number">4.</span>Decision Making &amp; Dispute Resolution</h2>
+<h3>4.1. Day-to-Day Decisions</h3>
+<p>Decisions regarding the Project's daily operations shall be made by the majority vote of the Founders.</p>
+<h3>4.2. Major Decisions</h3>
+<p>The following actions require a Supermajority Vote (75% of equity ownership):</p>
+<ul>
+<li>Amending this Agreement;</li>
+<li>Admitting a new Co-Founder;</li>
+<li>Diluting equity for investors or incubators;</li>
+<li>Selling the Project or its assets.</li>
+</ul>
+<h3>4.3. Deadlock</h3>
+<p>In the event of a deadlock (a tie vote) that cannot be resolved after 14 days of good-faith negotiation, the decision of the Chief Executive Officer (CEO) shall be final and binding.</p>
+</article>
+<article id="article5">
+<h2><span class="section-number">5.</span>Departure &amp; Termination</h2>
+<h3>5.1. Voluntary Resignation</h3>
+<p>A Founder may resign by providing 30 days' written notice. Upon resignation:</p>
+<ul>
+<li>All unvested shares are forfeited to the Company/remaining Founders.</li>
+<li>Vested shares may be retained by the departing Founder, subject to a "Right of First Refusal" (ROFR) held by the Company to buy back said shares at Fair Market Value.</li>
+</ul>
+<h3>5.2. Termination for Cause</h3>
+<p>A Founder may be removed for "Cause" (e.g., fraud, theft of IP, material breach of this Agreement, conviction of a felony) by a majority vote of the other Founders. In the event of Termination for Cause, the Founder forfeits 100% of their equity (both vested and unvested).</p>
+</article>
+<article id="article6">
+<h2><span class="section-number">6.</span>Confidentiality</h2>
+<h3>6.1. Definition of Confidential Information</h3>
+<p>"Confidential Information" means all non-public information regarding the Project's business, technology, and finances, including but not limited to: source code, algorithms, customer lists, marketing strategies, and investor term sheets.</p>
+<h3>6.2. Obligations</h3>
+<p>Each Founder agrees to:</p>
+<ul>
+<li>Hold all Confidential Information in strict confidence;</li>
+<li>Not disclose such information to any third party without the CEO's written consent;</li>
+<li>Use such information <em>solely</em> for the benefit of the Project.</li>
+</ul>
+<h3>6.3. Survival</h3>
+<p>The obligations of this Article shall survive the termination of this Agreement and the departure of any Founder for a period of three (3) years.</p>
+</article>
+<article id="article7">
+<h2><span class="section-number">7.</span>Non-Compete &amp; Non-Solicitation</h2>
+<h3>7.1. Non-Compete</h3>
+<p>During the term of this Agreement and for a period of one (1) year following a Founder's departure, no Founder shall directly or indirectly engage in, manage, or own any business that creates a product substantially similar to or directly competitive with the Project.</p>
+<h3>7.2. Non-Solicitation of Employees</h3>
+<p>For a period of two (2) years following a Founder's departure, they shall not induce, solicit, or attempt to hire any other Founder, employee, or contractor of the Project to leave the Project and join a different entity.</p>
+</article>
+<article id="article8">
+<h2><span class="section-number">8.</span>General Provisions</h2>
+<h3>8.1. Governing Law</h3>
+<p>This Agreement shall be governed by and construed in accordance with the laws of India.</p>
+<h3>8.2. Dispute Resolution (Arbitration)</h3>
+<ul>
+<li><strong>Amicable Settlement:</strong> In the event of any dispute arising out of or in connection with this Agreement, the Founders shall first attempt to resolve the dispute amicably through good-faith negotiations for a period of fifteen (15) days.</li>
+<li><strong>Arbitration:</strong> If the dispute remains unresolved, it shall be referred to and finally resolved by arbitration under the Arbitration and Conciliation Act, 1996.
+                    <ul>
+<li>Venue: The seat and venue of the arbitration shall be [City, e.g., Chennai], India.</li>
+<li>Language: The proceedings shall be conducted in English.</li>
+<li>Arbitrator: The arbitration shall be conducted by a sole arbitrator appointed by mutual consent of the Disputing Parties.</li>
+</ul>
+</li>
+</ul>
+<h3>8.3. Severability</h3>
+<p>If any provision of this Agreement is held to be invalid, illegal, or unenforceable by a court of competent jurisdiction, the validity, legality, and enforceability of the remaining provisions shall not in any way be affected or impaired thereby.</p>
+<h3>8.4. Entire Agreement</h3>
+<p>This Agreement (including all Schedules and Exhibits) constitutes the entire agreement between the Founders regarding the subject matter hereof and supersedes all prior or contemporaneous discussions, understandings, and agreements, whether written or oral.</p>
+<h3>8.5. Amendments &amp; Waivers</h3>
+<ul>
+<li><strong>Amendments:</strong> No modification of or amendment to this Agreement shall be effective unless in writing and signed by all Founders (or by Founders holding at least 75% of the equity, if specified in Article 4).</li>
+<li><strong>Waiver:</strong> No failure or delay by any Party in exercising any right, power, or privilege hereunder shall operate as a waiver thereof.</li>
+</ul>
+<h3>8.6. Notices</h3>
+<p>All notices, requests, consents, claims, demands, waivers, and other communications hereunder shall be in writing and shall be deemed to have been given:</p>
+<ul>
+<li>(a) When delivered by hand (with written confirmation of receipt); or</li>
+<li>(b) When sent by email to the email address specified by the Founder on the Signature Page, provided that the sender receives no "bounce-back" or error message.</li>
+</ul>
+<h3>8.7. Counterparts</h3>
+<p>This Agreement may be executed in counterparts, each of which shall be deemed an original, but all of which together shall be deemed to be one and the same agreement.</p>
+</article>
+<section class="signatures-section" id="signatures">
+<div class="signatures-header">
+<h2>In Witness Whereof</h2>
+<p style="margin-top: 15px; color: var(--text-secondary);">The Founders have signed this Agreement as of the date first written above.</p>
+</div>
+<div class="signatures-grid">
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 1]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 2]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 3]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 4]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 5]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+<div class="signature-block">
+<div class="signature-name">[Name of Founder 6]</div>
+<div class="signature-line"></div>
+<div class="signature-label">Signature &amp; Date</div>
+</div>
+</div>
+</section>
+<section class="schedule-section" id="schedulea">
+<div class="schedule-header">Schedule A: Initial Capitalization Table</div>
+<p style="margin-bottom: 20px;"><strong>Date:</strong> [Date of Agreement]   |   <strong>Total Authorized Shares:</strong> 125,000</p>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th>Founder Name</th>
+<th>Role / Title</th>
+<th>Number of Shares</th>
+<th>Ownership %</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>[Name 1]</td>
+<td>Chief Executive Officer (CEO)</td>
+<td>25,000</td>
+<td>20%</td>
+</tr>
+<tr>
+<td>[Name 2]</td>
+<td>Chief Technology Officer (CTO)</td>
+<td>25,000</td>
+<td>16%</td>
+</tr>
+<tr>
+<td>[Name 3]</td>
+<td>Founding Engineer / Developer</td>
+<td>20,000</td>
+<td>16%</td>
+</tr>
+<tr>
+<td>[Name 4]</td>
+<td>Head of Marketing</td>
+<td>15,000</td>
+<td>16%</td>
+</tr>
+<tr>
+<td>[Name 5]</td>
+<td>Head of Operations</td>
+<td>15,000</td>
+<td>16%</td>
+</tr>
+<tr>
+<td>[Name 6]</td>
+<td>Head Operation</td>
+<td>25,000</td>
+<td>16%</td>
+</tr>
+<tr class="table-footer">
+<td colspan="2">TOTAL</td>
+<td>125,000</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="schedule-section" id="scheduleb">
+<div class="schedule-header">Schedule B: Vesting Schedule</div>
+<p style="margin-bottom: 20px;"><strong>Total Company Shares Authorized:</strong> 125,000   |   <strong>Vesting Start Date:</strong> [Date of Agreement]</p>
+<h3 style="margin-top: 30px;">1. Standard Vesting</h3>
+<p>Subject to the terms of this Agreement, the Founders' shares shall vest as follows:</p>
+<ul>
+<li><strong>Cliff Date:</strong> 12 months from the Vesting Start Date.</li>
+<li><strong>Monthly Vesting:</strong> 1/48th of the total shares shall vest on the same day of each month following the Vesting Start Date.</li>
+</ul>
+<h3>2. Vesting Table</h3>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th>Founder Name</th>
+<th>Total Shares</th>
+<th>Vested @ Cliff (Year 1)</th>
+<th>Vested @ Year 2</th>
+<th>Vested @ Year 3</th>
+<th>Fully Vested @ Year 4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>[Name 1]</td>
+<td>25,000</td>
+<td>6,250</td>
+<td>12,500</td>
+<td>18,750</td>
+<td>25,000</td>
+</tr>
+<tr>
+<td>[Name 2]</td>
+<td>25,000</td>
+<td>6,250</td>
+<td>12,500</td>
+<td>18,750</td>
+<td>25,000</td>
+</tr>
+<tr>
+<td>[Name 3]</td>
+<td>20,000</td>
+<td>5,000</td>
+<td>10,000</td>
+<td>15,000</td>
+<td>20,000</td>
+</tr>
+<tr>
+<td>[Name 4]</td>
+<td>15,000</td>
+<td>3,750</td>
+<td>7,500</td>
+<td>11,250</td>
+<td>15,000</td>
+</tr>
+<tr>
+<td>[Name 5]</td>
+<td>15,000</td>
+<td>3,750</td>
+<td>7,500</td>
+<td>11,250</td>
+<td>15,000</td>
+</tr>
+<tr>
+<td>[Name 6]</td>
+<td>25,000</td>
+<td>6,250</td>
+<td>12,500</td>
+<td>18,750</td>
+<td>25,000</td>
+</tr>
+<tr class="table-footer">
+<td>TOTAL</td>
+<td>125,000</td>
+<td>25,000</td>
+<td>50,000</td>
+<td>75,000</td>
+<td>100,000</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="schedule-section" id="exhibita">
+<div class="schedule-header">Exhibit A: Intellectual Property (IP) Assignment Form</div>
+<h3 style="margin-top: 25px;">1. Software Repositories</h3>
+<p>The Founders hereby transfer ownership of the following GitHub/GitLab repositories to the Company:</p>
+<ul>
+<li><strong>Repository Name:</strong> [e.g., Project-Alpha-Backend]<br/>
+                    <strong>URL:</strong> [e.g., https://github.com/username/project-alpha]<br/>
+                    <strong>Description:</strong> [Brief description of code]
+                </li>
+<li><strong>Repository Name:</strong> [e.g., Project-Alpha-Frontend]<br/>
+                    <strong>URL:</strong> [e.g., https://github.com/username/project-alpha-ui]<br/>
+                    <strong>Description:</strong> [Brief description of code]
+                </li>
+</ul>
+<h3>2. Domain Names &amp; Social Media</h3>
+<ul>
+<li><strong>Domain Name:</strong> [e.g., www.projectalpha.com]</li>
+<li><strong>Social Handles:</strong> @[Handle] on Twitter, Instagram, LinkedIn.</li>
+</ul>
+<h3>3. Designs &amp; Creative Assets</h3>
+<ul>
+<li><strong>Logo Files:</strong> All vector (SVG, EPS) and raster (PNG, JPG) files stored in [Link to Storage].</li>
+<li><strong>UI/UX Designs:</strong> Figma / Adobe XD project files located at [Link to File].</li>
+</ul>
+<h3>4. Third-Party Licenses (Open Source)</h3>
+<p>The Founders declare that the Software utilizes the following key Open Source libraries:</p>
+<ul>
+<li>[e.g., LLaMA (Meta AI) - Community License]</li>
+<li>[e.g., React (Facebook) - MIT License]</li>
+</ul>
+</section>
+<footer class="document-footer">
+<p>© 2024 DevSage. All rights reserved.</p>
+<p>This document is confidential and proprietary.</p>
+</footer>
+</main>
+</div>
+</body>
+</html>
