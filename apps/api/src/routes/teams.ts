@@ -11,6 +11,38 @@ const teams = new Hono<AppEnv>();
 // All routes need hackathon context
 teams.use('/*', hackathonContext);
 
+// Get the authenticated user's team in this hackathon
+teams.get('/me', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+
+  const membership = await c.env.DB.prepare(`
+    SELECT t.*, tm.role as my_role
+    FROM teams t
+    JOIN team_members tm ON tm.team_id = t.id
+    WHERE t.hackathon_id = ? AND tm.user_id = ?
+  `).bind(hackathon.id, user.id).first();
+
+  if (!membership) {
+    return errorResponse(c, 404, 'NOT_ON_TEAM', 'You are not on any team in this hackathon');
+  }
+
+  const members = await c.env.DB.prepare(`
+    SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
+           u.name, u.email, u.avatar_url
+    FROM team_members tm
+    JOIN users u ON tm.user_id = u.id
+    WHERE tm.team_id = ?
+    ORDER BY tm.joined_at ASC
+  `).bind(membership.id).all();
+
+  return successResponse(c, {
+    team: membership,
+    members: members.results || [],
+    role: membership.my_role,
+  });
+});
+
 // Create team (any authenticated user)
 teams.post('/', authMiddleware, async (c) => {
   const user = c.get('user')!;

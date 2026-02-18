@@ -12,7 +12,7 @@ const statusConfig: Record<StatusType, { label: string; color: string; bg: strin
   draft: {
     label: 'Draft',
     color: 'text-white/60',
-    bg: 'bg-white/[0.06] border-white/[0.08]',
+    bg: 'bg-white/6 border-white/[0.08]',
     dot: 'bg-white/40',
   },
   active: {
@@ -36,7 +36,7 @@ const statusConfig: Record<StatusType, { label: string; color: string; bg: strin
   archived: {
     label: 'Archived',
     color: 'text-white/30',
-    bg: 'bg-white/[0.03] border-white/[0.06]',
+    bg: 'bg-white/[0.03] border-white/',
     dot: 'bg-white/25',
   },
 };

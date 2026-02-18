@@ -18,11 +18,11 @@ export function EmptyState({ icon: Icon, title, description, action, className }
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
       className={cn(
-        'flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.01] px-8 py-16 text-center',
+        'flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/8 bg-white/1 px-8 py-16 text-center',
         className
       )}
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-white/20 mb-4">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/4 text-white/20 mb-4">
         <Icon className="h-6 w-6" />
       </div>
       <h3 className="text-lg font-bold text-white/70">{title}</h3>

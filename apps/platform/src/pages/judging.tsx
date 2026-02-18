@@ -135,7 +135,7 @@ export function JudgingPage() {
                 Invite Judge
               </motion.button>
             </DialogTrigger>
-            <DialogContent className="border-white/[0.08] bg-black/95 backdrop-blur-xl sm:max-w-md">
+            <DialogContent className="border-white/8 bg-black/95 backdrop-blur-xl sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-white text-xl font-black">Invite Judge</DialogTitle>
                 <DialogDescription className="text-white/35">
@@ -147,11 +147,11 @@ export function JudgingPage() {
                   value={inviteUserId}
                   onChange={(e) => setInviteUserId(e.target.value)}
                   placeholder="User ID"
-                  className="border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20"
+                  className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
                 />
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setInviteDialogOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/[0.06] hover:text-white">Cancel</Button>
+                <Button variant="outline" onClick={() => setInviteDialogOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white">Cancel</Button>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={inviteJudge} className="rounded-lg bg-[#CCFF00] px-5 py-2 text-sm font-bold text-black transition hover:bg-white">
                   Send Invite
                 </motion.button>
@@ -162,7 +162,7 @@ export function JudgingPage() {
       />
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-1 mb-6 w-fit">
+      <div className="flex items-center gap-1 rounded-xl border border-white/ bg-white/2 p-1 mb-6 w-fit">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -173,7 +173,7 @@ export function JudgingPage() {
               className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${
                 activeTab === tab.key
                   ? 'bg-[#CCFF00]/10 text-[#CCFF00]'
-                  : 'text-white/40 hover:text-white/60 hover:bg-white/[0.04]'
+                  : 'text-white/40 hover:text-white/60 hover:bg-white/4'
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -186,7 +186,7 @@ export function JudgingPage() {
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={`s-${String(i)}`} className="h-16 bg-white/[0.06] rounded-2xl" />
+            <Skeleton key={`s-${String(i)}`} className="h-16 bg-white/6 rounded-2xl" />
           ))}
         </div>
       ) : (
@@ -212,12 +212,12 @@ export function JudgingPage() {
                   <motion.div
                     key={entry.team_id}
                     variants={item}
-                    className={`flex items-center gap-4 rounded-2xl border p-5 transition-all duration-300 hover:bg-white/[0.04] ${
+                    className={`flex items-center gap-4 rounded-2xl border p-5 transition-all duration-300 hover:bg-white/4 ${
                       i === 0
-                        ? 'border-[#CCFF00]/20 bg-[#CCFF00]/[0.04]'
+                        ? 'border-[#CCFF00]/20 bg-[#CCFF00]/4'
                         : i === 1
-                          ? 'border-white/[0.08] bg-white/[0.03]'
-                          : 'border-white/[0.06] bg-white/[0.02]'
+                          ? 'border-white/8 bg-white/3'
+                          : 'border-white/ bg-white/2'
                     }`}
                   >
                     <span className={`w-10 text-2xl font-black ${
@@ -258,7 +258,7 @@ export function JudgingPage() {
                   <motion.div
                     key={judge.id}
                     variants={item}
-                    className="flex items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 transition hover:border-white/[0.12] hover:bg-white/[0.04]"
+                    className="flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-4 transition hover:border-white/12 hover:bg-white/4"
                   >
                     {judge.avatar_url ? (
                       <img src={judge.avatar_url} alt="" className="h-10 w-10 rounded-xl object-cover" />
@@ -274,7 +274,7 @@ export function JudgingPage() {
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
                       judge.status === 'accepted' ? 'bg-emerald-500/10 text-emerald-400' :
                       judge.status === 'pending' ? 'bg-amber-500/10 text-amber-400' :
-                      'bg-white/[0.06] text-white/40'
+                      'bg-white/6 text-white/40'
                     }`}>
                       {judge.status}
                     </span>
@@ -298,7 +298,7 @@ export function JudgingPage() {
                   <motion.div
                     key={criterion.id}
                     variants={item}
-                    className="flex items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition hover:border-white/[0.12] hover:bg-white/[0.04]"
+                    className="flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-5 transition hover:border-white/12 hover:bg-white/4"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#CCFF00]/10 text-[#CCFF00] text-sm font-black">
                       {criterion.sort_order}

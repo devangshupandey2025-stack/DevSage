@@ -124,21 +124,21 @@ export function HackathonOverviewPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8 p-1">
+        <div className="space-y-8 p-1">
         <div className="flex justify-between items-start">
           <div className="space-y-3">
-            <Skeleton className="h-6 w-24 bg-white/[0.04] rounded-full" />
-            <Skeleton className="h-10 w-72 bg-white/[0.04]" />
-            <Skeleton className="h-5 w-96 bg-white/[0.04]" />
+            <Skeleton className="h-6 w-24 bg-white/4 rounded-full" />
+            <Skeleton className="h-10 w-72 bg-white/4" />
+            <Skeleton className="h-5 w-96 bg-white/4" />
           </div>
-          <Skeleton className="h-12 w-40 bg-white/[0.04] rounded-full" />
+          <Skeleton className="h-12 w-40 bg-white/4 rounded-full" />
         </div>
-        <Skeleton className="h-24 bg-white/[0.04] rounded-2xl" />
+        <Skeleton className="h-24 bg-white/4 rounded-2xl" />
         <div className="grid grid-cols-4 gap-4">
-          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
-          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
-          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
-          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
+          <Skeleton className="h-32 bg-white/4 rounded-2xl" />
+          <Skeleton className="h-32 bg-white/4 rounded-2xl" />
+          <Skeleton className="h-32 bg-white/4 rounded-2xl" />
+          <Skeleton className="h-32 bg-white/4 rounded-2xl" />
         </div>
       </div>
     );
@@ -147,7 +147,7 @@ export function HackathonOverviewPage() {
   if (!hackathon) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-6">
+        <div className="w-20 h-20 rounded-2xl bg-white/3 border border-white/ flex items-center justify-center mb-6">
           <Trophy className="w-8 h-8 text-white/20" />
         </div>
         <h3 className="text-xl font-semibold text-white/80 mb-2">Hackathon Not Found</h3>
@@ -173,7 +173,7 @@ export function HackathonOverviewPage() {
       className="relative space-y-8"
     >
       {/* Background Ambient Light */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-96 bg-[#CCFF00]/[0.02] blur-[120px] pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-96 bg-[#CCFF00]/2 blur-[120px] pointer-events-none" />
 
       {/* Header Section */}
       <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -218,9 +218,9 @@ export function HackathonOverviewPage() {
         variants={container} 
         initial="hidden" 
         animate="show"
-        className="relative p-1 rounded-xl bg-[#0A0A0A] border border-white/[0.05] overflow-hidden"
+        className="relative p-1 rounded-xl bg-[#0A0A0A] border border-white/5 overflow-hidden"
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/2 to-transparent" />
         <div className="relative flex h-12 items-center justify-between px-2">
           {phases.map((phase, i) => {
             const isCompleted = i < currentIdx;
@@ -233,7 +233,7 @@ export function HackathonOverviewPage() {
                 className="relative flex flex-col items-center justify-center flex-1 h-full"
               >
                 {/* Track Background Segment */}
-                <div className="absolute inset-0 border-r border-dashed border-white/[0.05] last:border-0" />
+                <div className="absolute inset-0 border-r border-dashed border-white/5 last:border-0" />
                 
                 {/* Active Indicator */}
                 {isCurrent && (
@@ -281,10 +281,10 @@ export function HackathonOverviewPage() {
             variants={item}
             initial="hidden"
             animate="show"
-            className="group relative p-5 rounded-2xl border border-white/[0.05] bg-white/[0.02] backdrop-blur-sm transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.04]"
+            className="group relative p-5 rounded-2xl border border-white/5 bg-white/2 backdrop-blur-sm transition-all duration-300 hover:border-white/10 hover:bg-white/4"
           >
             <div className="flex justify-between items-start mb-4">
-              <div className={`p-2 rounded-lg bg-white/[0.03] ${stat.color}`}>
+              <div className={`p-2 rounded-lg bg-white/3 ${stat.color}`}>
                 <stat.icon className="w-4 h-4" />
               </div>
               {stat.trend && <span className="text-[10px] font-medium text-[#CCFF00]">{stat.trend}</span>}
@@ -303,7 +303,7 @@ export function HackathonOverviewPage() {
           variants={item}
           initial="hidden"
           animate="show"
-          className="relative col-span-2 lg:col-span-1 p-5 rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/[0.02] backdrop-blur-sm"
+          className="relative col-span-2 lg:col-span-1 p-5 rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/2 backdrop-blur-sm"
         >
           <div className="flex items-center gap-2 mb-3">
             <div className="relative">
@@ -343,15 +343,15 @@ export function HackathonOverviewPage() {
                 <Link
                   to={link.path}
                   key={link.label}
-                  className="group relative flex flex-col justify-between h-40 rounded-2xl border border-white/[0.05] bg-white/[0.02] p-5 transition-all duration-300 hover:bg-white/[0.04] hover:border-white/[0.12] overflow-hidden"
+                  className="group relative flex flex-col justify-between h-40 rounded-2xl border border-white/5 bg-white/2 p-5 transition-all duration-300 hover:bg-white/4 hover:border-white/12 overflow-hidden"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <div className="absolute inset-0 bg-linear-to-br from-white/3 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   
                   <div className="relative flex justify-between items-start z-10">
-                    <div className={`p-2.5 rounded-xl ${link.bg} border border-white/[0.05]`}>
+                    <div className={`p-2.5 rounded-xl ${link.bg} border border-white/5`}>
                       <Icon className={`w-4 h-4 ${link.color}`} />
                     </div>
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/[0.03] group-hover:bg-white/[0.06] transition-colors">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/3 group-hover:bg-white/6 transition-colors">
                       <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-all group-hover:translate-x-0.5" />
                     </div>
                   </div>
@@ -378,7 +378,7 @@ export function HackathonOverviewPage() {
         {/* Sidebar: Timeline & Config */}
         <div className="space-y-6">
            {/* Timeline */}
-           <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
+           <div className="rounded-2xl border border-white/5 bg-white/2 p-6">
             <h3 className="text-xs font-bold text-white/50 mb-6 flex items-center gap-2 uppercase tracking-widest">
               <Calendar className="h-3.5 w-3.5 text-[#CCFF00]/50" />
               Schedule
@@ -397,11 +397,11 @@ export function HackathonOverviewPage() {
                   <div key={idx} className="relative pl-8 pb-6 last:pb-0">
                     {/* Vertical Line */}
                     {!isLast && (
-                       <div className="absolute left-[11px] top-6 bottom-0 w-px bg-gradient-to-b from-white/10 to-transparent" />
+                       <div className="absolute left-2.75 top-6 bottom-0 w-px bg-linear-to-b from-white/10 to-transparent" />
                     )}
 
                     {/* Dot */}
-                    <div className={`absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full border ${isPast ? 'bg-[#CCFF00]/10 border-[#CCFF00]/30' : 'bg-white/[0.03] border-white/10'}`}>
+                    <div className={`absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full border ${isPast ? 'bg-[#CCFF00]/10 border-[#CCFF00]/30' : 'bg-white/3 border-white/10'}`}>
                       <EventIcon className={`w-3 h-3 ${isPast ? 'text-[#CCFF00]' : 'text-white/40'}`} />
                     </div>
                     
@@ -427,7 +427,7 @@ export function HackathonOverviewPage() {
           </div>
 
           {/* Configuration */}
-          <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
+          <div className="rounded-2xl border border-white/5 bg-white/2 p-6">
             <h3 className="text-xs font-bold text-white/50 mb-4 flex items-center gap-2 uppercase tracking-widest">
               <Settings2 className="h-3.5 w-3.5 text-[#CCFF00]/50" />
               Config
@@ -437,9 +437,9 @@ export function HackathonOverviewPage() {
                 { label: 'Team Limit', value: `${hackathon.max_team_size} Members` },
                 { label: 'Created', value: new Date(hackathon.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
               ].map((detail) => (
-                <div key={detail.label} className="flex items-center justify-between py-2.5 border-b border-white/[0.03] last:border-0 last:pb-0">
+                <div key={detail.label} className="flex items-center justify-between py-2.5 border-b border-white/3 last:border-0 last:pb-0">
                   <span className="text-xs text-white/35">{detail.label}</span>
-                  <span className="text-xs font-medium text-white/70 bg-white/[0.03] px-2 py-1 rounded-md">{detail.value}</span>
+                  <span className="text-xs font-medium text-white/70 bg-white/3 px-2 py-1 rounded-md">{detail.value}</span>
                 </div>
               ))}
             </div>

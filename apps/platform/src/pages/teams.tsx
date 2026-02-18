@@ -82,7 +82,7 @@ export function TeamsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search teams..."
-                className="pl-9 border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20 w-56"
+                className="pl-9 border-white/8 bg-white/3 text-white placeholder:text-white/20 w-56"
               />
             </div>
           </div>
@@ -92,7 +92,7 @@ export function TeamsPage() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={`s-${String(i)}`} className="h-48 bg-white/[0.06] rounded-2xl" />
+            <Skeleton key={`s-${String(i)}`} className="h-48 bg-white/6 rounded-2xl" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -107,7 +107,7 @@ export function TeamsPage() {
             <motion.div
               key={team.id}
               variants={item}
-              className="group rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.04]"
+              className="group rounded-2xl border border-white/ bg-white/2 p-5 transition-all duration-300 hover:border-white/12 hover:bg-white/4"
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -123,7 +123,7 @@ export function TeamsPage() {
                     href={team.repo_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-white/25 transition hover:bg-white/[0.08] hover:text-white/50"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/4 text-white/25 transition hover:bg-white/8 hover:text-white/50"
                   >
                     <GitBranch className="h-4 w-4" />
                   </a>
@@ -137,7 +137,7 @@ export function TeamsPage() {
                     {member.avatar_url ? (
                       <img src={member.avatar_url} alt="" className="h-6 w-6 rounded-full object-cover" />
                     ) : (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.08] text-[9px] font-bold text-white/40">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/8 text-[9px] font-bold text-white/40">
                         {member.display_name?.charAt(0)?.toUpperCase() ?? '?'}
                       </div>
                     )}
@@ -153,7 +153,7 @@ export function TeamsPage() {
               </div>
 
               {team.repo_url && (
-                <div className="mt-4 pt-3 border-t border-white/[0.04]">
+                <div className="mt-4 pt-3 border-t border-white/4">
                   <a
                     href={team.repo_url}
                     target="_blank"

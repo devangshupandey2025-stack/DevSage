@@ -97,7 +97,7 @@ export function RoundsPage() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Round name..."
-              className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 w-40"
+              className="rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 w-40"
             />
             <button
               onClick={handleCreate}
@@ -132,16 +132,16 @@ export function RoundsPage() {
             variants={item}
             className={`group relative rounded-2xl border p-6 transition-all duration-300 ${
               round.status === 'active'
-                ? 'border-[#CCFF00]/20 bg-[#CCFF00]/[0.04]'
+                ? 'border-[#CCFF00]/20 bg-[#CCFF00]/4'
                 : round.status === 'completed'
-                  ? 'border-white/[0.08] bg-white/[0.03]'
-                  : 'border-white/[0.06] bg-white/[0.02]'
+                  ? 'border-white/8 bg-white/3'
+                  : 'border-white/ bg-white/2'
             }`}
           >
             {/* Active indicator */}
             {round.status === 'active' && (
               <motion.div
-                className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-[3px] rounded-r-full bg-[#CCFF00]"
+                className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-0.75 rounded-r-full bg-[#CCFF00]"
                 animate={{ opacity: [0.5, 1, 0.5] }}
                 transition={{ duration: 2, repeat: Infinity }}
               />
@@ -154,7 +154,7 @@ export function RoundsPage() {
                   ? 'bg-[#CCFF00]/15 text-[#CCFF00]'
                   : round.status === 'completed'
                     ? 'bg-emerald-500/10 text-emerald-400'
-                    : 'bg-white/[0.04] text-white/20'
+                    : 'bg-white/4 text-white/20'
               }`}>
                 {round.status === 'completed' ? <CheckCircle className="h-6 w-6" /> : round.round_number}
               </div>
@@ -166,7 +166,7 @@ export function RoundsPage() {
                   <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
                     round.status === 'active' ? 'bg-[#CCFF00]/10 text-[#CCFF00]' :
                     round.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                    'bg-white/[0.06] text-white/30'
+                    'bg-white/6 text-white/30'
                   }`}>
                     {round.status}
                   </span>

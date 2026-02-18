@@ -517,11 +517,11 @@ export function DashboardPage() {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Max team size</p>
                   <p className="mt-2 text-lg font-black text-white">{selected.max_team_size}</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Deadline</p>
                   <p className="mt-2 text-sm font-bold text-white">
                     {selected.submission_deadline
@@ -536,7 +536,7 @@ export function DashboardPage() {
                 </div>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/4 p-4">
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Phase</p>
                   <p className="text-xs font-semibold text-white/45">

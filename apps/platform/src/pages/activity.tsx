@@ -111,21 +111,21 @@ export function ActivityPage() {
       ) : (
         <motion.div variants={container} initial="hidden" animate="show" className="relative">
           {/* Timeline line */}
-          <div className="absolute left-[23px] top-3 bottom-3 w-px bg-white/[0.06]" />
+          <div className="absolute left-5.75 top-3 bottom-3 w-px bg-white/6" />
 
           <div className="space-y-1">
             {events.map((event) => {
               const Icon = iconMap[event.action] || Activity;
-              const color = colorMap[event.action] || 'text-white/30 bg-white/[0.04]';
+              const color = colorMap[event.action] || 'text-white/30 bg-white/4';
 
               return (
                 <motion.div
                   key={event.id}
                   variants={item}
-                  className="group relative flex items-start gap-4 rounded-xl px-2 py-3 transition-all duration-200 hover:bg-white/[0.02]"
+                  className="group relative flex items-start gap-4 rounded-xl px-2 py-3 transition-all duration-200 hover:bg-white/2"
                 >
                   {/* Icon dot */}
-                  <div className={`relative z-10 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${color}`}>
+                  <div className={`relative z-10 flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg ${color}`}>
                     <Icon className="h-3.5 w-3.5" />
                   </div>
 

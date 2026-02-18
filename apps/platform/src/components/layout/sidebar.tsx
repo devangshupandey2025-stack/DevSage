@@ -70,10 +70,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       initial={false}
       animate={{ width: collapsed ? 72 : 240 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed left-0 top-0 bottom-0 z-40 flex flex-col border-r border-white/[0.06] bg-black"
+      className="fixed left-0 top-0 bottom-0 z-40 flex flex-col border-r border-white/ bg-black"
     >
       {/* Brand */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-white/[0.06]">
+      <div className="flex h-16 items-center justify-between px-4 border-b border-white/">
         <Link to="/dashboard" className="flex items-center gap-2 overflow-hidden">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#CCFF00] text-black">
             <Trophy className="h-4.5 w-4.5" strokeWidth={2.5} />
@@ -105,7 +105,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           >
             <Link
               to="/dashboard"
-              className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-white/40 transition hover:border-[#CCFF00]/20 hover:text-white/60"
+              className="flex items-center gap-2 rounded-lg border border-white/ bg-white/2 px-3 py-2 text-xs text-white/40 transition hover:border-[#CCFF00]/20 hover:text-white/60"
             >
               <ChevronLeft className="h-3 w-3" />
               <span className="truncate">Back to Dashboard</span>
@@ -136,18 +136,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                   active
                     ? 'bg-[#CCFF00]/10 text-[#CCFF00]'
-                    : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                    : 'text-white/40 hover:bg-white/4 hover:text-white/70'
                 )}
               >
                 {/* Active indicator */}
                 {active && (
                   <motion.div
                     layoutId="sidebar-active"
-                    className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-[#CCFF00]"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.75 rounded-r-full bg-[#CCFF00]"
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
-                <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-[#CCFF00]' : '')} />
+                <Icon className={cn('h-4.5 w-4.5 shrink-0', active ? 'text-[#CCFF00]' : '')} />
                 <AnimatePresence>
                   {!collapsed && (
                     <motion.span
@@ -173,11 +173,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </nav>
 
       {/* Collapse toggle */}
-      <div className="border-t border-white/[0.06] p-3">
+      <div className="border-t border-white/ p-3">
         <button
           type="button"
           onClick={onToggle}
-          className="flex w-full items-center justify-center rounded-xl py-2 text-white/30 transition hover:bg-white/[0.04] hover:text-white/60"
+          className="flex w-full items-center justify-center rounded-xl py-2 text-white/30 transition hover:bg-white/4 hover:text-white/60"
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>

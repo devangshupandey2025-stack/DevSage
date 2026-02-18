@@ -97,15 +97,15 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
 
   return (
     <header
-      className="sticky top-0 z-30 flex h-16 items-center border-b border-white/[0.06] bg-black/80 backdrop-blur-xl px-6"
+      className="sticky top-0 z-30 flex h-16 items-center border-b border-white/6 bg-black/80 backdrop-blur-xl px-6"
     >
       {/* Search bar */}
       <div className="relative flex-1 max-w-md">
         <div
           className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-all duration-300 ${
             searchFocused
-              ? 'border-[#CCFF00]/40 bg-white/[0.04]'
-              : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]'
+              ? 'border-[#CCFF00]/40 bg-white/4'
+              : 'border-white/ bg-white/2 hover:border-white/12'
           }`}
         >
           <Search className="h-4 w-4 text-white/30" />
@@ -116,7 +116,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setSearchFocused(false)}
           />
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-white/30 font-mono">
+          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-white/10 bg-white/4 px-1.5 py-0.5 text-[10px] text-white/30 font-mono">
             <Command className="h-2.5 w-2.5" />K
           </kbd>
         </div>
@@ -129,7 +129,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
           <button
             type="button"
             onClick={() => setNotifOpen((p) => !p)}
-            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02] text-white/40 transition hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-white/60"
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/ bg-white/2 text-white/40 transition hover:border-white/12 hover:bg-white/4 hover:text-white/60"
           >
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
@@ -146,9 +146,9 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-white/[0.08] bg-black/95 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-white/8 bg-black/95 shadow-2xl backdrop-blur-xl"
               >
-                <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+                <div className="flex items-center justify-between border-b border-white/ px-4 py-3">
                   <p className="text-sm font-semibold text-white">Notifications</p>
                   {unreadCount > 0 && (
                     <button onClick={markAllRead} className="text-[10px] text-[#CCFF00] hover:underline">
@@ -164,7 +164,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
                       <button
                         key={n.id}
                         onClick={() => !n.is_read && markRead(n.id)}
-                        className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.04] ${n.is_read ? 'opacity-50' : ''}`}
+                        className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/4 ${n.is_read ? 'opacity-50' : ''}`}
                       >
                         <div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-[#CCFF00]'}`} />
                         <div className="min-w-0 flex-1">
@@ -184,7 +184,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
         </div>
 
         {/* Connection indicator */}
-        <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
+        <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-white/ bg-white/2 px-2.5 py-1.5">
           <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 pulse-lime" />
           <span className="text-[10px] text-white/30 font-medium">Live</span>
         </div>
@@ -194,7 +194,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
           <button
             type="button"
             onClick={() => setProfileOpen((p) => !p)}
-            className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 transition hover:border-[#CCFF00]/30 hover:bg-white/[0.04]"
+            className="flex items-center gap-2 rounded-xl border border-white/ bg-white/2 px-2.5 py-1.5 transition hover:border-[#CCFF00]/30 hover:bg-white/4"
           >
             {user?.avatar_url ? (
               <img
@@ -207,7 +207,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
                 {initial}
               </span>
             )}
-            <span className="hidden sm:block text-sm font-medium text-white/70 max-w-[100px] truncate">
+            <span className="hidden sm:block text-sm font-medium text-white/70 max-w-25 truncate">
               {user?.name ?? 'User'}
             </span>
             <ChevronDown
@@ -222,9 +222,9 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/[0.08] bg-black/95 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/8 bg-black/95 shadow-2xl backdrop-blur-xl"
               >
-                <div className="border-b border-white/[0.06] px-4 py-3">
+                <div className="border-b border-white/ px-4 py-3">
                   <p className="truncate text-sm font-semibold text-white">
                     {user?.name ?? 'User'}
                   </p>
@@ -237,7 +237,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
                       setProfileOpen(false);
                       navigate('/profile');
                     }}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/50 transition hover:bg-white/[0.06] hover:text-white"
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/50 transition hover:bg-white/6 hover:text-white"
                   >
                     <User className="h-4 w-4" />
                     Profile

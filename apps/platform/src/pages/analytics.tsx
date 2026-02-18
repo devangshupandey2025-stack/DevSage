@@ -34,7 +34,7 @@ function BarChartSimple({ data, max }: { data: number[]; max: number }) {
           animate={{ height: `${(val / max) * 100}%` }}
           transition={{ duration: 0.6, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
         >
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#CCFF00]/30 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-[#CCFF00]/30 to-transparent" />
         </motion.div>
       ))}
     </div>
@@ -68,7 +68,7 @@ export function AnalyticsPage() {
           {/* Submissions over time */}
           <motion.div
             variants={item}
-            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6"
+            className="rounded-2xl border border-white/ bg-white/2 p-6"
           >
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -90,7 +90,7 @@ export function AnalyticsPage() {
           {/* Registrations over time */}
           <motion.div
             variants={item}
-            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6"
+            className="rounded-2xl border border-white/ bg-white/2 p-6"
           >
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -115,7 +115,7 @@ export function AnalyticsPage() {
           {/* Tech stack breakdown */}
           <motion.div
             variants={item}
-            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6"
+            className="rounded-2xl border border-white/ bg-white/2 p-6"
           >
             <h3 className="text-sm font-bold text-white/80 mb-4">Top Technologies</h3>
             <div className="space-y-3">
@@ -131,7 +131,7 @@ export function AnalyticsPage() {
                     <span className="text-xs text-white/50">{tech.name}</span>
                     <span className="text-[10px] tabular-nums text-white/25">{tech.pct}%</span>
                   </div>
-                  <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-1 rounded-full bg-white/6 overflow-hidden">
                     <motion.div
                       className={`h-full rounded-full ${tech.color} opacity-60`}
                       initial={{ width: 0 }}
@@ -147,7 +147,7 @@ export function AnalyticsPage() {
           {/* Team sizes */}
           <motion.div
             variants={item}
-            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6"
+            className="rounded-2xl border border-white/ bg-white/2 p-6"
           >
             <h3 className="text-sm font-bold text-white/80 mb-4">Team Sizes</h3>
             <div className="space-y-3">
@@ -160,7 +160,7 @@ export function AnalyticsPage() {
               ].map((row, i) => (
                 <div key={row.size} className="flex items-center gap-3">
                   <span className="text-xs text-white/50 w-16 shrink-0">{row.size}</span>
-                  <div className="flex-1 h-1 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="flex-1 h-1 rounded-full bg-white/6 overflow-hidden">
                     <motion.div
                       className="h-full rounded-full bg-[#CCFF00]/40"
                       initial={{ width: 0 }}
@@ -177,7 +177,7 @@ export function AnalyticsPage() {
           {/* Geographic distribution */}
           <motion.div
             variants={item}
-            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6"
+            className="rounded-2xl border border-white/ bg-white/2 p-6"
           >
             <h3 className="text-sm font-bold text-white/80 mb-4">Regions</h3>
             <div className="space-y-3">

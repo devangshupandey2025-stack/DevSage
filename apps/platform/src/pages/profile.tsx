@@ -24,7 +24,7 @@ export function ProfilePage() {
 
       <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
         {/* Profile card */}
-        <motion.div variants={item} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8">
+        <motion.div variants={item} className="rounded-2xl border border-white/ bg-white/2 p-8">
           <div className="flex items-center gap-6">
             {user.avatar_url ? (
               <img
@@ -67,7 +67,7 @@ export function ProfilePage() {
             <motion.div
               key={field.label}
               variants={item}
-              className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5"
+              className="rounded-2xl border border-white/ bg-white/2 p-5"
             >
               <div className="flex items-center gap-2 mb-2">
                 <field.icon className="h-3.5 w-3.5 text-white/25" />
@@ -84,7 +84,7 @@ export function ProfilePage() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={logout}
-            className="flex items-center gap-2 rounded-xl border border-red-500/15 bg-red-500/[0.04] px-5 py-2.5 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/[0.08]"
+            className="flex items-center gap-2 rounded-xl border border-red-500/15 bg-red-500/4 px-5 py-2.5 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/8"
           >
             <LogOut className="h-4 w-4" /> Sign Out
           </motion.button>

@@ -29,9 +29,9 @@ const item = {
 
 function SettingsSection({ title, icon: Icon, children }: { title: string; icon: typeof Settings; children: React.ReactNode }) {
   return (
-    <motion.div variants={item} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+    <motion.div variants={item} className="rounded-2xl border border-white/ bg-white/2 p-6">
       <div className="flex items-center gap-3 mb-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/4">
           <Icon className="h-4 w-4 text-white/40" />
         </div>
         <h3 className="text-sm font-bold text-white/80">{title}</h3>
@@ -52,7 +52,7 @@ function InputField({ label, value, onChange, placeholder, type = 'text' }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 transition-colors"
+        className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-2.5 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 transition-colors"
       />
     </div>
   );
@@ -260,7 +260,7 @@ export function SettingsPage() {
         </SettingsSection>
 
         {/* Danger Zone */}
-        <motion.div variants={item} className="rounded-2xl border border-red-500/15 bg-red-500/[0.03] p-6">
+        <motion.div variants={item} className="rounded-2xl border border-red-500/15 bg-red-500/3 p-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/10">
               <AlertTriangle className="h-4 w-4 text-red-400" />

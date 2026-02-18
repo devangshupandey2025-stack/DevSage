@@ -22,7 +22,7 @@ export function NoTeamCTA({ hackathon }: NoTeamCTAProps) {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-8 md:p-12"
+      className="rounded-2xl border border-dashed border-white/10 bg-white/2 p-8 md:p-12"
     >
       <div className="max-w-lg mx-auto text-center">
         <div className="flex justify-center mb-6">
