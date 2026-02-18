@@ -299,6 +299,7 @@ function SaveButton({ saving, saved, onClick }: { saving: boolean; saved: boolea
             ? '0 0 30px rgba(204,255,0,0.5)'
             : '0 0 0px rgba(204,255,0,0)',
         }}
+        style={{ border: '1px solid #CCFF00' }}
         transition={{ duration: 0.25 }}
       >
         {/* Scan line */}
