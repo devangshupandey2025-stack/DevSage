@@ -16,6 +16,7 @@ export interface AppEnv {
     GITHUB_WEBHOOK_SECRET: string;
     RESEND_API_KEY: string;
     // Vars
+    NODE_ENV?: string;
     FRONTEND_URL: string;
     PLATFORM_URL: string;
     ADMIN_URL: string;

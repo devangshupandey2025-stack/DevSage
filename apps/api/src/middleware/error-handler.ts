@@ -6,8 +6,8 @@ export const errorHandler: ErrorHandler<AppEnv> = (err, c) => {
   console.error(`[${requestId}] Unhandled error:`, err?.message ?? String(err), err?.stack ?? '');
 
   // Include error details in responses during local development to aid debugging.
-  const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development'
-    || Boolean((c as any).env && (c as any).env.JWT_SECRET && (c as any).env.JWT_SECRET.startsWith('dev'));
+  const isDev = c.env.NODE_ENV === 'development'
+    || Boolean(c.env.JWT_SECRET && c.env.JWT_SECRET.startsWith('dev'));
 
   const body: any = {
     ok: false,

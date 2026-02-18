@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "generate": "tsc && drizzle-kit generate"
+    "generate": "tsc && drizzle-kit generate",
     "drizzle-kit": "drizzle-kit"
   },
   "dependencies": {

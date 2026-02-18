@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from './types/env.js';
+import { successResponse } from './lib/response.js';
 
 // Middleware
 import { corsMiddleware } from './middleware/cors.js';
@@ -28,6 +29,9 @@ import { queueHandler } from './queue/index.js';
 import { cronHandler } from './cron/index.js';
 
 const app = new Hono<AppEnv>();
+
+// Root route for health check or info
+app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));
 
 // Global middleware chain
 app.use('*', corsMiddleware);
