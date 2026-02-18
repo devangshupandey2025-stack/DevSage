@@ -85,16 +85,7 @@ function StatCard({ icon: Icon, label, value, trend, color, bgColor }: {
 
 // Online map images from Wikimedia Commons (CC0 licensed)
 const regionMapImages: Record<string, string> = {
-  'North America':
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Outline_of_the_map_of_North_America.png/400px-Outline_of_the_map_of_North_America.png',
-  'Europe':
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Blank_political_map_of_Europe_%28polar_stereographic_projection%29_cropped.svg/400px-Blank_political_map_of_Europe_%28polar_stereographic_projection%29_cropped.svg.png',
-  'Asia':
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Outline_of_the_map_of_Asia.png/400px-Outline_of_the_map_of_Asia.png',
-  'South America':
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Outline_of_the_map_of_South_America.png/400px-Outline_of_the_map_of_South_America.png',
-  'Others':
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Blank_world_map.svg/400px-Blank_world_map.svg.png',
+  'Chennai, Tamil Nadu, INDIA': 'data:image/jpeg;base64,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',
 };
 
 // Sparkle positions scattered around the popup
@@ -153,7 +144,7 @@ function RegionRow({
         {hovered && mapUrl && (
           <motion.div
             initial={{ opacity: 0, scale: 0.85, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
+            animate={{ opacity: 3, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 pointer-events-none"
@@ -431,11 +422,7 @@ export function AnalyticsPage() {
             </div>
             <div className="space-y-0.5">
               {[
-                { region: 'North America', count: 65, emoji: '🌎' },
-                { region: 'Europe', count: 48, emoji: '🌍' },
-                { region: 'Asia', count: 35, emoji: '🌏' },
-                { region: 'South America', count: 12, emoji: '🌎' },
-                { region: 'Others', count: 8, emoji: '🌐' },
+                { region: 'Chennai, Tamil Nadu, INDIA', count: 2, emoji: '🌎' },
               ].map((row, idx, arr) => (
                 <RegionRow
                   key={row.region}
