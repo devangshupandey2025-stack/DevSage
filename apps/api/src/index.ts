@@ -23,6 +23,7 @@ import notifications from './routes/notifications.js';
 import invites from './routes/invites.js';
 import audit from './routes/audit.js';
 import organizers from './routes/organizers.js';
+import announcements from './routes/announcements.js';
 
 // Queue & Cron
 import { queueHandler } from './queue/index.js';
@@ -52,6 +53,7 @@ app.route('/api/v1/hackathons/:slug/judging', judging);
 app.route('/api/v1/hackathons/:slug/rounds', rounds);
 app.route('/api/v1/hackathons/:slug/organizers', organizers);
 app.route('/api/v1/hackathons/:slug/audit', audit);
+app.route('/api/v1/hackathons/:slug/announcements', announcements);
 app.route('/api/v1/workspaces', workspaces);
 app.route('/api/v1/admin', admin);
 app.route('/api/v1/notifications', notifications);

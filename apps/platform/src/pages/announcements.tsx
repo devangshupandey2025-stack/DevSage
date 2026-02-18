@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader, EmptyState } from '@/components/common';
+import { apiRequest } from '@/lib/api';
 import {
   Megaphone,
   Pin,
@@ -9,6 +10,7 @@ import {
   Send,
   Plus,
   X,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -16,9 +18,10 @@ interface Announcement {
   id: string;
   title: string;
   content: string;
-  pinned: boolean;
+  pinned: number;
   created_at: string;
-  author: { display_name: string; avatar_url?: string };
+  author_name: string | null;
+  author_avatar: string | null;
 }
 
 const container = {
@@ -40,51 +43,56 @@ export function AnnouncementsPage() {
   const [content, setContent] = useState('');
 
   useEffect(() => {
-    // Simulated data load
-    setTimeout(() => {
-      setAnnouncements([
-        {
-          id: '1',
-          title: 'Submission deadline extended!',
-          content: 'We have extended the submission deadline by 24 hours due to popular request. New deadline is March 20th, 11:59 PM UTC.',
-          pinned: true,
-          created_at: '2026-03-14T10:30:00Z',
-          author: { display_name: 'Sarah Chen' },
-        },
-        {
-          id: '2',
-          title: 'Workshop: Building with AI APIs',
-          content: 'Join us tomorrow at 3 PM UTC for a hands-on workshop on integrating AI APIs into your hackathon projects.',
-          pinned: false,
-          created_at: '2026-03-13T15:00:00Z',
-          author: { display_name: 'Alex Rivera' },
-        },
-        {
-          id: '3',
-          title: 'Welcome to DevSage Hackathon 2026!',
-          content: 'We are excited to kick off this year\'s hackathon. Please make sure to read the rules and guidelines before starting.',
-          pinned: false,
-          created_at: '2026-03-10T09:00:00Z',
-          author: { display_name: 'Sarah Chen' },
-        },
-      ]);
-      setLoading(false);
-    }, 600);
+    if (!slug) return;
+    fetchAnnouncements();
   }, [slug]);
 
-  const handleSend = () => {
-    if (!title.trim() || !content.trim()) {
+  const fetchAnnouncements = async () => {
+    try {
+      const res = await apiRequest<{ data: Announcement[] }>(`/api/v1/hackathons/${slug}/announcements`);
+      setAnnouncements(res.data ?? []);
+    } catch (_err) {
+      toast.error('Failed to load announcements');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!title.trim() || !content.trim() || !slug) {
       toast.error('Please fill in both title and content.');
       return;
     }
-    toast.success('Announcement published!');
-    setShowCompose(false);
-    setTitle('');
-    setContent('');
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/announcements`, {
+        method: 'POST',
+        body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+      });
+      toast.success('Announcement published!');
+      setShowCompose(false);
+      setTitle('');
+      setContent('');
+      fetchAnnouncements();
+    } catch (_err) {
+      toast.error('Failed to publish announcement. Make sure you have organizer permissions.');
+    }
   };
 
-  const pinned = announcements.filter((a) => a.pinned);
-  const regular = announcements.filter((a) => !a.pinned);
+  const handleDelete = async (announcementId: string) => {
+    if (!slug || !confirm('Are you sure you want to delete this announcement?')) return;
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/announcements/${announcementId}`, {
+        method: 'DELETE',
+      });
+      toast.success('Announcement deleted');
+      fetchAnnouncements();
+    } catch (_err) {
+      toast.error('Failed to delete announcement');
+    }
+  };
+
+  const pinned = announcements.filter((a) => a.pinned === 1);
+  const regular = announcements.filter((a) => a.pinned !== 1);
 
   return (
     <div>
@@ -170,6 +178,13 @@ export function AnnouncementsPage() {
               variants={item}
               className="group relative rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/[0.03] p-5 transition-all duration-300 hover:bg-[#CCFF00]/[0.05]"
             >
+              <button
+                onClick={() => handleDelete(a.id)}
+                className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400"
+                title="Delete announcement"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
               <div className="flex items-start gap-4">
                 <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#CCFF00]/10">
                   <Pin className="h-4 w-4 text-[#CCFF00]" />
@@ -183,7 +198,7 @@ export function AnnouncementsPage() {
                   </div>
                   <p className="text-sm text-white/40 leading-relaxed mb-2">{a.content}</p>
                   <div className="flex items-center gap-3 text-[10px] text-white/20">
-                    <span>{a.author.display_name}</span>
+                    <span>{a.author_name ?? 'Organizer'}</span>
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" />
@@ -200,8 +215,15 @@ export function AnnouncementsPage() {
             <motion.div
               key={a.id}
               variants={item}
-              className="group rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.04]"
+              className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.04]"
             >
+              <button
+                onClick={() => handleDelete(a.id)}
+                className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400"
+                title="Delete announcement"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
               <div className="flex items-start gap-4">
                 <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]">
                   <Megaphone className="h-4 w-4 text-white/30" />
@@ -210,7 +232,7 @@ export function AnnouncementsPage() {
                   <h3 className="text-sm font-bold text-white/80 mb-1">{a.title}</h3>
                   <p className="text-sm text-white/40 leading-relaxed mb-2">{a.content}</p>
                   <div className="flex items-center gap-3 text-[10px] text-white/20">
-                    <span>{a.author.display_name}</span>
+                    <span>{a.author_name ?? 'Organizer'}</span>
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" />
