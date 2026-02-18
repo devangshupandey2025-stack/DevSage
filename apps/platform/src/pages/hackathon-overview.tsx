@@ -59,14 +59,22 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
 };
 
+interface OverviewMetrics {
+  teams: number;
+  submissions: number;
+  judges: number;
+}
+
 export function HackathonOverviewPage() {
   const { slug } = useParams<{ slug: string }>();
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
+  const [metrics, setMetrics] = useState<OverviewMetrics>({ teams: 0, submissions: 0, judges: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!slug) return;
     fetchHackathon();
+    fetchMetrics();
   }, [slug]);
 
   const fetchHackathon = async () => {
@@ -77,6 +85,24 @@ export function HackathonOverviewPage() {
       toast.error('Failed to load hackathon');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMetrics = async () => {
+    if (!slug) return;
+    try {
+      const [teamsRes, submissionsRes, judgesRes] = await Promise.all([
+        apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/teams`),
+        apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/submissions`),
+        apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/judges`),
+      ]);
+      setMetrics({
+        teams: teamsRes.data?.length ?? 0,
+        submissions: submissionsRes.data?.length ?? 0,
+        judges: judgesRes.data?.length ?? 0,
+      });
+    } catch (_err) {
+      // Silently fail - metrics will show 0
     }
   };
 
@@ -200,13 +226,13 @@ export function HackathonOverviewPage() {
       {/* Metrics row */}
       <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <motion.div variants={item}>
-          <MetricCard label="Teams" value={0} icon={Users} />
+          <MetricCard label="Teams" value={metrics.teams} icon={Users} />
         </motion.div>
         <motion.div variants={item}>
-          <MetricCard label="Submissions" value={0} icon={FileCode} />
+          <MetricCard label="Submissions" value={metrics.submissions} icon={FileCode} />
         </motion.div>
         <motion.div variants={item}>
-          <MetricCard label="Judges" value={0} icon={Scale} />
+          <MetricCard label="Judges" value={metrics.judges} icon={Scale} />
         </motion.div>
         <motion.div variants={item}>
           {hackathon.submission_deadline && (

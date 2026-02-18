@@ -33,3 +33,4 @@ export { notificationIdempotency } from './notification-idempotency.js';
 export { hackathonNotificationConfig } from './hackathon-notification-config.js';
 export { auditEvents } from './audit-events.js';
 export { hackathonSponsors } from './hackathon-sponsors.js';
+export { announcements } from './announcements.js';
