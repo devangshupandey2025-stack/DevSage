@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader, EmptyState } from '@/components/common';
 import { apiRequest } from '@/lib/api';
 import { toast } from 'sonner';
@@ -13,7 +13,12 @@ import {
   ArrowRight,
   Plus,
   Trash2,
+  Zap,
+  Flag,
+  Circle,
 } from 'lucide-react';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Round {
   id: string;
@@ -25,15 +30,289 @@ interface Round {
   created_at: string;
 }
 
+// ─── Animation Variants ───────────────────────────────────────────────────────
+
 const container = {
   hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.08 } },
+  show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
 };
 
 const item = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
+  hidden: { opacity: 0, y: 20, filter: 'blur(4px)' },
+  show: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] } },
 };
+
+// ─── Status config ────────────────────────────────────────────────────────────
+
+const statusConfig = {
+  active: {
+    label: 'Active',
+    color: '#CCFF00',
+    bg: 'rgba(204,255,0,0.06)',
+    border: 'rgba(204,255,0,0.18)',
+    badgeBg: 'rgba(204,255,0,0.1)',
+    badgeText: '#CCFF00',
+    numberBg: 'rgba(204,255,0,0.12)',
+    numberText: '#CCFF00',
+  },
+  completed: {
+    label: 'Completed',
+    color: '#34D399',
+    bg: 'rgba(52,211,153,0.04)',
+    border: 'rgba(52,211,153,0.12)',
+    badgeBg: 'rgba(52,211,153,0.1)',
+    badgeText: '#34D399',
+    numberBg: 'rgba(52,211,153,0.1)',
+    numberText: '#34D399',
+  },
+  pending: {
+    label: 'Pending',
+    color: 'rgba(255,255,255,0.2)',
+    bg: 'rgba(255,255,255,0.015)',
+    border: 'rgba(255,255,255,0.06)',
+    badgeBg: 'rgba(255,255,255,0.06)',
+    badgeText: 'rgba(255,255,255,0.3)',
+    numberBg: 'rgba(255,255,255,0.04)',
+    numberText: 'rgba(255,255,255,0.2)',
+  },
+};
+
+function getStatus(status: string) {
+  return statusConfig[status as keyof typeof statusConfig] ?? statusConfig.pending;
+}
+
+// ─── Round Card ───────────────────────────────────────────────────────────────
+
+function RoundCard({
+  round,
+  index,
+  total,
+  onDelete,
+}: {
+  round: Round;
+  index: number;
+  total: number;
+  onDelete: (id: string) => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const cfg = getStatus(round.status);
+  const isLast = index === total - 1;
+
+  return (
+    <motion.div variants={item} className="relative flex gap-0">
+      {/* Timeline connector */}
+      <div className="flex flex-col items-center mr-5 shrink-0">
+        {/* Node */}
+        <div
+          className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300"
+          style={{
+            borderColor: cfg.color,
+            background: cfg.numberBg,
+            boxShadow: round.status === 'active' ? `0 0 20px ${cfg.color}30` : 'none',
+          }}
+        >
+          {round.status === 'completed' ? (
+            <CheckCircle className="h-4 w-4" style={{ color: cfg.color }} />
+          ) : round.status === 'active' ? (
+            <motion.div
+              animate={{ scale: [1, 1.15, 1] }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <Zap className="h-4 w-4" style={{ color: cfg.color }} />
+            </motion.div>
+          ) : (
+            <span className="text-xs font-black" style={{ color: cfg.numberText }}>
+              {round.round_number}
+            </span>
+          )}
+
+          {/* Pulse ring for active */}
+          {round.status === 'active' && (
+            <motion.div
+              className="absolute inset-0 rounded-full"
+              style={{ border: `2px solid ${cfg.color}` }}
+              animate={{ scale: [1, 1.5], opacity: [0.5, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
+            />
+          )}
+        </div>
+
+        {/* Connector line */}
+        {!isLast && (
+          <div className="relative mt-1 w-px flex-1 min-h-[20px] overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            {round.status === 'active' && (
+              <motion.div
+                className="absolute top-0 left-0 w-full"
+                style={{ background: `linear-gradient(180deg, ${cfg.color}60, transparent)`, height: '50%' }}
+                animate={{ y: ['-100%', '200%'] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Card */}
+      <div className="flex-1 mb-4">
+        <motion.div
+          onHoverStart={() => setHovered(true)}
+          onHoverEnd={() => setHovered(false)}
+          className="group relative overflow-hidden rounded-2xl border transition-all duration-300"
+          style={{
+            background: hovered
+              ? `linear-gradient(135deg, ${cfg.bg}, rgba(255,255,255,0.02))`
+              : cfg.bg,
+            borderColor: hovered ? cfg.border : `${cfg.border.replace('0.18', '0.10').replace('0.12', '0.08')}`,
+            boxShadow: hovered && round.status === 'active' ? `0 4px 32px ${cfg.color}10` : 'none',
+          }}
+        >
+          {/* Top shimmer line */}
+          <div
+            className="absolute top-0 left-0 right-0 h-px transition-opacity duration-300"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${cfg.color}40, transparent)`,
+              opacity: hovered ? 1 : 0,
+            }}
+          />
+
+          <div className="p-5">
+            <div className="flex items-center gap-4">
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <h3 className="text-sm font-bold text-white/80 truncate">{round.name}</h3>
+                  <span
+                    className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ background: cfg.badgeBg, color: cfg.badgeText }}
+                  >
+                    {cfg.label}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-4 text-[11px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    {round.submission_deadline
+                      ? new Date(round.submission_deadline).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : 'No deadline set'}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Flag className="h-3 w-3" />
+                    Round {round.round_number}
+                  </span>
+                </div>
+              </div>
+
+              {/* Delete */}
+              <AnimatePresence mode="wait">
+                {confirmDelete ? (
+                  <motion.div
+                    key="confirm"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="flex items-center gap-2 shrink-0"
+                  >
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-white/30 hover:text-white/50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => onDelete(round.id)}
+                      className="flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-red-500 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.button
+                    key="trash"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: hovered ? 1 : 0 }}
+                    onClick={() => setConfirmDelete(true)}
+                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-xl border border-transparent hover:border-red-500/20 hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-all duration-200"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Add Round Input ──────────────────────────────────────────────────────────
+
+function AddRoundInput({
+  value,
+  onChange,
+  onAdd,
+  creating,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onAdd: () => void;
+  creating: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') onAdd();
+  };
+
+  return (
+    <div
+      className="flex items-center gap-0 overflow-hidden rounded-xl transition-all duration-200"
+      style={{
+        border: focused ? '1px solid rgba(204,255,0,0.3)' : '1px solid rgba(255,255,255,0.08)',
+        background: focused ? 'rgba(204,255,0,0.03)' : 'rgba(255,255,255,0.03)',
+        boxShadow: focused ? '0 0 0 3px rgba(204,255,0,0.05)' : 'none',
+      }}
+    >
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKey}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder="Round name..."
+        className="bg-transparent px-4 py-2.5 text-sm text-white/80 placeholder:text-white/15 outline-none w-44"
+      />
+      <button
+        onClick={onAdd}
+        disabled={creating || !value.trim()}
+        className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40 transition-all"
+        style={{
+          background: value.trim() ? 'linear-gradient(135deg, #CCFF00, #b8e600)' : 'rgba(255,255,255,0.05)',
+          color: value.trim() ? '#000' : 'rgba(255,255,255,0.2)',
+        }}
+      >
+        {creating ? (
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+            className="h-4 w-4 rounded-full border-2 border-black/20 border-t-black"
+          />
+        ) : (
+          <Plus className="h-4 w-4" />
+        )}
+        Add
+      </button>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function RoundsPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -86,113 +365,112 @@ export function RoundsPage() {
     }
   };
 
+  // Stats
+  const completed = rounds.filter((r) => r.status === 'completed').length;
+  const active = rounds.filter((r) => r.status === 'active').length;
+
   return (
     <div>
       <PageHeader
         title="Rounds"
         description="Track elimination rounds and team progression."
         actions={
-          <div className="flex items-center gap-2">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Round name..."
-              className="rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-sm text-white/80 placeholder:text-white/15 outline-none focus:border-[#CCFF00]/30 w-40"
-            />
-            <button
-              onClick={handleCreate}
-              disabled={creating || !newName.trim()}
-              className="flex items-center gap-1 rounded-xl bg-[#CCFF00] px-3 py-2 text-sm font-bold text-black disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" /> Add
-            </button>
-          </div>
+          <AddRoundInput
+            value={newName}
+            onChange={setNewName}
+            onAdd={handleCreate}
+            creating={creating}
+          />
         }
       />
 
+      {/* Stats row */}
+      {!loading && rounds.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.5 }}
+          className="mb-6 flex items-center gap-3"
+        >
+          {[
+            { label: 'Total', value: rounds.length, color: 'rgba(255,255,255,0.4)' },
+            { label: 'Completed', value: completed, color: '#34D399' },
+            { label: 'Active', value: active, color: '#CCFF00' },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2"
+            >
+              <span className="text-lg font-black" style={{ color: stat.color }}>{stat.value}</span>
+              <span className="text-[10px] uppercase tracking-widest text-white/25">{stat.label}</span>
+            </div>
+          ))}
+
+          {/* Progress bar */}
+          {rounds.length > 0 && (
+            <div className="flex-1 flex items-center gap-3 ml-2">
+              <div className="flex-1 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #34D399, #CCFF00)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(completed / rounds.length) * 100}%` }}
+                  transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                />
+              </div>
+              <span className="text-[10px] text-white/20 shrink-0">
+                {Math.round((completed / rounds.length) * 100)}%
+              </span>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-            className="h-6 w-6 rounded-full border-2 border-white/10 border-t-[#CCFF00]"
-          />
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <div className="relative">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+              className="h-8 w-8 rounded-full border-2 border-white/05 border-t-[#CCFF00]"
+            />
+            <div className="absolute inset-0 rounded-full blur-sm opacity-40" style={{ background: 'radial-gradient(circle, #CCFF00 0%, transparent 70%)' }} />
+          </div>
+          <p className="text-[10px] uppercase tracking-widest text-white/20">Loading rounds</p>
         </div>
       ) : rounds.length === 0 ? (
-        <EmptyState
-          icon={Award}
-          title="No rounds yet"
-          description="Create judging rounds to organize your hackathon's evaluation process."
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <EmptyState
+            icon={Award}
+            title="No rounds yet"
+            description="Create judging rounds to organize your hackathon's evaluation process."
+          />
+        </motion.div>
       ) : (
-      <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
-        {rounds.map((round, i) => (
-          <motion.div
-            key={round.id}
-            variants={item}
-            className={`group relative rounded-2xl border p-6 transition-all duration-300 ${
-              round.status === 'active'
-                ? 'border-[#CCFF00]/20 bg-[#CCFF00]/4'
-                : round.status === 'completed'
-                  ? 'border-white/8 bg-white/3'
-                  : 'border-white/ bg-white/2'
-            }`}
-          >
-            {/* Active indicator */}
-            {round.status === 'active' && (
-              <motion.div
-                className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-0.75 rounded-r-full bg-[#CCFF00]"
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-            )}
+        <motion.div variants={container} initial="hidden" animate="show">
+          {rounds.map((round, i) => (
+            <RoundCard
+              key={round.id}
+              round={round}
+              index={i}
+              total={rounds.length}
+              onDelete={handleDelete}
+            />
+          ))}
 
-            <div className="flex items-center gap-6">
-              {/* Round number */}
-              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-black ${
-                round.status === 'active'
-                  ? 'bg-[#CCFF00]/15 text-[#CCFF00]'
-                  : round.status === 'completed'
-                    ? 'bg-emerald-500/10 text-emerald-400'
-                    : 'bg-white/4 text-white/20'
-              }`}>
-                {round.status === 'completed' ? <CheckCircle className="h-6 w-6" /> : round.round_number}
-              </div>
-
-              {/* Details */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-base font-bold text-white/80">{round.name}</h3>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                    round.status === 'active' ? 'bg-[#CCFF00]/10 text-[#CCFF00]' :
-                    round.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                    'bg-white/6 text-white/30'
-                  }`}>
-                    {round.status}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-white/25">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {round.submission_deadline
-                      ? new Date(round.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : 'No deadline'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Delete */}
-              <button
-                onClick={() => handleDelete(round.id)}
-                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-white/20 hover:bg-red-500/10 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+          {/* End cap */}
+          <motion.div variants={item} className="flex items-center gap-5 pl-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-white/[0.08]">
+              <Trophy className="h-4 w-4 text-white/15" />
             </div>
-
+            <span className="text-xs text-white/20 uppercase tracking-widest">Final results</span>
           </motion.div>
-        ))}
-      </motion.div>
+        </motion.div>
       )}
     </div>
   );
