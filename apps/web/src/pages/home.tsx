@@ -34,6 +34,8 @@ import {
   Check,
   Sparkles,
   Building2,
+  Copy,
+  ExternalLink as OpenExternal,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -62,11 +64,13 @@ const Navbar = () => {
 
   // Navbar link targets for in-page navigation
   const navLinks = [
+    {label: 'Home', id:'Home'},
     { label: 'Platform', id: 'platform' },
+    { label: 'Hackathons', id: 'hackathons' },
     { label: 'Solutions', id: 'solutions' },
     { label: 'Developers', id: 'credits' },
-    { label: 'Hackathons', id: 'developers' },
     { label: 'Pricing', id: 'pricing' },
+    {label: 'Partners', id: 'partners'}
   ];
 
   const handleNavClick = (id: string) => {
@@ -114,7 +118,7 @@ const Navbar = () => {
 </motion.div>
 
 
-          <div className="hidden lg:flex items-center gap-10">
+          <div className="hidden lg:flex items-center gap-6 xl:gap-10">
             {navLinks.map((link, i) => (
               <motion.button
                 key={link.id}
@@ -197,9 +201,9 @@ const Hero = () => {
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   return (
-    <section
+    <section id='Home'
       ref={heroRef}
-      className="relative min-h-screen flex items-end pb-20 md:pb-32 overflow-hidden bg-black"
+      className="relative min-h-screen flex items-end pb-16 sm:pb-20 md:pb-32 overflow-hidden bg-black"
     >
       {/* Background image with overlay */}
       <div className="absolute inset-0">
@@ -208,8 +212,8 @@ const Hero = () => {
           alt=""
           className="absolute inset-0 w-full h-full object-cover opacity-150"
         />
-        <div className="absolute inset-0 bg-linear-to-t from-black via-black/80 to-black/40" />
-        <div className="absolute inset-0 bg-linear-to-r from-black/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent" />
       </div>
 
       {/* Grid overlay */}
@@ -237,7 +241,7 @@ const Hero = () => {
               initial={{ opacity: 0, y: 60 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="text-6xl md:text-8xl lg:text-[140px] font-black tracking-tighter leading-[0.85]"
+              className="text-5xl sm:text-6xl md:text-8xl lg:text-[110px] xl:text-[130px] font-black tracking-tighter leading-[0.85]"
             >
               <span className="text-white block">BUILD</span>
               <span className="text-[#CCFF00] block drop-shadow-[0_0_60px_rgba(204,255,0,0.3)]">
@@ -271,7 +275,7 @@ const Hero = () => {
                 showCursor
                 cursorCharacter="_"
                 cursorBlinkDuration={0.5}
-                className="text-lg md:text-xl text-white/40 max-w-xl h-8"
+                className="text-base md:text-xl text-white/40 max-w-xl min-h-[2rem]"
                 loop
               />
             </motion.div>
@@ -440,7 +444,7 @@ const BentoGrid = () => {
   ];
 
   return (
-    <section id="platform" className="py-32 bg-black relative" ref={ref}>
+    <section id="platform" className="py-16 md:py-28 bg-black relative" ref={ref}>
       {/* Subtle grid background */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-size-[60px_60px]" />
 
@@ -473,7 +477,7 @@ const BentoGrid = () => {
         </motion.div>
 
         {/* 4-column Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[220px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 auto-rows-[260px] md:auto-rows-[220px]">
           {cards.map((card, i) => {
             const Icon = card.icon;
             return (
@@ -482,7 +486,7 @@ const BentoGrid = () => {
                 initial={{ opacity: 0, y: 40 }}
                 animate={isInView ? { opacity: 1, y: 0 } : {}}
                 transition={{ delay: i * 0.08, duration: 0.6 }}
-                className={`${card.colSpan} ${card.rowSpan ?? ''} group relative bg-white/2 border border-white/6 rounded-2xl overflow-hidden hover:border-white/12 transition-all duration-500`}
+                className={`${card.colSpan} ${card.rowSpan ?? ''} group relative bg-white/2 border border-white/6 rounded-2xl overflow-hidden hover:border-white/12 transition-all duration-500 min-h-[220px]`}
               >
                 {/* Optional background image */}
                 {card.image && (
@@ -496,7 +500,7 @@ const BentoGrid = () => {
                 )}
                 {/* Hover gradient */}
                 <div
-                  className={`absolute inset-0 bg-linear-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
+                  className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
                 />
 
                 <div className="relative z-10 p-7 h-full flex flex-col justify-between">
@@ -602,7 +606,7 @@ const HackathonGallery = () => {
   }, []);
 
   return (
-    <section id="developers" className="py-32 bg-black relative" ref={containerRef}>
+    <section id="hackathons" className="py-16 md:py-28 bg-black relative" ref={containerRef}>
       <div className="max-w-360 mx-auto px-6 md:px-12 mb-12">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -666,7 +670,7 @@ const HackathonGallery = () => {
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ delay: i * 0.08, duration: 0.6 }}
-            className="shrink-0 w-[320px] md:w-95 group snap-center"
+            className="shrink-0 w-[min(320px,calc(100vw-48px))] md:w-[380px] group snap-start"
           >
             <div className="relative h-115 rounded-2xl overflow-hidden bg-white/2 border border-white/6 hover:border-white/12 transition-all duration-500">
               {/* Colored top accent bar */}
@@ -762,11 +766,11 @@ const PartnersSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-80px' });
 
   return (
-    <section id="hackathons" ref={ref} className="py-20 bg-black border-y border-white/4">
+    <section id="partners" ref={ref} className="py-12 md:py-20 bg-black border-y border-white/4">
       <div className="max-w-360 mx-auto px-6 md:px-12">
         <motion.p
-          initial={{ opacity: 0 }}
-          animate={isInView ? { opacity: 1 } : {}}
+          initial={{ opacity: 1, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6 }}
           className="text-center text-xs font-medium uppercase tracking-[0.3em] text-white/25 mb-12"
         >
@@ -776,7 +780,7 @@ const PartnersSection = () => {
           {partners.map((name, i) => (
             <motion.span
               key={name}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 1, y: 10 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ delay: i * 0.05, duration: 0.4 }}
               className="text-white/20 hover:text-white/50 text-lg md:text-xl font-bold tracking-tight transition-colors duration-300 cursor-default"
@@ -793,102 +797,6 @@ const PartnersSection = () => {
 /* ─────────────────────────────────────────────
    SPLIT SECTION
    ───────────────────────────────────────────── */
-const SplitSection = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: '-100px' });
-
-  return (
-    <section id="solutions" ref={ref} className="bg-black relative overflow-hidden">
-      <div className="grid grid-cols-1 md:grid-cols-2 min-h-175">
-        {/* Left — dark with background image */}
-        <motion.div
-          initial={{ opacity: 0, x: -60 }}
-          animate={isInView ? { opacity: 1, x: 0 } : {}}
-          transition={{ duration: 0.8 }}
-          className="relative bg-black p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
-        >
-          {/* Background image */}
-          <div className="absolute inset-0 overflow-hidden">
-            <img
-              src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=70"
-              alt=""
-              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000"
-            />
-            <div className="absolute inset-0 bg-linear-to-r from-black via-black/90 to-black/70" />
-          </div>
-          <div className="relative z-10">
-            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
-              For Teams
-            </span>
-            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.9]">
-              On Track
-            </h2>
-            <p className="text-white/40 mt-6 max-w-md leading-relaxed text-[15px]">
-              Manage your team, track progress, and ship on time. Real-time
-              dashboards, automated check-ins, and smart notifications keep
-              everyone aligned.
-            </p>
-            <div className="mt-8 flex items-center gap-6">
-              <div className="flex -space-x-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div
-                    key={`avatar-${String(i)}`}
-                    className="w-10 h-10 rounded-full bg-linear-to-br from-[#CCFF00] to-green-600 border-2 border-black"
-                  />
-                ))}
-              </div>
-              <span className="text-white/35 text-sm">12,000+ teams active</span>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Right — yellow with background image */}
-        <motion.div
-          initial={{ opacity: 0, x: 60 }}
-          animate={isInView ? { opacity: 1, x: 0 } : {}}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="relative bg-[#CCFF00] p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
-        >
-          {/* Background image */}
-          <div className="absolute inset-0 overflow-hidden">
-            <img
-              src="https://images.unsplash.com/photo-1531498860502-7c67cf02f657?w=800&q=70"
-              alt=""
-              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000 mix-blend-multiply"
-            />
-          </div>
-          <div className="relative z-10">
-            <span className="text-black/40 text-xs font-bold tracking-[0.2em] uppercase">
-              For Individuals
-            </span>
-            <h2 className="text-4xl md:text-6xl font-black text-black mt-4 tracking-tight leading-[0.9]">
-              Off Track
-            </h2>
-            <p className="text-black/45 mt-6 max-w-md leading-relaxed text-[15px]">
-              Solo builders welcome. Find teammates, get mentored, or go
-              it alone. Our platform adapts to your style and helps you
-              stand out.
-            </p>
-            <div className="mt-8">
-              <div className="flex items-center gap-3">
-                <Star className="w-5 h-5 text-black fill-black" />
-                <span className="text-black/60 text-sm font-medium">
-                  4.9/5 builder satisfaction
-                </span>
-              </div>
-            </div>
-            <motion.span
-              className="inline-flex items-center gap-2 mt-8 text-black text-sm font-semibold cursor-pointer"
-              whileHover={{ x: 4 }}
-              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
-            >
-            </motion.span>
-          </div>
-        </motion.div>
-      </div>
-    </section>
-  );
-};
 
 /* ─────────────────────────────────────────────
    TEAM / CREDITS SECTION
@@ -910,7 +818,7 @@ const TeamSection = () => {
     <section
       id="credits"
       ref={ref}
-      className="py-24 md:py-32 relative overflow-hidden"
+      className="py-16 md:py-28 relative overflow-hidden"
       style={{
         background: 'linear-gradient(180deg, #000000 0%, #080c24 30%, #0c1445 60%, #0a0f2e 85%, #000000 100%)',
       }}
@@ -928,14 +836,14 @@ const TeamSection = () => {
           </p>
           <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white leading-[0.9]">
             Meet the{' '}
-            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 to-indigo-400">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
               Builders
             </span>
           </h2>
         </motion.div>
 
         {/* Circular portrait row */}
-        <div className="flex items-center justify-center gap-6 md:gap-10 flex-wrap">
+        <div className="flex items-center justify-center gap-4 sm:gap-6 md:gap-10 flex-wrap">
           {teamMembers.map((member, i) => {
             const initials = member.name
               .split(' ')
@@ -1020,7 +928,7 @@ interface PricingTier {
 const pricingTiers: PricingTier[] = [
   {
     id: 1,
-    name: 'Basic',
+    name: 'ESSENTIAL',
     price: '₹3,999',
     period: '/ semester',
     badge: 'Starter',
@@ -1041,7 +949,7 @@ const pricingTiers: PricingTier[] = [
   },
   {
     id: 2,
-    name: 'Developer Pro',
+    name: 'PRO',
     price: '₹6,999',
     period: '/ semester',
     badge: 'Most Popular',
@@ -1063,7 +971,7 @@ const pricingTiers: PricingTier[] = [
   },
   {
     id: 3,
-    name: 'Developer Max',
+    name: 'MAX',
     price: '₹9,999',
     period: '/ semester',
     badge: 'Power Users',
@@ -1086,7 +994,7 @@ const pricingTiers: PricingTier[] = [
   },
   {
     id: 4,
-    name: 'Enterprise',
+    name: 'ENTERPRISE',
     price: 'Custom',
     period: 'pricing',
     badge: 'Enterprise',
@@ -1111,11 +1019,412 @@ const pricingTiers: PricingTier[] = [
 
 const CONTACT_EMAIL = 'contact@devsage.org';
 
+/* ── Per-tier email data ───────────────────── */
+interface TierEmail {
+  subject: string;
+  greeting: string;
+  bodyLines: string[];
+  signoff: string;
+  signName: string;
+  signRole: string;
+  status: string;
+  ctaText: string;
+}
+
+function getTierEmail(tier: PricingTier): TierEmail {
+  const attachNote =
+    'Please also attach:<br>' +
+    '1. A <code>.md</code> file with your design requirements & event details.<br>' +
+    '2. Payment receipt & transaction ID for the ₹10 processing fee which will be returned upon verification.';
+
+  switch (tier.id) {
+    case 1:
+      return {
+        subject: 'Registration Request: Essential Event Plan - [Event Name]',
+        greeting: 'Dear DevSage Team,',
+        bodyLines: [
+          'I would like to activate the Essential Plan for my project to utilize your core registration, team management, and leaderboard features.',
+          'Please provide the onboarding steps for the ₹3,999 tier.',
+          attachNote,
+        ],
+        signoff: 'Best regards,',
+        signName: '[User Name]',
+        signRole: '',
+        status: 'Essential — ₹3,999',
+        ctaText: 'Activate Essential Plan',
+      };
+    case 2:
+      return {
+        subject: 'Service Activation: Developer Pro Suite - [Organization Name]',
+        greeting: 'Dear DevSage Support,',
+        bodyLines: [
+          'Our organization requires the Developer Tier to access advanced organizer dashboards, judging workflows, and real-time performance analytics.',
+          'We are ready to proceed with the ₹6,999 professional license.',
+          attachNote,
+        ],
+        signoff: 'Sincerely,',
+        signName: '[Name]',
+        signRole: '[Organizer Position]',
+        status: 'Developer Pro — ₹6,999',
+        ctaText: 'Activate Developer Pro',
+      };
+    case 3:
+      return {
+        subject: 'Priority Implementation: Developer MAX Tier',
+        greeting: 'Dear DevSage Team,',
+        bodyLines: [
+          'We require the full Developer MAX suite, including global administration rights, premium UI features, and priority technical support.',
+          'Please send the enterprise onboarding guide for the ₹9,999 implementation.',
+          attachNote,
+        ],
+        signoff: 'Best regards,',
+        signName: '[Name]',
+        signRole: '[Position]',
+        status: 'Developer MAX — ₹9,999',
+        ctaText: 'Start MAX Implementation',
+      };
+    case 4:
+    default:
+      return {
+        subject: 'Enterprise Partnership Inquiry - [Company Name]',
+        greeting: 'Dear DevSage Enterprise Team,',
+        bodyLines: [
+          'We represent [Company / University Name] and are seeking a custom Enterprise engagement covering white-label sites, SSO/SAML, dedicated infrastructure, and 24/7 support.',
+          'We would like to schedule a call to discuss pricing, onboarding, and a pilot programme.',
+          attachNote,
+        ],
+        signoff: 'Best regards,',
+        signName: '[Executive Name]',
+        signRole: '[Title] · [Company Name]',
+        status: 'Enterprise — Custom Pricing',
+        ctaText: 'Schedule Enterprise Call',
+      };
+  }
+}
+
+/* ── Build the styled HTML email template ──── */
+function buildEmailHtml(tier: PricingTier, em: TierEmail): string {
+  const now = new Date().toUTCString();
+  const bodyHtml = em.bodyLines
+    .map((l) => `<p style="margin:0 0 14px 0;font-size:15px;font-weight:400;color:#424a53;line-height:1.8;">${l}</p>`)
+    .join('');
+  const signRoleHtml = em.signRole
+    ? `<span style="display:block;font-size:13px;color:#57606a;margin-top:2px;">${em.signRole}</span>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DevSage — ${tier.name} Inquiry</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  *{box-sizing:border-box;}
+  body{margin:0;padding:0;background:#f0faf4;font-family:'Inter',-apple-system,sans-serif;}
+  .shell{min-height:100vh;background:linear-gradient(135deg,#0a2e1a 0%,#0d3d20 40%,#0f4a28 100%);display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;}
+  code{background:#e8f5ec;color:#1a7f37;padding:1px 5px;border-radius:4px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="shell">
+<div style="width:100%;max-width:600px;">
+
+<div style="text-align:center;margin-bottom:20px;">
+  <span style="display:inline-block;font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:5px 16px;">✦ Email Preview — DevSage · SHIKDD</span>
+</div>
+
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600"
+  style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.18);">
+
+  <!-- Top accent bar -->
+  <tr><td style="background:linear-gradient(90deg,#1a7f37 0%,#2da44e 50%,#3fb950 100%);height:4px;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+  <!-- Hero header -->
+  <tr>
+    <td style="background:linear-gradient(160deg,#0d1117 0%,#0f2d1a 60%,#122d1c 100%);padding:36px 40px 32px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+        <tr>
+          <td style="vertical-align:middle;padding-right:12px;width:44px;">
+            <div style="background:linear-gradient(135deg,#1a7f37,#3fb950);border-radius:10px;width:44px;height:44px;text-align:center;line-height:44px;">
+              <span style="color:#fff;font-size:22px;">⌥</span>
+            </div>
+          </td>
+          <td style="vertical-align:middle;">
+            <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;display:block;">DevSage</span>
+            <span style="font-size:10px;font-weight:600;color:#3fb950;letter-spacing:1.8px;text-transform:uppercase;">A SHIKDD Product</span>
+          </td>
+          <td style="text-align:right;vertical-align:middle;">
+            <span style="background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.35);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:700;color:#3fb950;letter-spacing:0.6px;text-transform:uppercase;">${em.status}</span>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:28px;border-left:3px solid #2da44e;padding-left:16px;">
+        <span style="font-size:13px;font-weight:500;color:#7ee787;letter-spacing:0.3px;text-transform:uppercase;display:block;margin-bottom:6px;">Plan Inquiry</span>
+        <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;display:block;line-height:1.3;">${tier.name} · ${tier.price} ${tier.price !== 'Custom' ? tier.period : ''}</span>
+      </div>
+    </td>
+  </tr>
+
+  <!-- Body -->
+  <tr>
+    <td style="padding:36px 40px 0;">
+      <p style="margin:0 0 16px;font-size:15px;color:#24292f;line-height:1.6;">${em.greeting}</p>
+      ${bodyHtml}
+    </td>
+  </tr>
+
+  <!-- Operational Details block -->
+  <tr>
+    <td style="padding:28px 40px 0;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+        style="border:1px solid #d8f0df;border-radius:10px;overflow:hidden;">
+        <tr>
+          <td colspan="2" style="background:linear-gradient(90deg,#f0faf4,#e8f5ec);padding:13px 20px;border-bottom:1px solid #d8f0df;">
+            <span style="display:inline-block;width:8px;height:8px;background:#2da44e;border-radius:50%;vertical-align:middle;margin-right:8px;"></span>
+            <span style="font-size:11px;font-weight:700;color:#1a7f37;letter-spacing:0.8px;text-transform:uppercase;">Operational Details</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;width:38%;background:#fafffe;"><span style="font-size:11px;font-weight:700;color:#57606a;letter-spacing:0.4px;text-transform:uppercase;">Plan</span></td>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;background:#fff;"><span style="font-size:13px;font-weight:600;color:#0d1117;">${tier.name}</span></td>
+        </tr>
+        <tr>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;width:38%;background:#fafffe;"><span style="font-size:11px;font-weight:700;color:#57606a;letter-spacing:0.4px;text-transform:uppercase;">Price</span></td>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;background:#fff;"><span style="font-size:13px;font-weight:600;color:#1a7f37;">${tier.price}${tier.price !== 'Custom' ? ' ' + tier.period : ''}</span></td>
+        </tr>
+        <tr>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;width:38%;background:#fafffe;"><span style="font-size:11px;font-weight:700;color:#57606a;letter-spacing:0.4px;text-transform:uppercase;">Recipient</span></td>
+          <td style="padding:13px 20px;border-bottom:1px solid #eaf5ec;background:#fff;"><span style="font-size:13px;color:#1a7f37;font-family:'Courier New',monospace;">${CONTACT_EMAIL}</span></td>
+        </tr>
+        <tr>
+          <td style="padding:13px 20px;width:38%;background:#fafffe;"><span style="font-size:11px;font-weight:700;color:#57606a;letter-spacing:0.4px;text-transform:uppercase;">Timestamp</span></td>
+          <td style="padding:13px 20px;background:#fff;"><span style="font-size:12px;color:#57606a;font-family:'Courier New',monospace;">${now}</span></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Sign-off -->
+  <tr>
+    <td style="padding:28px 40px 0;">
+      <p style="margin:0;font-size:15px;color:#24292f;line-height:1.8;">${em.signoff}<br>
+        <strong style="font-size:15px;color:#0d1117;">${em.signName}</strong>
+        ${signRoleHtml}
+      </p>
+    </td>
+  </tr>
+
+  <!-- CTA -->
+  <tr>
+    <td style="padding:32px 40px 0;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="border-radius:8px;background:linear-gradient(135deg,#1a7f37,#2da44e);box-shadow:0 4px 14px rgba(45,164,78,0.35);">
+            <span style="display:inline-block;padding:14px 28px;font-size:14px;font-weight:700;color:#fff;letter-spacing:0.2px;">${em.ctaText} &nbsp;→</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:14px 0 0;font-size:12px;color:#8c959f;">Send to: <span style="color:#1a7f37;font-family:'Courier New',monospace;font-size:11px;">${CONTACT_EMAIL}</span></p>
+    </td>
+  </tr>
+
+  <!-- Security notice -->
+  <tr>
+    <td style="padding:28px 40px 0;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+        style="background:#fffdf0;border:1px solid #e9c46a;border-radius:8px;">
+        <tr><td style="padding:14px 18px;">
+          <span style="font-size:14px;">⚠️</span>&nbsp;
+          <span style="font-size:12px;font-weight:600;color:#7d5a00;">Security Reminder</span><br>
+          <span style="font-size:12px;color:#9a7200;line-height:1.6;">DevSage and SHIKDD will never ask for your password. If this email looks unexpected, contact <a href="mailto:support@shikdd.com" style="color:#7d5a00;font-weight:600;">support@shikdd.com</a>.</span>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer divider -->
+  <tr><td style="padding:32px 40px 0;"><div style="border-top:1px solid #e8f0ea;height:1px;"></div></td></tr>
+
+  <!-- Footer -->
+  <tr>
+    <td style="padding:24px 40px 36px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:12px;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#1a7f37,#2da44e);border-radius:6px;width:24px;height:24px;text-align:center;line-height:24px;">
+            <span style="color:#fff;font-size:12px;">⌥</span>
+          </td>
+          <td style="padding-left:8px;vertical-align:middle;">
+            <span style="font-size:13px;font-weight:700;color:#57606a;">DevSage</span>
+            <span style="font-size:11px;color:#b1bac4;margin-left:6px;">by SHIKDD</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 4px;font-size:12px;color:#8c959f;">© 2026 SHIKDD Technologies. All rights reserved.</p>
+      <p style="margin:0 0 12px;font-size:12px;color:#8c959f;">DevSage — Edge-native hackathon infrastructure</p>
+    </td>
+  </tr>
+
+  <!-- Bottom accent bar -->
+  <tr><td style="background:linear-gradient(90deg,#1a7f37 0%,#2da44e 50%,#3fb950 100%);height:3px;font-size:0;">&nbsp;</td></tr>
+
+</table>
+
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:20px;">
+  <tr><td style="text-align:center;"><p style="margin:0;font-size:11px;color:rgba(255,255,255,0.3);">SHIKDD Technologies · Secure Infrastructure Communications</p></td></tr>
+</table>
+
+</div>
+</div>
+</body>
+</html>`;
+}
+
+/* ── Email Preview Modal ─────────────────────── */
+function EmailModal({ tier, onClose }: { tier: PricingTier; onClose: () => void }) {
+  const em = getTierEmail(tier);
+  const htmlDoc = buildEmailHtml(tier, em);
+  const [copied, setCopied] = useState(false);
+
+  const plainBody =
+    `${em.greeting}\n\n` +
+    em.bodyLines
+      .map((l) => l.replace(/<br>/g, '\n').replace(/<[^>]+>/g, ''))
+      .join('\n\n') +
+    `\n\n${em.signoff}\n${em.signName}${em.signRole ? '\n' + em.signRole : ''}`;
+
+  const gmailUrl =
+    `https://mail.google.com/mail/?view=cm&fs=1` +
+    `&to=${CONTACT_EMAIL}` +
+    `&su=${encodeURIComponent(em.subject)}` +
+    `&body=${encodeURIComponent(plainBody)}`;
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(htmlDoc);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch (_) {
+      /* silent */
+    }
+  }, [htmlDoc]);
+
+  // Close on Escape
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [onClose]);
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="modal-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[999] flex items-center justify-center p-4 md:p-8"
+        style={{ backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+        onClick={onClose}
+      >
+        <motion.div
+          key="modal-card"
+          initial={{ opacity: 0, scale: 0.92, y: 32 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.92, y: 32 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+          className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden"
+          style={{ backgroundColor: '#0d1117', border: `1px solid ${tier.accent}30`, boxShadow: `0 0 80px ${tier.accent}18` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal header */}
+          <div
+            className="flex items-center justify-between px-5 py-4 shrink-0"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'linear-gradient(90deg,#0d1117,#111a12)' }}
+          >
+            <div className="flex items-center gap-3">
+              {/* Tier accent dot */}
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tier.accent }} />
+              <div>
+                <p className="text-white text-sm font-bold leading-tight">{tier.name} — Email Preview</p>
+                <p className="text-white/40 text-xs mt-0.5 truncate max-w-xs">{em.subject}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Template preview iframe */}
+          <div className="flex-1 overflow-hidden">
+            <iframe
+              title="Email preview"
+              srcDoc={htmlDoc}
+              className="w-full h-full border-0"
+              style={{ minHeight: '460px' }}
+              sandbox="allow-same-origin"
+            />
+          </div>
+
+          {/* Action bar */}
+          <div
+            className="shrink-0 flex items-center justify-between gap-3 px-5 py-4"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#0a0f12' }}
+          >
+            <p className="text-white/35 text-xs hidden md:block">
+              Replace <span className="text-white/60">[bracketed]</span> fields before sending
+            </p>
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Copy HTML */}
+              <motion.button
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                onClick={handleCopy}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={{
+                  backgroundColor: copied ? 'rgba(64,185,80,0.15)' : 'rgba(255,255,255,0.06)',
+                  color: copied ? '#3fb950' : 'rgba(255,255,255,0.6)',
+                  border: `1px solid ${copied ? '#3fb95050' : 'rgba(255,255,255,0.08)'}`,
+                }}
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {copied ? 'Copied!' : 'Copy HTML'}
+              </motion.button>
+
+              {/* Open Gmail */}
+              <motion.a
+                href={gmailUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all"
+                style={{
+                  background: `linear-gradient(135deg, #1a7f37, #2da44e)`,
+                  color: '#fff',
+                  boxShadow: '0 4px 14px rgba(45,164,78,0.35)',
+                  textDecoration: 'none',
+                }}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Open in Gmail
+                <OpenExternal className="w-3 h-3 opacity-70" />
+              </motion.a>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 const PricingSection = () => {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, margin: '-100px' });
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [activeTier, setActiveTier] = useState<PricingTier | null>(null);
 
   const isDragging = useRef(false);
   const startX = useRef(0);
@@ -1151,15 +1460,11 @@ const PricingSection = () => {
 
   const openContact = useCallback((tier: PricingTier) => {
     if (isDragging.current) return;
-    const subject = encodeURIComponent(`DevSage ${tier.name} Plan Inquiry`);
-    const body = encodeURIComponent(
-      `Hi DevSage team,\n\nI'm interested in the ${tier.name} plan (${tier.price}${tier.price !== 'Custom' ? tier.period : ''}).\n\nPlease get in touch with me.\n\nThanks!`
-    );
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${CONTACT_EMAIL}&su=${subject}&body=${body}`, '_blank');
+    setActiveTier(tier);
   }, []);
 
   return (
-    <section id="pricing" className="py-32 bg-black relative" ref={ref}>
+    <section id="pricing" className="py-16 md:py-28 bg-black relative" ref={ref}>
       {/* Subtle grid overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.015)_1px,transparent_1px)] bg-size-[80px_80px] pointer-events-none" />
 
@@ -1239,14 +1544,14 @@ const PricingSection = () => {
               initial={{ opacity: 0, y: 40 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ delay: i * 0.1, duration: 0.6 }}
-              className="shrink-0 w-[320px] md:w-[360px] group snap-center"
+              className="shrink-0 w-[min(320px,calc(100vw-48px))] md:w-[360px] h-[600px] group snap-start"
               onMouseEnter={() => setHoveredId(tier.id)}
               onMouseLeave={() => setHoveredId(null)}
               onClick={() => openContact(tier)}
               style={{ cursor: 'pointer' }}
             >
               <div
-                className="relative rounded-2xl overflow-hidden border transition-all duration-500 flex flex-col"
+                className="relative h-full rounded-2xl overflow-hidden border transition-all duration-500 flex flex-col"
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.02)',
                   borderColor: isHovered ? tier.accent + '50' : tier.highlight ? tier.accent + '30' : 'rgba(255,255,255,0.06)',
@@ -1308,8 +1613,8 @@ const PricingSection = () => {
                 </div>
 
                 {/* Features list */}
-                <div className="px-6 pb-6 flex flex-col flex-1 justify-between gap-5">
-                  <ul className="space-y-2.5">
+                <div className="px-6 pb-6 flex flex-col flex-1 justify-between gap-5 min-h-0">
+                  <ul className="space-y-2.5 overflow-y-auto">
                     {tier.features.map((f) => (
                       <li key={f} className="flex items-start gap-2.5 text-sm text-white/60 group-hover:text-white/75 transition-colors duration-300">
                         <Check
@@ -1354,6 +1659,11 @@ const PricingSection = () => {
       <div className="max-w-360 mx-auto px-6 md:px-12 mt-4">
         <div className="h-px bg-white/6" />
       </div>
+
+      {/* Email preview modal */}
+      {activeTier && (
+        <EmailModal tier={activeTier} onClose={() => setActiveTier(null)} />
+      )}
     </section>
   );
 };
@@ -1367,43 +1677,140 @@ const CTASection = () => {
   const navigate = useNavigate();
 
   return (
-    <section id="pricing" ref={ref} className="py-40 bg-black relative overflow-hidden">
-      {/* Large blurred glow */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-200 h-200 bg-[#CCFF00]/6 rounded-full blur-[250px]" />
+    <section id="cta" ref={ref} className="py-24 md:py-40 bg-black relative overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-[600px] h-[600px] bg-[#CCFF00]/6 rounded-full blur-[200px]" />
       </div>
 
-      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
+      <div className="relative z-10 max-w-4xl mx-auto px-6 md:px-12 text-center">
         <motion.div
-          initial={{ opacity: 0, y: 50 }}
+          initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.9 }}
-          className="text-center"
+          transition={{ duration: 0.8 }}
         >
-          <h2 className="text-6xl md:text-8xl lg:text-[130px] font-black text-white tracking-tighter leading-[0.85] mb-6">
-            ALWAYS
+          <span className="text-[#CCFF00] text-xs font-bold tracking-[0.25em] uppercase">
+            Ready to build?
+          </span>
+          <h2 className="text-4xl sm:text-5xl md:text-7xl font-black text-white mt-4 tracking-tight leading-[0.9]">
+            Start your
             <br />
             <span
               className="text-transparent"
-              style={{ WebkitTextStroke: '3px #CCFF00' }}
+              style={{ WebkitTextStroke: '2px rgba(204,255,0,0.6)' }}
             >
-              BUILDING
+              hackathon.
             </span>
           </h2>
-          <p className="text-white/35 text-lg md:text-xl max-w-xl mx-auto mb-14 leading-relaxed">
-            Join the community that never stops creating. Your next breakthrough
-            starts here.
+          <p className="text-white/35 mt-6 text-base md:text-lg max-w-xl mx-auto leading-relaxed">
+            Join thousands of developers already using DevSage to run, judge, and win hackathons — at any scale.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
+            
             <motion.button
-              className="bg-[#CCFF00] text-black font-bold px-12 py-5 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
+              className="w-full sm:w-auto border border-white/15 text-white font-semibold px-8 py-4 rounded-full text-base hover:border-white/40 hover:bg-white/5 transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              View Pricing
+            </motion.button>
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+};
+const SplitSection = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-100px' });
+
+  return (
+    <section id="solutions" ref={ref} className="bg-black relative overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 min-h-[400px] md:min-h-[700px]">
+        {/* Left — dark with background image */}
+        <motion.div
+          initial={{ opacity: 0, x: -60 }}
+          animate={isInView ? { opacity: 1, x: 0 } : {}}
+          transition={{ duration: 0.8 }}
+          className="relative bg-black p-8 sm:p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
+        >
+          {/* Background image */}
+          <div className="absolute inset-0 overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=70"
+              alt=""
+              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/90 to-black/70" />
+          </div>
+          <div className="relative z-10">
+            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
+              For Teams
+            </span>
+            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.9]">
+              On Track
+            </h2>
+            <p className="text-white/40 mt-6 max-w-md leading-relaxed text-[15px]">
+              Manage your team, track progress, and ship on time. Real-time
+              dashboards, automated check-ins, and smart notifications keep
+              everyone aligned.
+            </p>
+            <div className="mt-8 flex items-center gap-6">
+              <div className="flex -space-x-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={`avatar-${String(i)}`}
+                    className="w-10 h-10 rounded-full bg-gradient-to-br from-[#CCFF00] to-green-600 border-2 border-black"
+                  />
+                ))}
+              </div>
+              <span className="text-white/35 text-sm">12,000+ teams active</span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Right — yellow with background image */}
+        <motion.div
+          initial={{ opacity: 0, x: 60 }}
+          animate={isInView ? { opacity: 1, x: 0 } : {}}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="relative bg-[#CCFF00] p-8 sm:p-12 md:p-20 flex flex-col justify-center group overflow-hidden"
+        >
+          {/* Background image */}
+          <div className="absolute inset-0 overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1531498860502-7c67cf02f657?w=800&q=70"
+              alt=""
+              className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000 mix-blend-multiply"
+            />
+          </div>
+          <div className="relative z-10">
+            <span className="text-black/40 text-xs font-bold tracking-[0.2em] uppercase">
+              For Individuals
+            </span>
+            <h2 className="text-4xl md:text-6xl font-black text-black mt-4 tracking-tight leading-[0.9]">
+              Off Track
+            </h2>
+            <p className="text-black/45 mt-6 max-w-md leading-relaxed text-[15px]">
+              Solo builders welcome. Find teammates, get mentored, or go
+              it alone. Our platform adapts to your style and helps you
+              stand out.
+            </p>
+            <div className="mt-8">
+              <div className="flex items-center gap-3">
+                <Star className="w-5 h-5 text-black fill-black" />
+                <span className="text-black/60 text-sm font-medium">
+                  4.9/5 builder satisfaction
+                </span>
+              </div>
+            </div>
+            <motion.span
+              className="inline-flex items-center gap-2 mt-8 text-black text-sm font-semibold cursor-pointer"
+              whileHover={{ x: 4 }}
               onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
-              Get Started For Free
-              <ArrowRight className="w-5 h-5" />
-            </motion.button>
+            </motion.span>
           </div>
         </motion.div>
       </div>
@@ -1425,9 +1832,9 @@ const Footer = () => {
     <footer className="bg-black border-t border-white/6">
       <div className="max-w-360 mx-auto px-6 md:px-12">
         {/* Main footer content */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-10 py-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-8 md:gap-10 py-12 md:py-20">
           {/* Brand */}
-          <div className="col-span-2">
+          <div className="sm:col-span-2 md:col-span-2">
             <span className="text-2xl font-black tracking-tighter text-white">
               DEV<span className="text-[#CCFF00]">SAGE</span>
             </span>
@@ -1452,7 +1859,58 @@ const Footer = () => {
               })}
             </div>
           </div>
-          
+
+          {/* Platform links */}
+          <div className="md:col-span-1">
+            <p className="text-white/50 text-xs font-bold uppercase tracking-[0.15em] mb-4">Platform</p>
+            <ul className="space-y-2.5">
+              {['Features', 'Pricing', 'Hackathons'].map((item) => (
+                <li key={item}>
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById(item.toLowerCase())?.scrollIntoView({ behavior: 'smooth' })}
+                    className="text-sm text-white/30 hover:text-white transition-colors cursor-pointer bg-transparent border-none"
+                  >
+                    {item}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Company links */}
+          <div className="md:col-span-1">
+            <p className="text-white/50 text-xs font-bold uppercase tracking-[0.15em] mb-4">Company</p>
+            <ul className="space-y-2.5">
+              {[
+                { label: 'Team', href: '#credits' },
+                { label: 'Contact', href: 'https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org' },
+              ].map((item) => (
+                <li key={item.label}>
+                  <a
+                    href={item.href}
+                    target={item.href.startsWith('http') ? '_blank' : undefined}
+                    rel="noopener noreferrer"
+                    className="text-sm text-white/30 hover:text-white transition-colors"
+                  >
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Legal links */}
+          <div className="md:col-span-1">
+            <p className="text-white/50 text-xs font-bold uppercase tracking-[0.15em] mb-4">Legal</p>
+            <ul className="space-y-2.5">
+              {['Privacy Policy', 'Terms of Service', 'Cookie Policy'].map((item) => (
+                <li key={item}>
+                  <span className="text-sm text-white/30 cursor-default">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* Bottom bar */}
@@ -1491,11 +1949,10 @@ export function HomePage() {
       <MarqueeText>HACKATHONS — COLLABORATION — INNOVATION — COMMUNITY — BUILD THE FUTURE</MarqueeText>
       <BentoGrid />
       <HackathonGallery />
-      <PartnersSection />
       <SplitSection />
       <TeamSection />
       <PricingSection />
-      <CTASection />
+      <PartnersSection />
       <Footer />
     </div>
   );
