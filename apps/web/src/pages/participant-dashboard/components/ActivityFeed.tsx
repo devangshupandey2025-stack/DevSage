@@ -197,7 +197,7 @@ export function ActivityFeed({
   }, [submissions, team]);
 
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-white/8 bg-white/2">
       <CardHeader className="pb-3">
         <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
           <Activity className="h-4 w-4 text-[#CCFF00]" />

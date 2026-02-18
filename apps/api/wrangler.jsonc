@@ -89,6 +89,8 @@
     "PLATFORM_URL": "https://platform.devsage.org",
     "ADMIN_URL": "https://shikdd.devsage.org",
     "API_URL": "https://api.devsage.org",
-    "EMAIL_FROM": "noreply@devsage.org"
+    "EMAIL_FROM": "noreply@devsage.org",
+    "HACKATHON_ORIGIN_PATTERN": "https://*.hackathon.devsage.org",
+    "PAGES_ORIGIN_PATTERN": "https://*.pages.dev"
   }
 }

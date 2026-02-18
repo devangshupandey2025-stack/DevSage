@@ -62,7 +62,7 @@ export function SubmissionStatusCard({
   /* ── Loading state ──────────────────────────────────────────── */
   if (isLoading) {
     return (
-      <Card className="border-white/8 bg-white/[0.02]">
+      <Card className="border-white/8 bg-white/2">
         <CardHeader>
           <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
             <Tag className="h-4 w-4 text-[#CCFF00]" />
@@ -84,7 +84,7 @@ export function SubmissionStatusCard({
     const isDeadlinePassed = phase === 'submission_locked';
 
     return (
-      <Card className="border-white/8 bg-white/[0.02]">
+      <Card className="border-white/8 bg-white/2">
         <CardHeader>
           <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
             <Tag className="h-4 w-4 text-[#CCFF00]" />
@@ -145,7 +145,7 @@ export function SubmissionStatusCard({
   const isScored = displaySub.status === 'scored';
 
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-white/8 bg-white/2">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-white text-base font-semibold flex items-center gap-2">

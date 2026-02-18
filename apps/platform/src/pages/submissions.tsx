@@ -80,7 +80,7 @@ export function SubmissionsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search submissions..."
-              className="pl-9 border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20 w-56"
+              className="pl-9 border-white/8 bg-white/3 text-white placeholder:text-white/20 w-56"
             />
           </div>
         }
@@ -89,7 +89,7 @@ export function SubmissionsPage() {
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={`s-${String(i)}`} className="h-20 bg-white/[0.06] rounded-2xl" />
+            <Skeleton key={`s-${String(i)}`} className="h-20 bg-white/6 rounded-2xl" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -104,7 +104,7 @@ export function SubmissionsPage() {
             <motion.div
               key={submission.id}
               variants={item}
-              className="group flex items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.04]"
+              className="group flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-5 transition-all duration-300 hover:border-white/12 hover:bg-white/4"
             >
               {/* Status icon */}
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
@@ -147,7 +147,7 @@ export function SubmissionsPage() {
                     href={submission.repo_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-white/25 transition hover:bg-white/[0.08] hover:text-white/50"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/4 text-white/25 transition hover:bg-white/8 hover:text-white/50"
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>

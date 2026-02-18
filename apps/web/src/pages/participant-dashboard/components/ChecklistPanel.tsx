@@ -19,7 +19,7 @@ export function ChecklistPanel({ items }: ChecklistPanelProps) {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-white/8 bg-white/2">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
@@ -32,7 +32,7 @@ export function ChecklistPanel({ items }: ChecklistPanelProps) {
         </div>
 
         {/* Progress bar */}
-        <div className="mt-2 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+        <div className="mt-2 h-1.5 w-full rounded-full bg-white/6 overflow-hidden">
           <div
             className="h-full rounded-full bg-[#CCFF00] transition-all duration-500 ease-out"
             style={{ width: `${pct}%` }}

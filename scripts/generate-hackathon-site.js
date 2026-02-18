@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'hackathon-site');
+process.env.PATH = `C:\\Program Files\\GitHub CLI;${process.env.PATH}`;
+
+const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'hackthon-templates');
 const CF_ACCOUNT_ID = 'cf3386ad6d48a38a199781a39b2324ad';
 const GITHUB_ORG = 'SHIKDD-org';
 const API_ORIGIN = 'https://api.devsage.org';
@@ -36,6 +38,7 @@ Config JSON fields:
   slug              (required) Hackathon slug (e.g., "hack001")
   title             (required) Hackathon title
   workspaceName     (optional) Workspace name, defaults to slug
+  workspaceId       (optional) Workspace ID, defaults to "default-workspace"
   description       (optional) Description text
   accentColor       (optional) Hex color, default "#2DD4BF"
   registrationStart (optional) ISO date string
@@ -77,6 +80,7 @@ Example:
     slug: config.slug,
     title: config.title,
     workspaceName: config.workspaceName || config.slug,
+    workspaceId: config.workspaceId || 'default-workspace',
     description: config.description || '',
     accentColor: config.accentColor || '#2DD4BF',
     registrationStart: config.registrationStart || new Date().toISOString(),
@@ -114,14 +118,14 @@ function run(cmd, cwd) {
 }
 
 function seedHackathonViaApi(config) {
-  const apiUrl = `${config.apiOrigin}/api/v1/hackathons`;
+  const workspaceId = config.workspaceId || 'default-workspace';
+  const apiUrl = `${config.apiOrigin}/api/v1/workspaces/${workspaceId}/hackathons`;
   const body = JSON.stringify({
     slug: config.slug,
     title: config.title,
     description: config.description,
     max_team_size: config.maxTeamSize,
     starts_at: config.hackingStart,
-    workspace_name: config.workspaceName,
   });
 
   try {

@@ -22,6 +22,8 @@ export interface AppEnv {
     ADMIN_URL: string;
     API_URL: string;
     EMAIL_FROM: string;
+    HACKATHON_ORIGIN_PATTERN?: string;
+    PAGES_ORIGIN_PATTERN?: string;
   };
   Variables: {
     user: UserContext | null;

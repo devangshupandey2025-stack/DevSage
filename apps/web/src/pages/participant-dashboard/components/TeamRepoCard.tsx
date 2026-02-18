@@ -55,7 +55,7 @@ export function TeamRepoCard({
   }
 
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-white/8 bg-white/2">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
@@ -82,7 +82,7 @@ export function TeamRepoCard({
             {team.members?.map((member) => (
               <div
                 key={member.user_id}
-                className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/6 px-3 py-2.5"
+                className="flex items-center gap-3 rounded-lg bg-white/3 border border-white/6 px-3 py-2.5"
               >
                 {/* Avatar */}
                 {member.avatar_url ? (
@@ -123,7 +123,7 @@ export function TeamRepoCard({
               Invite Code
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 rounded-lg bg-white/[0.04] border border-white/8 px-3 py-2 font-mono text-sm text-[#CCFF00] tracking-widest">
+              <code className="flex-1 rounded-lg bg-white/4 border border-white/8 px-3 py-2 font-mono text-sm text-[#CCFF00] tracking-widest">
                 {team.invite_code}
               </code>
               <Button
@@ -152,10 +152,10 @@ export function TeamRepoCard({
           </p>
 
           {hasRepo ? (
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+            <div className="rounded-xl border border-white/8 bg-white/3 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06]">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/6">
                     <GitBranch className="h-4 w-4 text-[#CCFF00]" />
                   </div>
                   <div className="min-w-0">

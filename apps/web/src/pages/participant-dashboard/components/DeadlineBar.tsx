@@ -42,7 +42,7 @@ export function DeadlineBar({ deadlines, hackathonStatus }: DeadlineBarProps) {
         const relative = formatRelativeTime(dl.date);
 
         let borderColor = 'border-white/8';
-        let bgColor = 'bg-white/[0.02]';
+        let bgColor = 'bg-white/2';
         let textColor = 'text-white/50';
         let iconColor = 'text-white/30';
         let Icon = Clock;
