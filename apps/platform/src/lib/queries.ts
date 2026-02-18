@@ -210,6 +210,7 @@ interface Round {
   round_number: number;
   type: string | null;
   status: string;
+  is_initialized: number;
   submission_deadline: string | null;
   created_at: string;
 }

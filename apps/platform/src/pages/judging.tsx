@@ -82,9 +82,9 @@ export function JudgingPage() {
   const fetchData = async () => {
     try {
       const [judgesRes, leaderboardRes, rubricRes] = await Promise.allSettled([
-        apiRequest<{ data: Judge[] }>(`/api/v1/hackathons/${slug}/judges`),
-        apiRequest<{ data: LeaderboardEntry[] }>(`/api/v1/hackathons/${slug}/leaderboard`),
-        apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/rubric`),
+        apiRequest<{ data: Judge[] }>(`/api/v1/hackathons/${slug}/judging/judges`),
+        apiRequest<{ data: LeaderboardEntry[] }>(`/api/v1/hackathons/${slug}/judging/leaderboard`),
+        apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/judging/rubric`),
       ]);
       if (judgesRes.status === 'fulfilled') setJudges(judgesRes.value.data ?? []);
       if (leaderboardRes.status === 'fulfilled') setLeaderboard(leaderboardRes.value.data ?? []);
@@ -99,16 +99,17 @@ export function JudgingPage() {
   const inviteJudge = async () => {
     if (!inviteUserId.trim()) return;
     try {
-      await apiRequest(`/api/v1/hackathons/${slug}/judges`, {
+      await apiRequest(`/api/v1/hackathons/${slug}/judging/judges`, {
         method: 'POST',
-        body: JSON.stringify({ userId: inviteUserId }),
+        body: JSON.stringify({ email: inviteUserId }),
       });
       toast.success('Judge invited!');
       setInviteDialogOpen(false);
       setInviteUserId('');
       fetchData();
-    } catch (_err) {
-      toast.error('Failed to invite judge');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to invite judge';
+      toast.error(message);
     }
   };
 
@@ -139,14 +140,15 @@ export function JudgingPage() {
               <DialogHeader>
                 <DialogTitle className="text-white text-xl font-black">Invite Judge</DialogTitle>
                 <DialogDescription className="text-white/35">
-                  Enter the user ID of the person you want to invite as a judge.
+                  Enter the email address of the person you want to invite as a judge.
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
                 <Input
                   value={inviteUserId}
                   onChange={(e) => setInviteUserId(e.target.value)}
-                  placeholder="User ID"
+                  placeholder="judge@example.com"
+                  type="email"
                   className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
                 />
               </div>

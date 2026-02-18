@@ -29,7 +29,7 @@ export function JudgeInviteAcceptPage() {
   useEffect(() => {
     async function fetchInvite() {
       try {
-        const res = await apiRequest<{ data: JudgeInvite }>(`/api/v1/invites/judge/${token}`);
+        const res = await apiRequest<{ data: JudgeInvite }>(`/api/v1/invites/judge/${token}/details`);
         setInvite(res.data);
       } catch {
         setInvite(null);
@@ -44,7 +44,7 @@ export function JudgeInviteAcceptPage() {
     if (!token) return;
     setAccepting(true);
     try {
-      await apiRequest(`/api/v1/invites/judge/${token}/accept`, { method: 'POST' });
+      await apiRequest(`/api/v1/invites/judge/${token}`, { method: 'POST' });
       toast.success('Invite accepted! You are now a judge.');
       navigate('/judge/assignments');
     } catch (err) {

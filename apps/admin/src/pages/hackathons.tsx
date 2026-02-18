@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiRequest } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Trophy, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trophy, ChevronLeft, ChevronRight, ChevronRightIcon } from 'lucide-react';
 
 interface Hackathon {
   id: string;
@@ -75,25 +76,28 @@ export function HackathonsPage() {
       ) : (
         <div className="space-y-3">
           {hackathons.map((h) => (
-            <Card key={h.id} className="border-white/10 bg-white/5">
-              <CardContent className="flex items-center gap-4 py-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5">
-                  <Trophy className="h-5 w-5 text-[#CCFF00]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-white truncate">{h.title}</p>
-                  <p className="text-xs text-white/40">/{h.slug} · Created {new Date(h.created_at).toLocaleDateString()}</p>
-                </div>
-                {h.starts_at && (
-                  <p className="hidden sm:block text-xs text-white/40">
-                    Starts {new Date(h.starts_at).toLocaleDateString()}
-                  </p>
-                )}
-                <Badge className={statusColors[h.status] ?? 'bg-white/10 text-white/60'}>
-                  {h.status}
-                </Badge>
-              </CardContent>
-            </Card>
+            <Link key={h.id} to={`/hackathons/${h.id}`} className="block">
+              <Card className="border-white/10 bg-white/5 hover:border-[#CCFF00]/20 hover:bg-white/[0.07] transition-all cursor-pointer">
+                <CardContent className="flex items-center gap-4 py-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5">
+                    <Trophy className="h-5 w-5 text-[#CCFF00]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-white truncate">{h.title}</p>
+                    <p className="text-xs text-white/40">/{h.slug} · Created {new Date(h.created_at).toLocaleDateString()}</p>
+                  </div>
+                  {h.starts_at && (
+                    <p className="hidden sm:block text-xs text-white/40">
+                      Starts {new Date(h.starts_at).toLocaleDateString()}
+                    </p>
+                  )}
+                  <Badge className={statusColors[h.status] ?? 'bg-white/10 text-white/60'}>
+                    {h.status}
+                  </Badge>
+                  <ChevronRightIcon className="h-4 w-4 text-white/20" />
+                </CardContent>
+              </Card>
+            </Link>
           ))}
           <div className="flex items-center justify-between pt-2">
             <p className="text-xs text-white/40">Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}</p>
