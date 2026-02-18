@@ -90,4 +90,55 @@ admin.get('/stats', async (c) => {
   });
 });
 
+// ─── Hackathon Detail (admin) ────────────────────────────────
+
+admin.get('/hackathons/:hackathonId', async (c) => {
+  const hackathonId = c.req.param('hackathonId');
+  const hackathon = await c.env.DB.prepare('SELECT * FROM hackathons WHERE id = ?').bind(hackathonId).first();
+  if (!hackathon) return errorResponse(c, 404, 'NOT_FOUND', 'Hackathon not found');
+  return successResponse(c, hackathon);
+});
+
+// ─── Admin Round Management ──────────────────────────────────
+
+// List rounds for a hackathon (admin view)
+admin.get('/hackathons/:hackathonId/rounds', async (c) => {
+  const hackathonId = c.req.param('hackathonId');
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM hackathon_rounds WHERE hackathon_id = ? ORDER BY round_number ASC'
+  ).bind(hackathonId).all();
+  return successResponse(c, rows.results || []);
+});
+
+// Initialize / un-initialize a round (admin-only toggle)
+admin.patch('/hackathons/:hackathonId/rounds/:roundId/initialize', async (c) => {
+  const hackathonId = c.req.param('hackathonId');
+  const roundId = c.req.param('roundId');
+  const body = await c.req.json<{ is_initialized: boolean }>();
+
+  // Verify round belongs to this hackathon
+  const round = await c.env.DB.prepare(
+    'SELECT * FROM hackathon_rounds WHERE id = ? AND hackathon_id = ?'
+  ).bind(roundId, hackathonId).first();
+
+  if (!round) return errorResponse(c, 404, 'NOT_FOUND', 'Round not found');
+
+  const now = new Date().toISOString();
+  const initValue = body.is_initialized ? 1 : 0;
+
+  // If initializing, also set status to 'active' and started_at
+  if (body.is_initialized) {
+    await c.env.DB.prepare(
+      `UPDATE hackathon_rounds SET is_initialized = ?, status = 'active', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?`
+    ).bind(initValue, now, now, roundId).run();
+  } else {
+    await c.env.DB.prepare(
+      'UPDATE hackathon_rounds SET is_initialized = ?, updated_at = ? WHERE id = ?'
+    ).bind(initValue, now, roundId).run();
+  }
+
+  const updated = await c.env.DB.prepare('SELECT * FROM hackathon_rounds WHERE id = ?').bind(roundId).first();
+  return successResponse(c, updated);
+});
+
 export default admin;

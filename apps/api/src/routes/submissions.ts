@@ -97,11 +97,40 @@ submissions.post('/', authMiddleware, async (c) => {
     repo_url: string;
     demo_url?: string;
     video_url?: string;
-    slide_url?: string;
+    round_id?: string;
   }>();
 
   if (!body.title || !body.repo_url) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and repo URL are required');
+  }
+
+  // Check if there are any initialized rounds — if so, a round_id is required
+  // and submissions are only allowed against initialized rounds
+  const initializedRounds = await c.env.DB.prepare(
+    'SELECT id FROM hackathon_rounds WHERE hackathon_id = ? AND is_initialized = 1'
+  ).bind(hackathon.id).all();
+
+  let targetRoundId: string | null = null;
+
+  if (initializedRounds.results && initializedRounds.results.length > 0) {
+    // Rounds exist and at least one is initialized — submission must target an initialized round
+    if (!body.round_id) {
+      // Default to the first initialized round
+      targetRoundId = initializedRounds.results[0].id as string;
+    } else {
+      // Verify the specified round is initialized
+      const round = await c.env.DB.prepare(
+        'SELECT id, is_initialized FROM hackathon_rounds WHERE id = ? AND hackathon_id = ?'
+      ).bind(body.round_id, hackathon.id).first<{ id: string; is_initialized: number }>();
+
+      if (!round) {
+        return errorResponse(c, 404, 'ROUND_NOT_FOUND', 'Round not found');
+      }
+      if (!round.is_initialized) {
+        return errorResponse(c, 403, 'ROUND_NOT_INITIALIZED', 'This round has not been initialized yet. Submissions are not open.');
+      }
+      targetRoundId = body.round_id;
+    }
   }
 
   // Mark any existing final submissions as non-final
@@ -113,10 +142,10 @@ submissions.post('/', authMiddleware, async (c) => {
   const now = new Date().toISOString();
 
   await c.env.DB.prepare(
-    `INSERT INTO submissions (id, hackathon_id, team_id, title, description, repo_url, demo_url, video_url, slide_url, is_final, submitted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+    `INSERT INTO submissions (id, hackathon_id, team_id, round_id, title, description, repo_url, demo_url, video_url, slide_url, is_final, submitted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
   ).bind(
-    id, hackathon.id, membership.team_id,
+    id, hackathon.id, membership.team_id, targetRoundId,
     body.title, body.description || '',
     body.repo_url, body.demo_url || '', body.video_url || '', body.slide_url || '',
     now

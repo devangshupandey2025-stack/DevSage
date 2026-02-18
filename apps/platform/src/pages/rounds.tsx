@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   Zap,
+  ZapOff,
   Flag,
   Circle,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ interface Round {
   round_number: number;
   status: string;
   type: string | null;
+  is_initialized: number;
   submission_deadline: string | null;
   created_at: string;
 }
@@ -88,11 +90,15 @@ function RoundCard({
   index,
   total,
   onDelete,
+  onToggleInit,
+  initializingId,
 }: {
   round: Round;
   index: number;
   total: number;
   onDelete: (id: string) => void;
+  onToggleInit: (round: Round) => void;
+  initializingId: string | null;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -140,7 +146,7 @@ function RoundCard({
 
         {/* Connector line */}
         {!isLast && (
-          <div className="relative mt-1 w-px flex-1 min-h-[20px] overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <div className="relative mt-1 w-px flex-1 min-h-5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
             {round.status === 'active' && (
               <motion.div
                 className="absolute top-0 left-0 w-full"
@@ -188,6 +194,15 @@ function RoundCard({
                   >
                     {cfg.label}
                   </span>
+                  {round.is_initialized ? (
+                    <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-[#CCFF00]/10 text-[#CCFF00]">
+                      Submissions Open
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-white/25">
+                      Not Initialized
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-4 text-[11px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
@@ -208,6 +223,30 @@ function RoundCard({
                 </div>
               </div>
 
+              {/* Initialize toggle */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onToggleInit(round); }}
+                disabled={initializingId === round.id}
+                className={`shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 border ${
+                  round.is_initialized
+                    ? 'border-red-500/20 bg-red-500/8 text-red-400 hover:bg-red-500/15'
+                    : 'border-[#CCFF00]/20 bg-[#CCFF00]/8 text-[#CCFF00] hover:bg-[#CCFF00]/15'
+                }`}
+              >
+                {initializingId === round.id ? (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                    className="h-3 w-3 rounded-full border-2 border-current/20 border-t-current"
+                  />
+                ) : round.is_initialized ? (
+                  <ZapOff className="h-3 w-3" />
+                ) : (
+                  <Zap className="h-3 w-3" />
+                )}
+                {round.is_initialized ? 'Un-initialize' : 'Initialize'}
+              </button>
+
               {/* Delete */}
               <AnimatePresence mode="wait">
                 {confirmDelete ? (
@@ -220,7 +259,7 @@ function RoundCard({
                   >
                     <button
                       onClick={() => setConfirmDelete(false)}
-                      className="rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-white/30 hover:text-white/50 transition-colors"
+                      className="rounded-lg border border-white/8 px-2.5 py-1.5 text-[11px] text-white/30 hover:text-white/50 transition-colors"
                     >
                       Cancel
                     </button>
@@ -320,6 +359,7 @@ export function RoundsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [initializingId, setInitializingId] = useState<string | null>(null);
 
   const fetchRounds = async () => {
     if (!slug) return;
@@ -339,10 +379,11 @@ export function RoundsPage() {
     if (!slug || !newName.trim()) return;
     setCreating(true);
     try {
+      const nextNumber = rounds.length > 0 ? Math.max(...rounds.map(r => r.round_number)) + 1 : 1;
       await apiRequest(`/api/v1/hackathons/${slug}/rounds`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim(), round_number: rounds.length + 1 }),
+        body: JSON.stringify({ name: newName.trim(), round_number: nextNumber }),
       });
       toast.success('Round created');
       setNewName('');
@@ -362,6 +403,25 @@ export function RoundsPage() {
       fetchRounds();
     } catch {
       toast.error('Failed to delete round');
+    }
+  };
+
+  const handleToggleInit = async (round: Round) => {
+    if (!slug) return;
+    setInitializingId(round.id);
+    try {
+      const newValue = !round.is_initialized;
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds/${round.id}/initialize`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_initialized: newValue }),
+      });
+      toast.success(newValue ? `Round "${round.name}" initialized — submissions open` : `Round "${round.name}" un-initialized — submissions closed`);
+      fetchRounds();
+    } catch {
+      toast.error('Failed to update round initialization');
+    } finally {
+      setInitializingId(null);
     }
   };
 
@@ -399,7 +459,7 @@ export function RoundsPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2"
+              className="flex items-center gap-2 rounded-xl border border-white/6 bg-white/2 px-4 py-2"
             >
               <span className="text-lg font-black" style={{ color: stat.color }}>{stat.value}</span>
               <span className="text-[10px] uppercase tracking-widest text-white/25">{stat.label}</span>
@@ -409,7 +469,7 @@ export function RoundsPage() {
           {/* Progress bar */}
           {rounds.length > 0 && (
             <div className="flex-1 flex items-center gap-3 ml-2">
-              <div className="flex-1 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
                 <motion.div
                   className="h-full rounded-full"
                   style={{ background: 'linear-gradient(90deg, #34D399, #CCFF00)' }}
@@ -460,12 +520,14 @@ export function RoundsPage() {
               index={i}
               total={rounds.length}
               onDelete={handleDelete}
+              onToggleInit={handleToggleInit}
+              initializingId={initializingId}
             />
           ))}
 
           {/* End cap */}
           <motion.div variants={item} className="flex items-center gap-5 pl-0">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-white/[0.08]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-white/8">
               <Trophy className="h-4 w-4 text-white/15" />
             </div>
             <span className="text-xs text-white/20 uppercase tracking-widest">Final results</span>
