@@ -536,92 +536,26 @@ interface HackathonEvent {
 const hackathonEvents: HackathonEvent[] = [
   {
     id: 1,
-    title: 'AI/ML Frontier',
-    image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=600&fit=crop',
-    category: 'Artificial Intelligence',
-    date: 'Mar 15-17, 2025',
-    prize: '$50,000',
-    participants: '2,400+',
+    title: 'DevHouse 2026',
+    image: 'data:image/png;base64,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',
+    category: 'Open Innovation',
+    date: 'Mar 27-29, 2026',
+    prize: '$1,300',
+    participants: '400+',
     gradient: 'from-violet-600 to-purple-900',
     accent: '#8B5CF6',
   },
   {
     id: 2,
-    title: 'Web3 Summit',
-    image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&h=600&fit=crop',
-    category: 'Blockchain',
-    date: 'Apr 5-7, 2025',
-    prize: '$75,000',
-    participants: '1,800+',
-    gradient: 'from-cyan-600 to-blue-900',
-    accent: '#06B6D4',
-  },
-  {
-    id: 3,
-    title: 'Green Tech Hack',
-    image: 'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=800&h=600&fit=crop',
-    category: 'Sustainability',
-    date: 'May 20-22, 2025',
-    prize: '$40,000',
-    participants: '1,200+',
-    gradient: 'from-emerald-600 to-green-900',
-    accent: '#10B981',
-  },
-  {
-    id: 4,
-    title: 'DevOps Challenge',
-    image: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=600&fit=crop',
-    category: 'Infrastructure',
-    date: 'Jun 10-12, 2025',
-    prize: '$35,000',
-    participants: '900+',
-    gradient: 'from-orange-600 to-red-900',
-    accent: '#F97316',
-  },
-  {
-    id: 5,
-    title: 'Mobile First',
-    image: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&h=600&fit=crop',
-    category: 'Mobile Development',
-    date: 'Jul 8-10, 2025',
-    prize: '$45,000',
-    participants: '1,500+',
-    gradient: 'from-pink-600 to-rose-900',
-    accent: '#EC4899',
-  },
-  {
-    id: 6,
-    title: 'Cybersecurity CTF',
-    image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&h=600&fit=crop',
-    category: 'Security',
-    date: 'Aug 15-17, 2025',
-    prize: '$60,000',
-    participants: '2,000+',
-    gradient: 'from-red-600 to-rose-900',
-    accent: '#EF4444',
-  },
-  {
-    id: 7,
-    title: 'Data Science Sprint',
-    image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=600&fit=crop',
-    category: 'Data & Analytics',
-    date: 'Sep 5-7, 2025',
-    prize: '$55,000',
-    participants: '1,700+',
-    gradient: 'from-indigo-600 to-violet-900',
-    accent: '#6366F1',
-  },
-  {
-    id: 8,
-    title: 'GameDev Jam',
-    image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800&h=600&fit=crop',
-    category: 'Game Development',
-    date: 'Oct 20-22, 2025',
-    prize: '$30,000',
-    participants: '1,100+',
-    gradient: 'from-amber-600 to-yellow-900',
-    accent: '#F59E0B',
-  },
+    title: 'HackKnight 2026',
+    image: 'data:image/png;base64,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',
+    category: 'Open Innovation',
+    date: 'Mar 31 - Apr 1,  2026',
+    prize: '$1,300',
+    participants: '400+',
+    gradient: 'from-green-600 to-green-900',
+    accent: '#22C55E',
+  }
 ];
 
 const HackathonGallery = () => {
@@ -692,7 +626,9 @@ const HackathonGallery = () => {
             className="hidden md:flex items-center gap-2 text-[#CCFF00] text-sm font-semibold uppercase tracking-wider cursor-pointer hover:gap-3 transition-all"
             whileHover={{ x: 4 }}
           >
-            View all <ArrowRight className="w-4 h-4" />
+            View all <ArrowRight className="w-4 h-4" 
+            onClick={() => window.open("https://eventhubcc.vit.ac.in/EventHub/", "_blank")}
+            />
           </motion.span>
         </motion.div>
       </div>
@@ -737,11 +673,10 @@ const HackathonGallery = () => {
 
               {/* Image */}
               <div className="relative h-50 overflow-hidden">
-                <div className={`absolute inset-0 bg-linear-to-br ${event.gradient}`} />
                 <img
                   src={event.image}
                   alt={event.title}
-                  className="w-full h-full object-cover mix-blend-overlay opacity-45 group-hover:scale-110 transition-transform duration-700"
+                  className="w-full h-full object-cover opacity-100 group-hover:scale-110 transition-transform duration-700"
                   draggable={false}
                 />
                 {/* Year badge */}
@@ -790,7 +725,9 @@ const HackathonGallery = () => {
                     whileHover={{ scale: 1.15 }}
                     className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
                   >
-                    <ArrowUpRight className="w-4 h-4 text-white/50" />
+                    <ArrowUpRight className="w-4 h-4 text-white/50" 
+                    onClick={() => window.open("https://eventhubcc.vit.ac.in/EventHub/", "_blank")}
+                    />
                   </motion.div>
                 </div>
               </div>
