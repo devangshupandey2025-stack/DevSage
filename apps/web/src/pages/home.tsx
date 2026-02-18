@@ -31,6 +31,9 @@ import {
   Instagram,
   ExternalLink,
   Mail,
+  Check,
+  Sparkles,
+  Building2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -41,7 +44,7 @@ import deeptanshuImg from '@/photos/deeptanshu.png';
 import ibhanImg from '@/photos/ibhan.jpeg';
 import devangshuImg from '@/photos/devangshu.png';
 import srijanImg from '@/photos/srijan.png';
-import logo from '@/photos/logo.jpeg';
+import logo from '@/photos/logo.png';
 
 /* ─────────────────────────────────────────────
    NAVBAR
@@ -997,6 +1000,365 @@ const TeamSection = () => {
 };
 
 /* ─────────────────────────────────────────────
+   PRICING SECTION
+   ───────────────────────────────────────────── */
+interface PricingTier {
+  id: number;
+  name: string;
+  price: string;
+  period: string;
+  badge: string;
+  tagline: string;
+  accent: string;
+  gradient: string;
+  icon: LucideIcon;
+  features: string[];
+  highlight: boolean;
+  cta: string;
+}
+
+const pricingTiers: PricingTier[] = [
+  {
+    id: 1,
+    name: 'Basic',
+    price: '₹3,999',
+    period: '/ semester',
+    badge: 'Starter',
+    tagline: 'Perfect for individuals and hobbyists exploring hackathons.',
+    accent: '#38bdf8',
+    gradient: 'from-sky-600 to-sky-900',
+    icon: Zap,
+    highlight: false,
+    cta: 'Get Started',
+    features: [
+      'Up to 2 active hackathons',
+      'Basic analytics dashboard',
+      'Team creation & invites',
+      'Submission management',
+      'Community support',
+      'Public leaderboard access',
+    ],
+  },
+  {
+    id: 2,
+    name: 'Developer Pro',
+    price: '₹6,999',
+    period: '/ semester',
+    badge: 'Most Popular',
+    tagline: 'Built for clubs and professional developer teams.',
+    accent: '#CCFF00',
+    gradient: 'from-lime-500 to-emerald-900',
+    icon: Sparkles,
+    highlight: true,
+    cta: 'Go Pro',
+    features: [
+      'Up to 10 active hackathons',
+      'Full analytics & regional maps',
+      'Advanced judging workflows',
+      'Custom rubric builder',
+      'GitHub webhook integration',
+      'Priority email support',
+      'Organizer & co-organizer roles',
+    ],
+  },
+  {
+    id: 3,
+    name: 'Developer Max',
+    price: '₹9,999',
+    period: '/ semester',
+    badge: 'Power Users',
+    tagline: 'For institutions running multiple concurrent hackathons.',
+    accent: '#c084fc',
+    gradient: 'from-purple-600 to-violet-900',
+    icon: Rocket,
+    highlight: false,
+    cta: 'Go Max',
+    features: [
+      'Unlimited active hackathons',
+      'Multi-round judging system',
+      'Custom domain per event',
+      'Auto-generated participant sites',
+      'Audit trail & compliance logs',
+      'Cron-based deadline reminders',
+      'Dedicated onboarding session',
+      'SLA-backed response time',
+    ],
+  },
+  {
+    id: 4,
+    name: 'Enterprise',
+    price: 'Custom',
+    period: 'pricing',
+    badge: 'Enterprise',
+    tagline: 'Tailored for large corporations and university consortiums.',
+    accent: '#f59e0b',
+    gradient: 'from-amber-600 to-orange-900',
+    icon: Building2,
+    highlight: false,
+    cta: 'Contact Sales',
+    features: [
+      'Unlimited everything',
+      'White-label hackathon sites',
+      'SSO / SAML integration',
+      'Advanced RBAC & audit logs',
+      'Dedicated infrastructure',
+      'Custom AI judging models',
+      'API access & webhooks',
+      '24/7 enterprise support',
+    ],
+  },
+];
+
+const CONTACT_EMAIL = 'contact@devsage.org';
+
+const PricingSection = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-100px' });
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
+
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollStart = useRef(0);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    isDragging.current = true;
+    startX.current = e.pageX;
+    scrollStart.current = scrollRef.current.scrollLeft;
+    scrollRef.current.style.cursor = 'grabbing';
+    scrollRef.current.style.userSelect = 'none';
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = scrollStart.current - (e.pageX - startX.current);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+    if (scrollRef.current) {
+      scrollRef.current.style.cursor = 'grab';
+      scrollRef.current.style.userSelect = '';
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => { isDragging.current = false; };
+    window.addEventListener('mouseup', handler);
+    return () => window.removeEventListener('mouseup', handler);
+  }, []);
+
+  const openContact = useCallback((tier: PricingTier) => {
+    if (isDragging.current) return;
+    const subject = encodeURIComponent(`DevSage ${tier.name} Plan Inquiry`);
+    const body = encodeURIComponent(
+      `Hi DevSage team,\n\nI'm interested in the ${tier.name} plan (${tier.price}${tier.price !== 'Custom' ? tier.period : ''}).\n\nPlease get in touch with me.\n\nThanks!`
+    );
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${CONTACT_EMAIL}&su=${subject}&body=${body}`, '_blank');
+  }, []);
+
+  return (
+    <section id="pricing" className="py-32 bg-black relative" ref={ref}>
+      {/* Subtle grid overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.015)_1px,transparent_1px)] bg-size-[80px_80px] pointer-events-none" />
+
+      <div className="max-w-360 mx-auto px-6 md:px-12 mb-12 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.8 }}
+          className="flex items-end justify-between"
+        >
+          <div>
+            <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
+              Transparent Pricing
+            </span>
+            <h2 className="text-4xl md:text-6xl font-black text-white mt-4 tracking-tight leading-[0.95]">
+              Pick your
+              <br />
+              <span
+                className="text-transparent"
+                style={{ WebkitTextStroke: '1.5px rgba(255,255,255,0.2)' }}
+              >
+                Plan.
+              </span>
+            </h2>
+          </div>
+          <motion.div
+            className="hidden md:flex items-center gap-2 text-[#CCFF00] text-sm font-semibold uppercase tracking-wider cursor-pointer"
+            whileHover={{ x: 4 }}
+            onClick={() =>
+              window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${CONTACT_EMAIL}&su=${encodeURIComponent('DevSage Pricing Inquiry')}`, '_blank')
+            }
+          >
+            <span className="hover:text-white transition-colors">Talk to us</span>
+            <ArrowRight className="w-4 h-4" />
+          </motion.div>
+        </motion.div>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.8, delay: 0.15 }}
+          className="text-white/40 text-sm mt-5 max-w-lg"
+        >
+          All plans billed per semester. Click any card to get in touch via Gmail — we'll respond within 24 hours.
+        </motion.p>
+      </div>
+
+      {/* Drag-scrollable card gallery */}
+      <div
+        ref={scrollRef}
+        className={`
+          flex gap-5 overflow-x-auto px-6 md:px-12 pb-6 cursor-grab active:cursor-grabbing select-none
+          scroll-smooth snap-x snap-mandatory touch-pan-x
+          [&::-webkit-scrollbar]:h-2
+          [&::-webkit-scrollbar-track]:bg-transparent
+          [&::-webkit-scrollbar-track]:rounded-full
+          [&::-webkit-scrollbar-thumb]:bg-[#CCFF00]
+          [&::-webkit-scrollbar-thumb]:rounded-full
+          [&::-webkit-scrollbar-thumb]:hover:bg-[#CCFF00]/80
+        `}
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#CCFF00 transparent',
+          WebkitOverflowScrolling: 'touch',
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {pricingTiers.map((tier, i) => {
+          const Icon = tier.icon;
+          const isHovered = hoveredId === tier.id;
+          return (
+            <motion.div
+              key={tier.id}
+              initial={{ opacity: 0, y: 40 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ delay: i * 0.1, duration: 0.6 }}
+              className="shrink-0 w-[320px] md:w-[360px] group snap-center"
+              onMouseEnter={() => setHoveredId(tier.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              onClick={() => openContact(tier)}
+              style={{ cursor: 'pointer' }}
+            >
+              <div
+                className="relative rounded-2xl overflow-hidden border transition-all duration-500 flex flex-col"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                  borderColor: isHovered ? tier.accent + '50' : tier.highlight ? tier.accent + '30' : 'rgba(255,255,255,0.06)',
+                  boxShadow: isHovered ? `0 0 40px ${tier.accent}20, 0 0 80px ${tier.accent}08` : tier.highlight ? `0 0 24px ${tier.accent}15` : 'none',
+                }}
+              >
+                {/* Top accent bar */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-[3px] z-20 transition-opacity duration-300"
+                  style={{
+                    background: `linear-gradient(90deg, transparent, ${tier.accent}, transparent)`,
+                    opacity: isHovered ? 1 : tier.highlight ? 0.8 : 0.4,
+                  }}
+                />
+
+                {/* Header gradient band */}
+                <div className={`relative h-48 bg-gradient-to-br ${tier.gradient} flex flex-col justify-between p-6 overflow-hidden`}>
+                  {/* Ambient glow circle */}
+                  <div
+                    className="absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl opacity-20 transition-opacity duration-500 group-hover:opacity-40"
+                    style={{ backgroundColor: tier.accent }}
+                  />
+
+                  {/* Badge */}
+                  <div className="flex items-center justify-between">
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-full backdrop-blur-sm"
+                      style={{
+                        color: tier.accent,
+                        backgroundColor: tier.accent + '20',
+                        border: `1px solid ${tier.accent}40`,
+                      }}
+                    >
+                      {tier.badge}
+                    </span>
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-sm"
+                      style={{ backgroundColor: tier.accent + '20', border: `1px solid ${tier.accent}40` }}
+                    >
+                      <Icon className="w-4 h-4" style={{ color: tier.accent }} />
+                    </div>
+                  </div>
+
+                  {/* Price */}
+                  <div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-black text-white tracking-tight">{tier.price}</span>
+                      <span className="text-white/50 text-sm font-medium">{tier.period}</span>
+                    </div>
+                    <p className="text-white/60 text-xs mt-1 leading-relaxed">{tier.tagline}</p>
+                  </div>
+                </div>
+
+                {/* Plan name */}
+                <div className="px-6 pt-5 pb-2">
+                  <h3 className="text-xl font-black text-white tracking-tight">
+                    {tier.name}
+                  </h3>
+                </div>
+
+                {/* Features list */}
+                <div className="px-6 pb-6 flex flex-col flex-1 justify-between gap-5">
+                  <ul className="space-y-2.5">
+                    {tier.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5 text-sm text-white/60 group-hover:text-white/75 transition-colors duration-300">
+                        <Check
+                          className="w-4 h-4 mt-0.5 shrink-0"
+                          style={{ color: tier.accent }}
+                        />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* CTA button */}
+                  <motion.div
+                    className="flex items-center justify-between mt-2 pt-5 border-t"
+                    style={{ borderColor: 'rgba(255,255,255,0.06)' }}
+                    whileHover={{ scale: 1.01 }}
+                  >
+                    <span
+                      className="text-sm font-bold tracking-wide transition-colors duration-300"
+                      style={{ color: isHovered ? tier.accent : 'rgba(255,255,255,0.4)' }}
+                    >
+                      {tier.cta}
+                    </span>
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
+                      style={{
+                        backgroundColor: isHovered ? tier.accent + '20' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${isHovered ? tier.accent + '50' : 'rgba(255,255,255,0.08)'}`,
+                      }}
+                    >
+                      <Mail className="w-3.5 h-3.5" style={{ color: isHovered ? tier.accent : 'rgba(255,255,255,0.4)' }} />
+                    </div>
+                  </motion.div>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Bottom rule */}
+      <div className="max-w-360 mx-auto px-6 md:px-12 mt-4">
+        <div className="h-px bg-white/6" />
+      </div>
+    </section>
+  );
+};
+
+/* ─────────────────────────────────────────────
    CTA SECTION
    ───────────────────────────────────────────── */
 const CTASection = () => {
@@ -1132,6 +1494,7 @@ export function HomePage() {
       <PartnersSection />
       <SplitSection />
       <TeamSection />
+      <PricingSection />
       <CTASection />
       <Footer />
     </div>
