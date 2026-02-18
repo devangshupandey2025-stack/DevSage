@@ -1132,8 +1132,8 @@ const Footer = () => {
   const socialLinks: { icon: LucideIcon; href: string; isEmail?: boolean }[] = [
     { icon: Mail, href: 'https://mail.google.com/mail/?view=cm&fs=1&to=admin@devsage.org&su=Project%20Inquiry' },
     { icon: Twitter, href: '#' },
-    { icon: Linkedin, href: '#' },
-    { icon: Instagram, href: '#' },
+    { icon: Linkedin, href: 'https://www.linkedin.com/in/devsage/' },
+    { icon: Instagram, href: 'https://www.instagram.com/devsage26/' },
   ];
   return (
     <footer className="bg-black border-t border-white/6">

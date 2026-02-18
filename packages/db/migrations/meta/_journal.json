@@ -22,6 +22,20 @@
       "when": 1771157717305,
       "tag": "0002_v3_clean_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1771157717400,
+      "tag": "0003_email_password_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1771157717500,
+      "tag": "0004_seed_accounts",
+      "breakpoints": true
     }
   ]
 }
