@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { href, useNavigate } from 'react-router-dom';
 import {
   motion,
   useScroll,
@@ -47,6 +47,7 @@ import ibhanImg from '@/photos/ibhan.jpeg';
 import devangshuImg from '@/photos/devangshu.png';
 import srijanImg from '@/photos/srijan.png';
 import logo from '@/photos/logo.png';
+import { fileURLToPath } from 'url';
 
 /* ─────────────────────────────────────────────
    NAVBAR
@@ -1904,9 +1905,16 @@ const Footer = () => {
           <div className="md:col-span-1">
             <p className="text-white/50 text-xs font-bold uppercase tracking-[0.15em] mb-4">Legal</p>
             <ul className="space-y-2.5">
-              {['Privacy Policy', 'Terms of Service', 'Cookie Policy'].map((item) => (
+              {['Privacy Policy'].map((item) => (
                 <li key={item}>
-                  <span className="text-sm text-white/30 cursor-default">{item}</span>
+                  <a
+                    href="/policy.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-white/30 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {item}
+                  </a>
                 </li>
               ))}
             </ul>
