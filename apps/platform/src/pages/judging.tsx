@@ -82,9 +82,9 @@ export function JudgingPage() {
   const fetchData = async () => {
     try {
       const [judgesRes, leaderboardRes, rubricRes] = await Promise.allSettled([
-        apiRequest<{ data: Judge[] }>(`/api/v1/hackathons/${slug}/judges`),
-        apiRequest<{ data: LeaderboardEntry[] }>(`/api/v1/hackathons/${slug}/leaderboard`),
-        apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/rubric`),
+        apiRequest<{ data: Judge[] }>(`/api/v1/hackathons/${slug}/judging/judges`),
+        apiRequest<{ data: LeaderboardEntry[] }>(`/api/v1/hackathons/${slug}/judging/leaderboard`),
+        apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/judging/rubric`),
       ]);
       if (judgesRes.status === 'fulfilled') setJudges(judgesRes.value.data ?? []);
       if (leaderboardRes.status === 'fulfilled') setLeaderboard(leaderboardRes.value.data ?? []);
@@ -99,9 +99,9 @@ export function JudgingPage() {
   const inviteJudge = async () => {
     if (!inviteUserId.trim()) return;
     try {
-      await apiRequest(`/api/v1/hackathons/${slug}/judges`, {
+      await apiRequest(`/api/v1/hackathons/${slug}/judging/judges`, {
         method: 'POST',
-        body: JSON.stringify({ userId: inviteUserId }),
+        body: JSON.stringify({ user_id: inviteUserId }),
       });
       toast.success('Judge invited!');
       setInviteDialogOpen(false);

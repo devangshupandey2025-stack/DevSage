@@ -54,6 +54,23 @@ invites.post('/team/:token', authMiddleware, async (c) => {
   return successResponse(c, { accepted: true, team_id: invite.team_id });
 });
 
+// Get judge invite details
+invites.get('/judge/:id/details', async (c) => {
+  const judgeId = c.req.param('id');
+  const invite = await c.env.DB.prepare(
+    `SELECT j.id, j.invite_status as status, j.invited_at as expires_at,
+            h.name as hackathon_name, h.slug as hackathon_slug,
+            u.name as inviter_name
+     FROM judges j
+     JOIN hackathons h ON j.hackathon_id = h.id
+     LEFT JOIN users u ON j.invited_by = u.id
+     WHERE j.id = ?`
+  ).bind(judgeId).first();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  return successResponse(c, invite);
+});
+
 // Accept judge invite (lookup by judge id)
 invites.post('/judge/:id', authMiddleware, async (c) => {
   const user = c.get('user')!;
