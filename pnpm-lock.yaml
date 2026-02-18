@@ -368,6 +368,28 @@ importers:
         specifier: 4.63.0
         version: 4.63.0(@cloudflare/workers-types@4.20260206.0)
 
+  apps/web/apps/web:
+    dependencies:
+      '@devsage/web':
+        specifier: file:../..
+        version: file:apps/web(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)
+      gsap:
+        specifier: ^3.14.2
+        version: 3.14.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.28
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.28)
+
   packages/config: {}
 
   packages/db:
@@ -593,6 +615,9 @@ packages:
   '@csstools/css-tokenizer@3.0.4':
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
+
+  '@devsage/web@file:apps/web':
+    resolution: {directory: apps/web, type: directory}
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
@@ -3994,6 +4019,32 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
 
   '@csstools/css-tokenizer@3.0.4': {}
+
+  '@devsage/web@file:apps/web(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)':
+    dependencies:
+      '@devsage/shared': link:packages/shared
+      '@radix-ui/react-dialog': 1.1.15(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-dropdown-menu': 2.1.16(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-label': 2.1.8(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-slot': 1.2.4(@types/react@18.3.28)(react@18.3.1)
+      '@radix-ui/react-tabs': 1.1.13(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tanstack/react-query': 5.90.21(react@18.3.1)
+      class-variance-authority: 0.7.1
+      clsx: 2.1.1
+      framer-motion: 11.18.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      gsap: 3.14.2
+      lucide-react: 0.468.0(react@18.3.1)
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      react-router-dom: 7.13.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      sonner: 1.7.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      tailwind-merge: 2.6.1
+      tailwindcss: 4.1.18
+      tailwindcss-animate: 1.0.7(tailwindcss@4.1.18)
+    transitivePeerDependencies:
+      - '@emotion/is-prop-valid'
+      - '@types/react'
+      - '@types/react-dom'
 
   '@drizzle-team/brocli@0.10.2': {}
 

@@ -89,11 +89,11 @@ const Navbar = () => {
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         className={`fixed top-0 w-full z-50 transition-all duration-500 ${
           scrolled
-            ? 'bg-black/90 backdrop-blur-xl border-b border-white/[0.06]'
+            ? 'bg-black/90 backdrop-blur-xl border-b border-white/6'
             : 'bg-transparent'
         }`}
       >
-        <div className="max-w-[1440px] mx-auto px-6 md:px-12 h-18 md:h-20 flex items-center justify-between">
+        <div className="max-w-360 mx-auto px-6 md:px-12 h-18 md:h-20 flex items-center justify-between">
           <motion.div
               className="relative z-10 cursor-pointer flex items-center gap-3"
               whileHover={{ scale: 1.05 }}
@@ -123,7 +123,7 @@ const Navbar = () => {
                 transition={{ delay: 0.1 * i }}
               >
                 {link.label}
-                <span className="absolute -bottom-1.5 left-0 w-0 h-[2px] bg-[#CCFF00] group-hover:w-full transition-all duration-300" />
+                <span className="absolute -bottom-1.5 left-0 w-0 h-0.5 bg-[#CCFF00] group-hover:w-full transition-all duration-300" />
               </motion.button>
             ))}
           </div>
@@ -213,16 +213,16 @@ const Hero = () => {
           alt=""
           className="absolute inset-0 w-full h-full object-cover opacity-150"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-black via-black/80 to-black/40" />
+        <div className="absolute inset-0 bg-linear-to-r from-black/60 to-transparent" />
       </div>
 
       {/* Grid overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.02)_1px,transparent_1px)] bg-[size:80px_80px]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(204,255,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(204,255,0,0.02)_1px,transparent_1px)] bg-size-[80px_80px]" />
 
       <motion.div
         style={{ y, opacity }}
-        className="relative z-10 max-w-[1440px] mx-auto px-6 md:px-12 w-full"
+        className="relative z-10 max-w-360 mx-auto px-6 md:px-12 w-full"
       >
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
           {/* Left – main headline */}
@@ -447,9 +447,9 @@ const BentoGrid = () => {
   return (
     <section id="platform" className="py-32 bg-black relative" ref={ref}>
       {/* Subtle grid background */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:60px_60px]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-size-[60px_60px]" />
 
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
+      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
         {/* Section header — split layout */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -487,7 +487,7 @@ const BentoGrid = () => {
                 initial={{ opacity: 0, y: 40 }}
                 animate={isInView ? { opacity: 1, y: 0 } : {}}
                 transition={{ delay: i * 0.08, duration: 0.6 }}
-                className={`${card.colSpan} ${card.rowSpan ?? ''} group relative bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden hover:border-white/[0.12] transition-all duration-500`}
+                className={`${card.colSpan} ${card.rowSpan ?? ''} group relative bg-white/2 border border-white/6 rounded-2xl overflow-hidden hover:border-white/12 transition-all duration-500`}
               >
                 {/* Optional background image */}
                 {card.image && (
@@ -501,7 +501,7 @@ const BentoGrid = () => {
                 )}
                 {/* Hover gradient */}
                 <div
-                  className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
+                  className={`absolute inset-0 bg-linear-to-br ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
                 />
 
                 <div className="relative z-10 p-7 h-full flex flex-col justify-between">
@@ -674,7 +674,7 @@ const HackathonGallery = () => {
 
   return (
     <section id="developers" className="py-32 bg-black relative" ref={containerRef}>
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 mb-12">
+      <div className="max-w-360 mx-auto px-6 md:px-12 mb-12">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -734,9 +734,9 @@ const HackathonGallery = () => {
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ delay: i * 0.08, duration: 0.6 }}
-            className="shrink-0 w-[320px] md:w-[380px] group snap-center"
+            className="shrink-0 w-[320px] md:w-95 group snap-center"
           >
-            <div className="relative h-[460px] rounded-2xl overflow-hidden bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-500">
+            <div className="relative h-115 rounded-2xl overflow-hidden bg-white/2 border border-white/6 hover:border-white/12 transition-all duration-500">
               {/* Colored top accent bar */}
               <div
                 className="absolute top-0 left-0 right-0 h-1 z-20"
@@ -744,8 +744,8 @@ const HackathonGallery = () => {
               />
 
               {/* Image */}
-              <div className="relative h-[200px] overflow-hidden">
-                <div className={`absolute inset-0 bg-gradient-to-br ${event.gradient}`} />
+              <div className="relative h-50 overflow-hidden">
+                <div className={`absolute inset-0 bg-linear-to-br ${event.gradient}`} />
                 <img
                   src={event.image}
                   alt={event.title}
@@ -766,7 +766,7 @@ const HackathonGallery = () => {
               </div>
 
               {/* Content */}
-              <div className="p-6 flex flex-col justify-between h-[260px]">
+              <div className="p-6 flex flex-col justify-between h-65">
                 <div>
                   <span
                     className="text-[10px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-full"
@@ -796,7 +796,7 @@ const HackathonGallery = () => {
                   </div>
                   <motion.div
                     whileHover={{ scale: 1.15 }}
-                    className="w-9 h-9 rounded-full bg-white/[0.05] flex items-center justify-center cursor-pointer hover:bg-white/[0.1] transition-colors"
+                    className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors"
                   >
                     <ArrowUpRight className="w-4 h-4 text-white/50" />
                   </motion.div>
@@ -809,8 +809,8 @@ const HackathonGallery = () => {
       </div>
 
       {/* Custom gallery scrollbar */}
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 mt-4">
-        <div className="h-px bg-white/[0.06]" />
+      <div className="max-w-360 mx-auto px-6 md:px-12 mt-4">
+        <div className="h-px bg-white/6" />
       </div>
     </section>
   );
@@ -829,8 +829,8 @@ const PartnersSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-80px' });
 
   return (
-    <section id="hackathons" ref={ref} className="py-20 bg-black border-y border-white/[0.04]">
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12">
+    <section id="hackathons" ref={ref} className="py-20 bg-black border-y border-white/4">
+      <div className="max-w-360 mx-auto px-6 md:px-12">
         <motion.p
           initial={{ opacity: 0 }}
           animate={isInView ? { opacity: 1 } : {}}
@@ -866,7 +866,7 @@ const SplitSection = () => {
 
   return (
     <section id="solutions" ref={ref} className="bg-black relative overflow-hidden">
-      <div className="grid grid-cols-1 md:grid-cols-2 min-h-[700px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 min-h-175">
         {/* Left — dark with background image */}
         <motion.div
           initial={{ opacity: 0, x: -60 }}
@@ -881,7 +881,7 @@ const SplitSection = () => {
               alt=""
               className="w-full h-full object-cover opacity-10 group-hover:opacity-15 group-hover:scale-110 transition-all duration-1000"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/90 to-black/70" />
+            <div className="absolute inset-0 bg-linear-to-r from-black via-black/90 to-black/70" />
           </div>
           <div className="relative z-10">
             <span className="text-[#CCFF00] text-xs font-bold tracking-[0.2em] uppercase">
@@ -900,7 +900,7 @@ const SplitSection = () => {
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={`avatar-${String(i)}`}
-                    className="w-10 h-10 rounded-full bg-gradient-to-br from-[#CCFF00] to-green-600 border-2 border-black"
+                    className="w-10 h-10 rounded-full bg-linear-to-br from-[#CCFF00] to-green-600 border-2 border-black"
                   />
                 ))}
               </div>
@@ -988,7 +988,7 @@ const TeamSection = () => {
         background: 'linear-gradient(180deg, #000000 0%, #080c24 30%, #0c1445 60%, #0a0f2e 85%, #000000 100%)',
       }}
     >
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
+      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
         {/* Section header */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -1001,7 +1001,7 @@ const TeamSection = () => {
           </p>
           <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white leading-[0.9]">
             Meet the{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
+            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 to-indigo-400">
               Builders
             </span>
           </h2>
@@ -1084,10 +1084,10 @@ const CTASection = () => {
     <section id="pricing" ref={ref} className="py-40 bg-black relative overflow-hidden">
       {/* Large blurred glow */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-[800px] h-[800px] bg-[#CCFF00]/[0.06] rounded-full blur-[250px]" />
+        <div className="w-200 h-200 bg-[#CCFF00]/6 rounded-full blur-[250px]" />
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 relative z-10">
+      <div className="max-w-360 mx-auto px-6 md:px-12 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 50 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
@@ -1136,8 +1136,8 @@ const Footer = () => {
     { icon: Instagram, href: '#' },
   ];
   return (
-    <footer className="bg-black border-t border-white/[0.06]">
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12">
+    <footer className="bg-black border-t border-white/6">
+      <div className="max-w-360 mx-auto px-6 md:px-12">
         {/* Main footer content */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-10 py-20">
           {/* Brand */}
@@ -1158,7 +1158,7 @@ const Footer = () => {
                     href={social.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/[0.06] hover:border-[#CCFF00]/30"
+                    className="w-9 h-9 rounded-full bg-white/4 flex items-center justify-center hover:bg-[#CCFF00]/15 transition-all duration-300 group cursor-pointer border border-white/6 hover:border-[#CCFF00]/30"
                   >
                     <Icon className="w-4 h-4 text-white/35 group-hover:text-[#CCFF00] transition-colors" />
                   </a>
@@ -1170,7 +1170,7 @@ const Footer = () => {
         </div>
 
         {/* Bottom bar */}
-        <div className="border-t border-white/[0.06] py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="border-t border-white/6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-white/20 text-xs">
             &copy; {new Date().getFullYear()}
           </p>

@@ -204,7 +204,7 @@ export function DashboardPage() {
                 New Hackathon
               </motion.button>
             </DialogTrigger>
-            <DialogContent className="border-white/[0.08] bg-black/95 backdrop-blur-xl sm:max-w-lg">
+            <DialogContent className="border-white/8 bg-black/95 backdrop-blur-xl sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle className="text-white text-xl font-black">Create Hackathon</DialogTitle>
                 <DialogDescription className="text-white/35">
@@ -218,7 +218,7 @@ export function DashboardPage() {
                     value={formData.title}
                     onChange={(e) => setFormData((f) => ({ ...f, title: e.target.value }))}
                     placeholder="e.g. AI Frontier Hackathon 2026"
-                    className="border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20"
+                    className="border-white/8hbg-white/3-white placeholder:text-white/20"
                   />
                 </div>
                 <div>
@@ -227,28 +227,28 @@ export function DashboardPage() {
                     value={formData.description}
                     onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
                     placeholder="A brief description of your hackathon"
-                    className="border-white/[0.08] bg-white/[0.03] text-white placeholder:text-white/20"
+                    className="border-white/8 bg-white/3-white placeholder:text-white/20"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Starts At *</label>
-                    <Input type="datetime-local" value={formData.startsAt} onChange={(e) => setFormData((f) => ({ ...f, startsAt: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                    <Input type="datetime-local" value={formData.startsAt} onChange={(e) => setFormData((f) => ({ ...f, startsAt: e.target.value }))} className="border-white/8 bg-white/3-white" />
                   </div>
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Submission Deadline *</label>
-                    <Input type="datetime-local" value={formData.submissionDeadline} onChange={(e) => setFormData((f) => ({ ...f, submissionDeadline: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                    <Input type="datetime-local" value={formData.submissionDeadline} onChange={(e) => setFormData((f) => ({ ...f, submissionDeadline: e.target.value }))} className="border-white/8 bg-white/3 text-white" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1.5 block">Max Team Size</label>
-                    <Input type="number" min={1} max={10} value={formData.maxTeamSize} onChange={(e) => setFormData((f) => ({ ...f, maxTeamSize: e.target.value }))} className="border-white/[0.08] bg-white/[0.03] text-white" />
+                    <Input type="number" min={1} max={10} value={formData.maxTeamSize} onChange={(e) => setFormData((f) => ({ ...f, maxTeamSize: e.target.value }))} className="border-white/8 bg-white/3-white" />
                   </div>
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateDialogOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/[0.06] hover:text-white">Cancel</Button>
+                <Button variant="outline" onClick={() => setCreateDialogOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white">Cancel</Button>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={createHackathon} disabled={creating} className="rounded-lg bg-[#CCFF00] px-5 py-2 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50">
                   {creating ? 'Creating…' : 'Create Hackathon'}
                 </motion.button>
@@ -286,11 +286,11 @@ export function DashboardPage() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={`skel-${String(i)}`} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-              <Skeleton className="h-4 w-1/3 bg-white/[0.06] mb-3" />
-              <Skeleton className="h-6 w-2/3 bg-white/[0.06] mb-4" />
-              <Skeleton className="h-3 w-full bg-white/[0.06] mb-2" />
-              <Skeleton className="h-3 w-3/4 bg-white/[0.06]" />
+            <div key={`skel-${String(i)}`} className="rounded-2xl border border-white/6 bg-white/2">
+              <Skeleton className="h-4 w-1/3 bg-white/6 mb-3" />
+              <Skeleton className="h-6 w-2/3 bg-white/6 mb-4" />
+              <Skeleton className="h-3 w-full bg-white/6 mb-2" />
+              <Skeleton className="h-3 w-3/4 bg-white/6" />
             </div>
           ))}
         </div>
@@ -313,9 +313,9 @@ export function DashboardPage() {
                 key={hackathon.id}
                 variants={item}
                 layout
-                className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] transition-all duration-500 hover:border-white/[0.12] hover:bg-white/[0.04]"
+                className="group relative overflow-hidden rounded-2xl border border-white/6 bg-white/2 transition-all duration-500 hover:border-white/12 hover:bg-white/4"
               >
-                <div className={`absolute top-0 left-0 right-0 h-[2px] transition-all duration-300 ${
+                <div className={`absolute top-0 left-0 right-0 h-0.5 transition-all duration-300 ${
                   hackathon.status === 'active' ? 'bg-[#CCFF00]'
                   : hackathon.status === 'judging' ? 'bg-violet-500'
                   : 'bg-white/10'
@@ -323,7 +323,7 @@ export function DashboardPage() {
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-3">
                     <StatusBadge status={hackathon.status} size="sm" pulse={hackathon.status === 'active'} />
-                    <motion.button whileHover={{ scale: 1.1, rotate: 15 }} whileTap={{ scale: 0.9 }} onClick={() => navigate(`/hackathons/${hackathon.slug}`)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-white/30 transition hover:bg-[#CCFF00]/15 hover:text-[#CCFF00]">
+                    <motion.button whileHover={{ scale: 1.1, rotate: 15 }} whileTap={{ scale: 0.9 }} onClick={() => navigate(`/hackathons/${hackathon.slug}`)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/4 text-white/30 transition hover:bg-[#CCFF00]/15 hover:text-[#CCFF00]">
                       <ArrowUpRight className="h-4 w-4" />
                     </motion.button>
                   </div>
@@ -335,8 +335,8 @@ export function DashboardPage() {
                     <span className="flex items-center gap-1.5"><Users className="h-3 w-3" /> Max {hackathon.max_team_size}</span>
                     <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {hackathon.submission_deadline ? new Date(hackathon.submission_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No deadline'}</span>
                   </div>
-                  <div className="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
-                    <Link to={`/hackathons/${hackathon.slug}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/60 transition hover:bg-white/[0.08] hover:text-white">
+                  <div className="flex items-center gap-2 pt-3 border-t border-white/4">
+                    <Link to={`/hackathons/${hackathon.slug}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white/4 px-3 py-2 text-xs font-semibold text-white/60 transition hover:bg-white/8 hover:text-white">
                       <BarChart3 className="h-3 w-3" /> Manage
                     </Link>
                     {NEXT_PHASE_LABEL[hackathon.status] && (
@@ -353,7 +353,7 @@ export function DashboardPage() {
       )}
 
       {/* Quick tip */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-12 rounded-2xl border border-white/[0.04] bg-white/[0.01] p-8 text-center">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-12 rounded-2xl border border-white/4 bg-white/1 p-8 text-center">
         <div className="flex items-center justify-center gap-2 mb-3">
           <Zap className="h-4 w-4 text-[#CCFF00]/50" />
           <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/20">Quick Tip</span>

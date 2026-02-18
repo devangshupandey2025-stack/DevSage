@@ -162,7 +162,7 @@ export function CustomCursor() {
   return (
     <>
       <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-[9997]"
+        className="fixed top-0 left-0 pointer-events-none z-9997"
         style={{ x: glowX, y: glowY, width: glowSize, height: glowSize }}
         animate={{ opacity: glowOpacity, scale: glowScale }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
@@ -180,7 +180,7 @@ export function CustomCursor() {
       </motion.div>
 
       <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-[9998] rounded-full mix-blend-difference border"
+        className="fixed top-0 left-0 pointer-events-none z-9998 rounded-full mix-blend-difference border"
         style={{ x: ringX, y: ringY }}
         animate={{
           width: ringSize,
@@ -189,21 +189,21 @@ export function CustomCursor() {
           scale: ringScale,
           borderColor:
             variant === 'pointer' ? 'rgba(204, 255, 0, 0.55)' : 'rgba(255, 255, 255, 0.28)',
-          backgroundColor: variant === 'pointer' ? 'rgba(204, 255, 0, 0.10)' : 'transparent',
+          backgroundColor: variant === 'pointer' ? 'rgba(204, 255, 0, 0.10)' : 'rgba(204, 255, 0, 0)',
         }}
         transition={{ type: 'spring', stiffness: 380, damping: 28 }}
         transformTemplate={transformTemplate}
       />
 
       <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-[9999] rounded-full mix-blend-difference"
+        className="fixed top-0 left-0 pointer-events-none z-9999 rounded-full mix-blend-difference"
         style={{ x: dotX, y: dotY }}
         animate={{
           width: dotSize,
           height: dotSize,
           opacity: dotOpacity,
           scale: dotScale,
-          backgroundColor: variant === 'text' ? 'rgba(255, 255, 255, 0.9)' : '#CCFF00',
+          backgroundColor: variant === 'text' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(204, 255, 0, 1)',
         }}
         transition={{ type: 'spring', stiffness: 900, damping: 40 }}
         transformTemplate={transformTemplate}

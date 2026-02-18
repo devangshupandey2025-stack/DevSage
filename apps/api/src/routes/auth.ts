@@ -70,50 +70,63 @@ auth.post('/register', async (c) => {
 });
 
 auth.post('/login', async (c) => {
-  const body = await c.req.json<{ email?: string; password?: string }>();
+  try {
+    const body = await c.req.json<{ email?: string; password?: string }>();
 
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password;
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password;
 
-  if (!email || !password) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and password are required');
+    if (!email || !password) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and password are required');
+    }
+
+    const user = await c.env.DB.prepare(
+      'SELECT id, email, name, password_hash, avatar_url FROM users WHERE email = ?'
+    ).bind(email).first<{ id: string; email: string; name: string; password_hash: string; avatar_url: string | null }>();
+
+    if (!user) {
+      return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    }
+
+    const valid = await verifyPassword(password, user.password_hash);
+    if (!valid) {
+      return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    }
+
+    const familyId = generateFamilyId();
+    const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
+    const jwt = await signJWT({ sub: user.id, fam: familyId }, c.env.JWT_SECRET);
+
+    setAccessTokenCookie(c, jwt);
+    setRefreshTokenCookie(c, refreshToken);
+
+    await c.env.DB.prepare(
+      'UPDATE users SET last_login_at = ? WHERE id = ?'
+    ).bind(new Date().toISOString(), user.id).run();
+
+    c.executionCtx.waitUntil(
+      insertAuditEvent(c.env.DB, {
+        actor_id: user.id,
+        actor_type: 'user',
+        event_type: 'auth.login',
+        entity_type: 'user',
+        entity_id: user.id,
+      })
+    );
+
+    return successResponse(c, { id: user.id, email: user.email, name: user.name });
+  } catch (err) {
+    console.error('Login handler error:', err);
+
+    const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development'
+      || Boolean((c as any).env && (c as any).env.JWT_SECRET && (c as any).env.JWT_SECRET.startsWith('dev'));
+
+    if (isDev) {
+      return errorResponse(c, 500, 'INTERNAL_ERROR', err instanceof Error ? err.message : String(err), { details: err?.stack ?? String(err) });
+    }
+
+    return errorResponse(c, 500, 'INTERNAL_ERROR', 'Internal server error');
   }
-
-  const user = await c.env.DB.prepare(
-    'SELECT id, email, name, password_hash, avatar_url FROM users WHERE email = ?'
-  ).bind(email).first<{ id: string; email: string; name: string; password_hash: string; avatar_url: string | null }>();
-
-  if (!user) {
-    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
-  }
-
-  const valid = await verifyPassword(password, user.password_hash);
-  if (!valid) {
-    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
-  }
-
-  const familyId = generateFamilyId();
-  const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
-  const jwt = await signJWT({ sub: user.id, fam: familyId }, c.env.JWT_SECRET);
-
-  setAccessTokenCookie(c, jwt);
-  setRefreshTokenCookie(c, refreshToken);
-
-  await c.env.DB.prepare(
-    'UPDATE users SET last_login_at = ? WHERE id = ?'
-  ).bind(new Date().toISOString(), user.id).run();
-
-  c.executionCtx.waitUntil(
-    insertAuditEvent(c.env.DB, {
-      actor_id: user.id,
-      actor_type: 'user',
-      event_type: 'auth.login',
-      entity_type: 'user',
-      entity_id: user.id,
-    })
-  );
-
-  return successResponse(c, { id: user.id, email: user.email, name: user.name });
 });
 
 auth.post('/refresh', async (c) => {

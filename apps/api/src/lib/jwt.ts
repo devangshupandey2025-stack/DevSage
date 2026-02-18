@@ -24,6 +24,9 @@ function base64UrlDecode(str: string): Uint8Array {
 }
 
 async function getKey(secret: string): Promise<CryptoKey> {
+  if (!secret || secret.length === 0) {
+    throw new Error('JWT_SECRET is not set. Set process env JWT_SECRET for development or configure your Worker secret.');
+  }
   const encoder = new TextEncoder();
   return crypto.subtle.importKey(
     'raw',
@@ -49,10 +52,13 @@ export async function signJWT(payload: Omit<JWTPayload, 'iat' | 'exp'>, secret: 
   const payloadB64 = base64UrlEncode(encoder.encode(JSON.stringify(fullPayload)));
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  const key = await getKey(secret);
-  const signature = await crypto.subtle.sign(ALGORITHM, key, encoder.encode(signingInput));
-
-  return `${signingInput}.${base64UrlEncode(signature)}`;
+  try {
+    const key = await getKey(secret);
+    const signature = await crypto.subtle.sign(ALGORITHM, key, encoder.encode(signingInput));
+    return `${signingInput}.${base64UrlEncode(signature)}`;
+  } catch (err) {
+    throw new Error(`signJWT failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function verifyJWT(token: string, secret: string): Promise<JWTPayload | null> {
@@ -62,12 +68,16 @@ export async function verifyJWT(token: string, secret: string): Promise<JWTPaylo
   const [headerB64, payloadB64, signatureB64] = parts;
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  const key = await getKey(secret);
-  const encoder = new TextEncoder();
-  const signature = base64UrlDecode(signatureB64);
+  try {
+    const key = await getKey(secret);
+    const encoder = new TextEncoder();
+    const signature = base64UrlDecode(signatureB64);
 
-  const valid = await crypto.subtle.verify(ALGORITHM, key, signature.buffer as ArrayBuffer, encoder.encode(signingInput));
-  if (!valid) return null;
+    const valid = await crypto.subtle.verify(ALGORITHM, key, signature.buffer as ArrayBuffer, encoder.encode(signingInput));
+    if (!valid) return null;
+  } catch (err) {
+    throw new Error(`verifyJWT failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   try {
     const decoder = new TextDecoder();
