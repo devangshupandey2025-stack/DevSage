@@ -364,6 +364,11 @@ export function SettingsPage() {
   const cursorY = useMotionValue(-200);
   const springCX = useSpring(cursorX, { stiffness: 80, damping: 20 });
   const springCY = useSpring(cursorY, { stiffness: 80, damping: 20 });
+  const cursorGlow = useTransform(
+    [springCX, springCY],
+    ([x, y]: number[]) =>
+      `radial-gradient(700px circle at ${x}px ${y}px, rgba(204,255,0,0.025), transparent 55%)`
+  );
 
   useEffect(() => {
     const move = (e: MouseEvent) => { cursorX.set(e.clientX); cursorY.set(e.clientY); };
@@ -466,11 +471,7 @@ export function SettingsPage() {
       <motion.div
         className="pointer-events-none fixed inset-0 z-0"
         style={{
-          background: useTransform(
-            [springCX, springCY],
-            ([x, y]: number[]) =>
-              `radial-gradient(700px circle at ${x}px ${y}px, rgba(204,255,0,0.025), transparent 55%)`
-          ),
+          background: cursorGlow,
         }}
       />
 
