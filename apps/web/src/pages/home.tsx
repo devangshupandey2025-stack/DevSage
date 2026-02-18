@@ -127,22 +127,14 @@ const Navbar = () => {
               </motion.button>
             ))}
           </div>
-
           <div className="hidden lg:flex items-center gap-3">
-            <motion.button
-              className="text-sm font-medium text-white/50 hover:text-white transition-all px-4 py-2 rounded-lg hover:bg-white/5"
-              whileHover={{ scale: 1.03 }}
-              onClick={() => navigate('/login')}
-            >
-              Sign In
-            </motion.button>
             <motion.button
               className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/login')}
+              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
-              Get Started
+              Contact Us
             </motion.button>
           </div>
 
