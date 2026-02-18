@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
 import { StatusBadge, PageHeader, CountdownTimer } from '@/components/common';
@@ -10,17 +10,14 @@ import {
   FileCode,
   Scale,
   Clock,
-  GitBranch,
   ArrowRight,
-  Globe,
   Zap,
   Trophy,
   Calendar,
   ChevronRight,
   Activity,
-  CheckCircle2,
-  Circle,
-  Loader2,
+  Settings2,
+  Sparkles,
 } from 'lucide-react';
 
 interface Hackathon {
@@ -54,12 +51,12 @@ const NEXT_PHASE_LABEL: Record<string, string> = {
 
 const container = {
   hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.05 } },
+  show: { opacity: 1, transition: { staggerChildren: 0.04 } },
 };
 
 const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
 };
 
 interface OverviewMetrics {
@@ -128,14 +125,20 @@ export function HackathonOverviewPage() {
   if (loading) {
     return (
       <div className="space-y-8 p-1">
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-64 bg-white/[0.04]" />
-          <Skeleton className="h-5 w-96 bg-white/[0.04]" />
+        <div className="flex justify-between items-start">
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-24 bg-white/[0.04] rounded-full" />
+            <Skeleton className="h-10 w-72 bg-white/[0.04]" />
+            <Skeleton className="h-5 w-96 bg-white/[0.04]" />
+          </div>
+          <Skeleton className="h-12 w-40 bg-white/[0.04] rounded-full" />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 bg-white/[0.04] rounded-3xl" />
-          ))}
+        <Skeleton className="h-24 bg-white/[0.04] rounded-2xl" />
+        <div className="grid grid-cols-4 gap-4">
+          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
+          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
+          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
+          <Skeleton className="h-32 bg-white/[0.04] rounded-2xl" />
         </div>
       </div>
     );
@@ -144,17 +147,17 @@ export function HackathonOverviewPage() {
   if (!hackathon) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <div className="w-16 h-16 rounded-full bg-white/[0.05] flex items-center justify-center mb-4">
+        <div className="w-20 h-20 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-6">
           <Trophy className="w-8 h-8 text-white/20" />
         </div>
-        <h3 className="text-xl font-semibold text-white/80 mb-1">Hackathon Not Found</h3>
-        <p className="text-white/40 text-sm">The requested event does not exist or was deleted.</p>
+        <h3 className="text-xl font-semibold text-white/80 mb-2">Hackathon Not Found</h3>
+        <p className="text-white/40 text-sm max-w-sm">The requested event does not exist or may have been removed.</p>
       </div>
     );
   }
 
   const quickLinks = [
-    { label: 'Teams', icon: Users, path: `/hackathons/${slug}/teams`, color: 'text-emerald-400', bg: 'bg-emerald-500/10', stat: metrics.teams, statLabel: 'Total' },
+    { label: 'Teams', icon: Users, path: `/hackathons/${slug}/teams`, color: 'text-emerald-400', bg: 'bg-emerald-500/10', stat: metrics.teams, statLabel: 'Registered' },
     { label: 'Submissions', icon: FileCode, path: `/hackathons/${slug}/submissions`, color: 'text-sky-400', bg: 'bg-sky-500/10', stat: metrics.submissions, statLabel: 'Projects' },
     { label: 'Judging', icon: Scale, path: `/hackathons/${slug}/judging`, color: 'text-violet-400', bg: 'bg-violet-500/10', stat: metrics.judges, statLabel: 'Judges' },
     { label: 'Activity', icon: Activity, path: `/hackathons/${slug}/activity`, color: 'text-amber-400', bg: 'bg-amber-500/10', stat: null, statLabel: '' },
@@ -167,87 +170,97 @@ export function HackathonOverviewPage() {
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
-      className="space-y-10 max-w-7xl mx-auto"
+      className="relative space-y-8"
     >
+      {/* Background Ambient Light */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-96 bg-[#CCFF00]/[0.02] blur-[120px] pointer-events-none" />
+
       {/* Header Section */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 border-b border-white/[0.05] pb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-3">
+      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
             <StatusBadge status={hackathon.status} pulse={hackathon.status === 'active'} />
-            <span className="text-xs font-mono text-white/30 uppercase tracking-widest">
-              ID: {hackathon.slug}
+            <div className="h-4 w-px bg-white/10" />
+            <span className="text-[11px] font-mono text-white/40 uppercase tracking-wider">
+              {hackathon.slug}
             </span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-            {hackathon.title}
-          </h1>
-          <p className="text-white/50 mt-2 text-base max-w-2xl">
-            {hackathon.description || 'No description provided for this event.'}
-          </p>
+          <div>
+            <h1 className="text-4xl font-bold text-white tracking-tight">
+              {hackathon.title}
+            </h1>
+            <p className="text-white/40 mt-2 text-base max-w-xl leading-relaxed">
+              {hackathon.description || 'No description provided for this event.'}
+            </p>
+          </div>
         </div>
 
-        {NEXT_PHASE_LABEL[hackathon.status] && (
-          <motion.button
-            whileHover={{ scale: 1.02, boxShadow: "0 0 20px rgba(204, 255, 0, 0.2)" }}
-            whileTap={{ scale: 0.98 }}
-            onClick={advancePhase}
-            className="flex items-center gap-3 rounded-full bg-[#CCFF00] px-6 py-3 text-sm font-bold text-black transition hover:bg-[#b8e600] shadow-[0_0_15px_rgba(204,255,0,0.15)]"
-          >
-            {NEXT_PHASE_LABEL[hackathon.status]}
-            <ArrowRight className="h-4 w-4" />
-          </motion.button>
-        )}
+        <AnimatePresence>
+          {NEXT_PHASE_LABEL[hackathon.status] && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={advancePhase}
+              className="group flex items-center gap-2.5 rounded-full bg-[#CCFF00] px-6 py-3 text-sm font-bold text-black shadow-[0_0_20px_rgba(204,255,0,0.15)] transition-shadow hover:shadow-[0_0_30px_rgba(204,255,0,0.25)]"
+            >
+              {NEXT_PHASE_LABEL[hackathon.status]}
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Lifecycle Stepper */}
+      {/* Lifecycle Progress Track */}
       <motion.div 
         variants={container} 
         initial="hidden" 
         animate="show"
-        className="relative p-6 rounded-2xl border border-white/[0.06] bg-[#0A0A0A]"
+        className="relative p-1 rounded-xl bg-[#0A0A0A] border border-white/[0.05] overflow-hidden"
       >
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden rounded-2xl pointer-events-none">
-           <div className="absolute -top-1/2 -right-1/2 w-[500px] h-[500px] bg-[#CCFF00]/[0.02] rounded-full blur-3xl" />
-        </div>
-
-        <div className="relative flex justify-between items-center">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent" />
+        <div className="relative flex h-12 items-center justify-between px-2">
           {phases.map((phase, i) => {
             const isCompleted = i < currentIdx;
             const isCurrent = i === currentIdx;
-            const statusColor = isCompleted || isCurrent ? 'text-[#CCFF00]' : 'text-white/20';
             
             return (
-              <motion.div key={phase} variants={item} className="flex-1 relative z-10">
-                <div className="flex flex-col items-center relative">
-                  {/* Connector Line */}
-                  {i < phases.length - 1 && (
-                    <div className="absolute top-[19px] left-1/2 w-full h-[2px]">
-                      <div className={`h-full transition-colors duration-500 ${isCompleted ? 'bg-[#CCFF00]' : 'bg-white/[0.1]'}`} />
-                    </div>
-                  )}
-                  
-                  {/* Node */}
-                  <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                    isCompleted 
-                      ? 'bg-[#CCFF00] border-[#CCFF00] text-black' 
-                      : isCurrent 
-                        ? 'bg-black border-[#CCFF00] text-[#CCFF00] shadow-[0_0_12px_rgba(204,255,0,0.4)]' 
-                        : 'bg-[#111] border-white/10 text-white/30'
-                  }`}>
-                    {isCompleted ? (
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : isCurrent ? (
-                      <div className="w-2 h-2 rounded-full bg-[#CCFF00]" />
-                    ) : (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white/10" />
-                    )}
-                  </div>
-                  
-                  <span className={`mt-3 text-xs font-semibold uppercase tracking-wider transition-colors ${statusColor}`}>
+              <motion.div 
+                key={phase} 
+                variants={item}
+                className="relative flex flex-col items-center justify-center flex-1 h-full"
+              >
+                {/* Track Background Segment */}
+                <div className="absolute inset-0 border-r border-dashed border-white/[0.05] last:border-0" />
+                
+                {/* Active Indicator */}
+                {isCurrent && (
+                  <motion.div 
+                    layoutId="activePhase"
+                    className="absolute inset-x-1 inset-y-1 rounded-lg bg-[#CCFF00]/[0.07] border border-[#CCFF00]/20"
+                    transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                  />
+                )}
+
+                <div className="relative z-10 flex items-center gap-2">
+                   <span className={`text-[11px] font-bold uppercase tracking-wider transition-colors duration-300 ${
+                     isCompleted ? 'text-[#CCFF00]' : isCurrent ? 'text-white' : 'text-white/25'
+                   }`}>
                     {phase}
                   </span>
+                  {isCompleted && (
+                     <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#CCFF00]"
+                    >
+                      <svg className="w-2.5 h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </motion.div>
+                  )}
                 </div>
               </motion.div>
             );
@@ -255,42 +268,49 @@ export function HackathonOverviewPage() {
         </div>
       </motion.div>
 
-      {/* Stats Bento Grid */}
+      {/* Metrics & Countdown Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Metrics */}
         {[
-          { label: 'Total Teams', value: metrics.teams, icon: Users, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { label: 'Submissions', value: metrics.submissions, icon: FileCode, color: 'text-sky-400', bg: 'bg-sky-500/10' },
-          { label: 'Judges Assigned', value: metrics.judges, icon: Scale, color: 'text-violet-400', bg: 'bg-violet-500/10' },
+          { label: 'Teams Registered', value: metrics.teams, icon: Users, color: 'text-emerald-400', trend: '+12%' },
+          { label: 'Total Submissions', value: metrics.submissions, icon: FileCode, color: 'text-sky-400', trend: '8 new' },
+          { label: 'Judges Assigned', value: metrics.judges, icon: Scale, color: 'text-violet-400', trend: '' },
         ].map((stat) => (
           <motion.div
             key={stat.label}
             variants={item}
             initial="hidden"
             animate="show"
-            className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 transition-all duration-300 hover:border-white/[0.12]"
+            className="group relative p-5 rounded-2xl border border-white/[0.05] bg-white/[0.02] backdrop-blur-sm transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.04]"
           >
-            <div className={`absolute top-4 right-4 ${stat.bg} ${stat.color} p-2 rounded-lg opacity-50 group-hover:opacity-100 transition-opacity`}>
-              <stat.icon className="w-5 h-5" />
+            <div className="flex justify-between items-start mb-4">
+              <div className={`p-2 rounded-lg bg-white/[0.03] ${stat.color}`}>
+                <stat.icon className="w-4 h-4" />
+              </div>
+              {stat.trend && <span className="text-[10px] font-medium text-[#CCFF00]">{stat.trend}</span>}
             </div>
-            <div className="mt-4">
-              <span className="text-4xl font-bold text-white tracking-tight">
+            <div className="flex items-baseline gap-1">
+              <span className="text-3xl font-bold text-white tracking-tight">
                 {stat.value}
               </span>
-              <p className="text-white/40 text-sm font-medium mt-1">{stat.label}</p>
             </div>
+            <p className="text-xs text-white/40 mt-1">{stat.label}</p>
           </motion.div>
         ))}
 
-        {/* Countdown Timer Card */}
+        {/* Countdown Timer */}
         <motion.div
           variants={item}
           initial="hidden"
           animate="show"
-          className="relative overflow-hidden rounded-2xl border border-[#CCFF00]/20 bg-[#CCFF00]/[0.03] p-6 col-span-2 lg:col-span-1"
+          className="relative col-span-2 lg:col-span-1 p-5 rounded-2xl border border-[#CCFF00]/15 bg-[#CCFF00]/[0.02] backdrop-blur-sm"
         >
-          <div className="flex items-center gap-2 mb-2 text-[#CCFF00]">
-            <Clock className="w-4 h-4" />
-            <span className="text-xs font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="relative">
+              <Clock className="w-4 h-4 text-[#CCFF00]" />
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#CCFF00] animate-ping" />
+            </div>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#CCFF00]/80">
               {hackathon.status === 'active' ? 'Submission Deadline' : 'Next Milestone'}
             </span>
           </div>
@@ -301,7 +321,7 @@ export function HackathonOverviewPage() {
               className="p-0 bg-transparent border-none"
             />
           ) : (
-            <p className="text-white/40 text-sm italic">No deadline set</p>
+            <p className="text-white/30 text-sm font-medium">No deadline set</p>
           )}
         </motion.div>
       </div>
@@ -309,11 +329,13 @@ export function HackathonOverviewPage() {
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Quick Access Section */}
+        {/* Quick Access */}
         <div className="lg:col-span-2 space-y-4">
-          <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest flex items-center gap-2">
-            <Zap className="w-4 h-4" /> Quick Access
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" /> Quick Access
+            </h3>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             {quickLinks.map((link) => {
               const Icon = link.icon;
@@ -321,25 +343,31 @@ export function HackathonOverviewPage() {
                 <Link
                   to={link.path}
                   key={link.label}
-                  className="group relative flex flex-col justify-between h-36 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:bg-white/[0.04] hover:border-white/[0.15] overflow-hidden"
+                  className="group relative flex flex-col justify-between h-40 rounded-2xl border border-white/[0.05] bg-white/[0.02] p-5 transition-all duration-300 hover:bg-white/[0.04] hover:border-white/[0.12] overflow-hidden"
                 >
-                  {/* Decorative Gradient */}
-                  <div className={`absolute -bottom-4 -right-4 w-24 h-24 rounded-full ${link.bg} opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500`} />
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   
-                  <div className="flex justify-between items-start">
-                    <div className={`p-2.5 rounded-xl ${link.bg}`}>
-                      <Icon className={`w-5 h-5 ${link.color}`} />
+                  <div className="relative flex justify-between items-start z-10">
+                    <div className={`p-2.5 rounded-xl ${link.bg} border border-white/[0.05]`}>
+                      <Icon className={`w-4 h-4 ${link.color}`} />
                     </div>
-                    <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-white/40 group-hover:translate-x-1 transition-all" />
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/[0.03] group-hover:bg-white/[0.06] transition-colors">
+                      <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-all group-hover:translate-x-0.5" />
+                    </div>
                   </div>
 
-                  <div>
-                    <h4 className="text-lg font-semibold text-white/80 group-hover:text-white transition-colors">
+                  <div className="relative z-10">
+                    <h4 className="text-lg font-semibold text-white/90 group-hover:text-white transition-colors">
                       {link.label}
                     </h4>
-                    {link.stat !== null && (
-                      <p className="text-sm text-white/30">{link.stat} {link.statLabel}</p>
-                    )}
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      {link.stat !== null && (
+                        <>
+                          <span className="text-xl font-bold text-white/60">{link.stat}</span>
+                          <span className="text-xs text-white/30">{link.statLabel}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </Link>
               );
@@ -347,42 +375,51 @@ export function HackathonOverviewPage() {
           </div>
         </div>
 
-        {/* Timeline & Config Section */}
+        {/* Sidebar: Timeline & Config */}
         <div className="space-y-6">
            {/* Timeline */}
-           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-            <h3 className="text-sm font-bold text-white/60 mb-6 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-[#CCFF00]/50" />
-              Timeline
+           <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
+            <h3 className="text-xs font-bold text-white/50 mb-6 flex items-center gap-2 uppercase tracking-widest">
+              <Calendar className="h-3.5 w-3.5 text-[#CCFF00]/50" />
+              Schedule
             </h3>
-            <div className="relative border-l border-white/[0.1] ml-2 pl-6 space-y-6">
+            <div className="relative space-y-1">
               {[
-                { label: 'Starts At', date: hackathon.starts_at },
-                { label: 'Submission Deadline', date: hackathon.submission_deadline },
-                { label: 'Judging Starts', date: hackathon.judging_starts },
-              ].filter((event) => event.date).map((event, idx) => {
+                { label: 'Kickoff', date: hackathon.starts_at, icon: Zap },
+                { label: 'Submissions Close', date: hackathon.submission_deadline, icon: FileCode },
+                { label: 'Judging Begins', date: hackathon.judging_starts, icon: Scale },
+              ].filter((event) => event.date).map((event, idx, arr) => {
                 const isPast = new Date(event.date!) < new Date();
+                const isLast = idx === arr.length - 1;
+                const EventIcon = event.icon;
+                
                 return (
-                  <div key={idx} className="relative">
-                    {/* Dot */}
-                    <div className={`absolute -left-[30px] top-1.5 w-3 h-3 rounded-full border-2 ${
-                      isPast 
-                        ? 'bg-[#CCFF00] border-black' 
-                        : 'bg-[#111] border-white/20'
-                    }`} />
-                    
-                    <p className="text-xs font-bold uppercase tracking-wider text-white/30 mb-1">
-                      {event.label}
-                    </p>
-                    <p className="text-sm text-white/70 font-medium">
-                      {new Date(event.date!).toLocaleDateString('en-US', {
-                        weekday: 'short', month: 'short', day: 'numeric',
-                        hour: '2-digit', minute: '2-digit'
-                      })}
-                    </p>
-                    {isPast && (
-                      <span className="text-[10px] font-bold text-[#CCFF00] uppercase tracking-wider">Completed</span>
+                  <div key={idx} className="relative pl-8 pb-6 last:pb-0">
+                    {/* Vertical Line */}
+                    {!isLast && (
+                       <div className="absolute left-[11px] top-6 bottom-0 w-px bg-gradient-to-b from-white/10 to-transparent" />
                     )}
+
+                    {/* Dot */}
+                    <div className={`absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full border ${isPast ? 'bg-[#CCFF00]/10 border-[#CCFF00]/30' : 'bg-white/[0.03] border-white/10'}`}>
+                      <EventIcon className={`w-3 h-3 ${isPast ? 'text-[#CCFF00]' : 'text-white/40'}`} />
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-white/30 mb-0.5">
+                          {event.label}
+                        </p>
+                        <p className="text-sm text-white/70 font-medium">
+                          {new Date(event.date!).toLocaleDateString('en-US', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      {isPast && (
+                        <span className="px-2 py-0.5 rounded-full bg-[#CCFF00]/10 text-[10px] font-bold text-[#CCFF00] border border-[#CCFF00]/20">Done</span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -390,19 +427,19 @@ export function HackathonOverviewPage() {
           </div>
 
           {/* Configuration */}
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-            <h3 className="text-sm font-bold text-white/60 mb-4 flex items-center gap-2">
-              <Zap className="h-4 w-4 text-[#CCFF00]/50" />
-              Configuration
+          <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
+            <h3 className="text-xs font-bold text-white/50 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <Settings2 className="h-3.5 w-3.5 text-[#CCFF00]/50" />
+              Config
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {[
-                { label: 'Max Team Size', value: hackathon.max_team_size },
-                { label: 'Created', value: new Date(hackathon.created_at).toLocaleDateString() },
+                { label: 'Team Limit', value: `${hackathon.max_team_size} Members` },
+                { label: 'Created', value: new Date(hackathon.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
               ].map((detail) => (
-                <div key={detail.label} className="flex items-center justify-between py-2 border-b border-white/[0.03] last:border-0">
-                  <span className="text-xs font-medium text-white/30 uppercase tracking-wider">{detail.label}</span>
-                  <span className="text-sm font-mono text-white/70">{detail.value}</span>
+                <div key={detail.label} className="flex items-center justify-between py-2.5 border-b border-white/[0.03] last:border-0 last:pb-0">
+                  <span className="text-xs text-white/35">{detail.label}</span>
+                  <span className="text-xs font-medium text-white/70 bg-white/[0.03] px-2 py-1 rounded-md">{detail.value}</span>
                 </div>
               ))}
             </div>
