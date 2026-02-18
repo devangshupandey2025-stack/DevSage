@@ -12,24 +12,23 @@ invites.post('/team/:token', authMiddleware, async (c) => {
   const token = c.req.param('token');
 
   const invite = await c.env.DB.prepare(
-    `SELECT ti.id, ti.team_id, ti.email, ti.status, ti.expires_at, t.hackathon_id, t.status as team_status
+    `SELECT ti.id, ti.team_id, ti.email, ti.status, ti.expires_at, t.hackathon_id
      FROM team_invites ti
      JOIN teams t ON ti.team_id = t.id
      WHERE ti.invite_token = ?`
   ).bind(token).first<{
     id: string; team_id: string; email: string; status: string;
-    expires_at: string; hackathon_id: string; team_status: string;
+    expires_at: string; hackathon_id: string;
   }>();
 
   if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
   if (invite.status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Invite already used');
   if (new Date(invite.expires_at) < new Date()) return errorResponse(c, 410, 'INVITE_EXPIRED', 'Invite has expired');
-  if (invite.team_status === 'dissolved') return errorResponse(c, 409, 'TEAM_DISSOLVED', 'Team has been dissolved');
 
   // Check if already on a team
   const existing = await c.env.DB.prepare(`
     SELECT t.id FROM teams t JOIN team_members tm ON tm.team_id = t.id
-    WHERE t.hackathon_id = ? AND tm.user_id = ? AND t.status != 'dissolved'
+    WHERE t.hackathon_id = ? AND tm.user_id = ?
   `).bind(invite.hackathon_id, user.id).first();
 
   if (existing) return errorResponse(c, 409, 'ALREADY_ON_TEAM', 'Already on a team');
@@ -38,7 +37,7 @@ invites.post('/team/:token', authMiddleware, async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE team_invites SET status = ? WHERE id = ?').bind('accepted', invite.id),
     c.env.DB.prepare('INSERT INTO team_members (id, team_id, user_id, role) VALUES (?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), invite.team_id, user.id, 'team_member'),
+      .bind(crypto.randomUUID(), invite.team_id, user.id, 'member'),
   ]);
 
   c.executionCtx.waitUntil(
@@ -46,7 +45,7 @@ invites.post('/team/:token', authMiddleware, async (c) => {
       hackathon_id: invite.hackathon_id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.invite_accepted',
+      action: 'team.invite_accepted',
       entity_type: 'team',
       entity_id: invite.team_id,
     })
@@ -55,20 +54,20 @@ invites.post('/team/:token', authMiddleware, async (c) => {
   return successResponse(c, { accepted: true, team_id: invite.team_id });
 });
 
-// Accept judge invite
-invites.post('/judge/:token', authMiddleware, async (c) => {
+// Accept judge invite (lookup by judge id)
+invites.post('/judge/:id', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const token = c.req.param('token');
+  const judgeId = c.req.param('id');
 
   const invite = await c.env.DB.prepare(
-    'SELECT id, hackathon_id, email, invite_status FROM judges WHERE invite_token = ?'
-  ).bind(token).first<{ id: string; hackathon_id: string; email: string; invite_status: string }>();
+    'SELECT id, hackathon_id, user_id, invite_status FROM judges WHERE id = ?'
+  ).bind(judgeId).first<{ id: string; hackathon_id: string; user_id: string | null; invite_status: string }>();
 
   if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
   if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');
 
   await c.env.DB.prepare(
-    'UPDATE judges SET user_id = ?, invite_status = ?, accepted_at = ? WHERE id = ?'
+    'UPDATE judges SET user_id = ?, invite_status = ?, responded_at = ? WHERE id = ?'
   ).bind(user.id, 'accepted', new Date().toISOString(), invite.id).run();
 
   c.executionCtx.waitUntil(
@@ -76,7 +75,7 @@ invites.post('/judge/:token', authMiddleware, async (c) => {
       hackathon_id: invite.hackathon_id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'judge.invite_accepted',
+      action: 'judge.invite_accepted',
       entity_type: 'judge',
       entity_id: invite.id,
     })
@@ -85,13 +84,13 @@ invites.post('/judge/:token', authMiddleware, async (c) => {
   return successResponse(c, { accepted: true, hackathon_id: invite.hackathon_id });
 });
 
-// Decline judge invite
-invites.post('/judge/:token/decline', async (c) => {
-  const token = c.req.param('token');
+// Decline judge invite (lookup by judge id)
+invites.post('/judge/:id/decline', async (c) => {
+  const judgeId = c.req.param('id');
 
   const invite = await c.env.DB.prepare(
-    'SELECT id, invite_status FROM judges WHERE invite_token = ?'
-  ).bind(token).first<{ id: string; invite_status: string }>();
+    'SELECT id, invite_status FROM judges WHERE id = ?'
+  ).bind(judgeId).first<{ id: string; invite_status: string }>();
 
   if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
   if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');

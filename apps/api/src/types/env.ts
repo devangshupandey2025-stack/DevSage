@@ -15,8 +15,6 @@ export interface AppEnv {
     JWT_SECRET: string;
     GITHUB_WEBHOOK_SECRET: string;
     RESEND_API_KEY: string;
-    // Dev-only (set in .dev.vars, never in production)
-    DEV_AUTH_BYPASS?: string;
     // Vars
     FRONTEND_URL: string;
     PLATFORM_URL: string;
@@ -47,4 +45,4 @@ export interface HackathonContext {
   status: string;
 }
 
-export type HackathonRole = 'organizer' | 'co_organizer' | 'judge' | 'team_lead' | 'team_member' | 'anonymous';
+export type HackathonRole = 'organizer' | 'co_organizer' | 'judge' | 'leader' | 'member' | 'anonymous';

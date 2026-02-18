@@ -44,8 +44,8 @@ organizers.post('/', authMiddleware, requireRole('organizer'), async (c) => {
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'organizer.added', entity_type: 'organizer_role', entity_id: id,
-      metadata: { target_user_id: body.user_id, role: body.role },
+      action: 'organizer.added', entity_type: 'organizer_role', entity_id: id,
+      details: { target_user_id: body.user_id, role: body.role },
     })
   );
 
@@ -70,7 +70,7 @@ organizers.delete('/:roleId', authMiddleware, requireRole('organizer'), async (c
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      event_type: 'organizer.removed', entity_type: 'organizer_role', entity_id: roleId,
+      action: 'organizer.removed', entity_type: 'organizer_role', entity_id: roleId,
     })
   );
 

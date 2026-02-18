@@ -4,7 +4,6 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoginPage } from '@/pages/login';
 import { RegisterPage } from '@/pages/register';
-import { AuthCallbackPage } from '@/pages/auth-callback';
 import { AboutPage } from '@/pages/about';
 import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
@@ -27,8 +26,7 @@ const router = createBrowserRouter([
   { path: '/', element: <LazyWrapper><HomePage /></LazyWrapper> },
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
-  { path: '/auth/callback', element: <AuthCallbackPage /> },
-  { path: '/about', element: <AboutPage /> },
+{ path: '/about', element: <AboutPage /> },
   { path: '/hackathons', element: <LazyWrapper><BrowseHackathonsPage /></LazyWrapper> },
 
   {

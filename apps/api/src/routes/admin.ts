@@ -40,8 +40,8 @@ admin.post('/admins', async (c) => {
   const id = crypto.randomUUID();
   try {
     await c.env.DB.prepare(
-      'INSERT INTO platform_admins (id, user_id, added_by) VALUES (?, ?, ?)'
-    ).bind(id, body.user_id, user.id).run();
+      'INSERT INTO platform_admins (id, user_id, role, created_by, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(id, body.user_id, 'platform_admin', user.id, new Date().toISOString()).run();
   } catch {
     return errorResponse(c, 409, 'ALREADY_ADMIN', 'User is already an admin');
   }

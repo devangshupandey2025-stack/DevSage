@@ -14,10 +14,10 @@ teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
   const hackathon = c.get('hackathon')!;
   const teamId = c.req.param('teamId');
 
-  // Check permission (team_lead)
+  // Check permission (leader)
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead can link a repo');
@@ -61,10 +61,10 @@ teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.repo_linked',
+      action: 'team.repo_linked',
       entity_type: 'team_repo',
       entity_id: repoId,
-      metadata: { github_repo_url: body.github_repo_url },
+      details: { github_repo_url: body.github_repo_url },
     })
   );
 
@@ -91,7 +91,7 @@ teamRepos.delete('/:teamId/repo', authMiddleware, async (c) => {
 
   const isLead = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND role = ?'
-  ).bind(teamId, user.id, 'team_lead').first();
+  ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead can unlink a repo');
@@ -105,7 +105,7 @@ teamRepos.delete('/:teamId/repo', authMiddleware, async (c) => {
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'team.repo_unlinked',
+      action: 'team.repo_unlinked',
       entity_type: 'team',
       entity_id: teamId,
     })

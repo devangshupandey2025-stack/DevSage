@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { PageHeader, EmptyState } from '@/components/common';
+import { apiRequest } from '@/lib/api';
 import {
   Activity,
   GitCommit,
@@ -16,9 +17,11 @@ import {
 interface AuditEvent {
   id: string;
   action: string;
-  actor_type: 'user' | 'system' | 'cron';
-  actor_name?: string;
-  description: string;
+  actor_type: string;
+  actor_id: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  changes: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -60,19 +63,17 @@ export function ActivityPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setTimeout(() => {
-      setEvents([
-        { id: '1', action: 'hackathon.phase_advanced', actor_type: 'user', actor_name: 'Sarah Chen', description: 'Phase advanced to ACTIVE', created_at: '2026-03-15T14:32:00Z' },
-        { id: '2', action: 'submission.created', actor_type: 'user', actor_name: 'Team Alpha', description: 'New submission: "AI Dashboard"', created_at: '2026-03-15T13:21:00Z' },
-        { id: '3', action: 'judge.invited', actor_type: 'user', actor_name: 'Sarah Chen', description: 'Judge invited: alex@example.com', created_at: '2026-03-15T12:00:00Z' },
-        { id: '4', action: 'team.created', actor_type: 'user', actor_name: 'John Doe', description: 'Team "Byte Brigade" created', created_at: '2026-03-15T10:45:00Z' },
-        { id: '5', action: 'team.joined', actor_type: 'user', actor_name: 'Jane Smith', description: 'Joined team "Byte Brigade"', created_at: '2026-03-15T10:50:00Z' },
-        { id: '6', action: 'submission.validated', actor_type: 'system', description: 'Submission "AI Dashboard" validated via webhook', created_at: '2026-03-15T13:25:00Z' },
-        { id: '7', action: 'hackathon.settings_updated', actor_type: 'user', actor_name: 'Sarah Chen', description: 'Updated registration deadline', created_at: '2026-03-14T16:00:00Z' },
-        { id: '8', action: 'score.submitted', actor_type: 'user', actor_name: 'Prof. Lee', description: 'Score submitted for "AI Dashboard"', created_at: '2026-03-15T15:10:00Z' },
-      ]);
-      setLoading(false);
-    }, 500);
+    if (!slug) return;
+    (async () => {
+      try {
+        const res = await apiRequest<{ data: AuditEvent[] }>(`/api/v1/hackathons/${slug}/audit`);
+        setEvents(res.data ?? []);
+      } catch {
+        setEvents([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [slug]);
 
   const formatTime = (date: string) => {
@@ -131,13 +132,16 @@ export function ActivityPage() {
                   {/* Content */}
                   <div className="flex-1 min-w-0 pt-0.5">
                     <p className="text-sm text-white/60 leading-snug">
-                      {event.actor_name && (
-                        <span className="font-semibold text-white/80">{event.actor_name} </span>
-                      )}
                       {event.actor_type === 'system' && (
                         <span className="font-semibold text-white/40">System </span>
                       )}
-                      {event.description}
+                      {event.actor_type === 'cron' && (
+                        <span className="font-semibold text-white/40">Cron </span>
+                      )}
+                      <span className="font-medium text-white/70">{event.action}</span>
+                      {event.entity_type && (
+                        <span className="text-white/30"> on {event.entity_type}</span>
+                      )}
                     </p>
                   </div>
 

@@ -5,7 +5,6 @@ import { LoginPage } from '@/pages/login';
 import { DashboardPage } from '@/pages/dashboard';
 import { ProfilePage } from '@/pages/profile';
 import { InviteAcceptPage } from '@/pages/invite-accept';
-import { AuthCallbackPage } from '@/pages/auth-callback';
 import { HackathonOverviewPage } from '@/pages/hackathon-overview';
 import { TeamsPage } from '@/pages/teams';
 import { TeamDetailPage } from '@/pages/team-detail';
@@ -24,8 +23,7 @@ import { JudgeInviteAcceptPage } from '@/pages/judge-invite-accept';
 const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <LoginPage /> },
-  { path: '/auth/callback', element: <AuthCallbackPage /> },
-  { path: '/invite/:code', element: <InviteAcceptPage /> },
+{ path: '/invite/:code', element: <InviteAcceptPage /> },
   { path: '/invite/judge/:token', element: <JudgeInviteAcceptPage /> },
 
   // Protected routes with app shell

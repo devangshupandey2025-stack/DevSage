@@ -32,17 +32,17 @@ export async function handleTagDeleteEvent(
 
   // Mark as tag_deleted
   await env.DB.prepare(
-    'UPDATE submissions SET status = ?, is_current = 0 WHERE id = ?'
+    'UPDATE submissions SET status = ?, is_final = 0 WHERE id = ?'
   ).bind('tag_deleted', result.id).run();
 
   // Audit
   await insertAuditEvent(env.DB, {
     hackathon_id: result.hackathon_id,
     actor_type: 'bot',
-    event_type: 'submission.tag_deleted',
+    action: 'submission.tag_deleted',
     entity_type: 'submission',
     entity_id: result.id,
-    metadata: { tag_name: data.tag_name, sender: data.sender.login },
+    details: { tag_name: data.tag_name, sender: data.sender.login },
   });
 
   // Notify organizers

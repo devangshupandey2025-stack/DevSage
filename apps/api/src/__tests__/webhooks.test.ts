@@ -1,16 +1,14 @@
-import { env as rawEnv, SELF } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
-import type { Env } from '../types/env.js';
+import { SELF } from 'cloudflare:test';
+import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
+import {
+  ensureSchema,
+  resetDb,
+  env,
+} from './helpers.js';
 
-const env = rawEnv as Env;
+const WEBHOOK_SECRET = 'test-webhook-secret-min-32-chars!!';
 
-function toHex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function githubSignature(secret: string, body: string): Promise<string> {
+async function signPayload(payload: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -18,387 +16,169 @@ async function githubSignature(secret: string, body: string): Promise<string> {
     false,
     ['sign']
   );
-  const signed = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
-  return `sha256=${toHex(signed)}`;
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  const hex = Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `sha256=${hex}`;
 }
 
-describe('webhook ingestion v2', () => {
-  describe('signature verification', () => {
-    it('rejects missing headers', async () => {
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
+function makePushPayload(overrides?: Record<string, unknown>) {
+  return JSON.stringify({
+    ref: 'refs/heads/main',
+    before: 'a'.repeat(40),
+    after: 'b'.repeat(40),
+    forced: false,
+    pusher: { name: 'testuser' },
+    commits: [],
+    repository: {
+      owner: { login: 'test-org' },
+      name: 'test-repo',
+      full_name: 'test-org/test-repo',
+    },
+    ...overrides,
+  });
+}
 
-      expect(response.status).toBe(400);
-      const body = (await response.json()) as { ok: boolean; error: { code: string } };
-      expect(body.ok).toBe(false);
-      expect(body.error.code).toBe('MISSING_WEBHOOK_HEADERS');
-    });
-
-    it('rejects invalid signature', async () => {
-      const payload = {
-        repository: { full_name: 'devsage/platform' },
-        head_commit: { id: 'b'.repeat(40) },
-        ref: 'refs/heads/main',
-        pusher: { name: 'srijan' },
-      };
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': 'sha256=invalid',
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'push',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      expect(response.status).toBe(401);
-      const body = (await response.json()) as { ok: boolean; error: { code: string } };
-      expect(body.ok).toBe(false);
-      expect(body.error.code).toBe('INVALID_SIGNATURE');
-    });
+describe('Webhooks – POST /webhooks/github', () => {
+  beforeAll(async () => {
+    await ensureSchema();
   });
 
-  describe('push events', () => {
-    it('accepts valid push event and enqueues', async () => {
-      const payload = {
-        repository: { full_name: 'devsage/platform' },
-        head_commit: { id: 'a'.repeat(40) },
-        ref: 'refs/heads/main',
-        pusher: { name: 'srijan' },
-        forced: false,
-        before: 'b'.repeat(40),
-        commits: [
-          {
-            id: 'c'.repeat(40),
-            message: 'Initial commit',
-            author: { name: 'srijan', email: 'srijan@example.com' },
-            timestamp: '2024-01-01T00:00:00Z',
-          },
-          {
-            id: 'd'.repeat(40),
-            message: 'Second commit',
-            author: { name: 'alice', email: 'alice@example.com' },
-            timestamp: '2024-01-02T00:00:00Z',
-          },
-        ],
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'push',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('accepted');
-    });
-
-    it('limits commits to 20 entries', async () => {
-      const commits = Array.from({ length: 30 }, (_, i) => ({
-        id: i.toString().padStart(40, '0'),
-        message: `Commit ${i}`,
-        author: { name: 'bot', email: 'bot@example.com' },
-        timestamp: '2024-01-01T00:00:00Z',
-      }));
-
-      const payload = {
-        repository: { full_name: 'devsage/platform' },
-        head_commit: { id: 'a'.repeat(40) },
-        ref: 'refs/heads/main',
-        pusher: { name: 'bot' },
-        forced: false,
-        before: 'b'.repeat(40),
-        commits,
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'push',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-    });
-
-    it('handles force push correctly', async () => {
-      const payload = {
-        repository: { full_name: 'devsage/platform' },
-        head_commit: { id: 'a'.repeat(40) },
-        ref: 'refs/heads/main',
-        pusher: { name: 'srijan' },
-        forced: true,
-        before: 'b'.repeat(40),
-        commits: [],
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'push',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-    });
+  beforeEach(async () => {
+    await resetDb();
   });
 
-  describe('tag events', () => {
-    it('accepts tag create event', async () => {
-      const payload = {
-        ref: 'v1.0.0',
-        ref_type: 'tag',
-        repository: { full_name: 'devsage/platform' },
-        master_branch: 'main',
-        sender: { login: 'srijan' },
-        pusher_type: 'user',
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
+  it('accepts a valid webhook with correct HMAC signature', async () => {
+    const payload = makePushPayload();
+    const signature = await signPayload(payload, WEBHOOK_SECRET);
 
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'create',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('accepted');
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+        'X-GitHub-Event': 'push',
+        'X-GitHub-Delivery': crypto.randomUUID(),
+      },
+      body: payload,
     });
 
-    it('acknowledges branch create without enqueuing', async () => {
-      const payload = {
-        ref: 'feature-branch',
-        ref_type: 'branch',
-        repository: { full_name: 'devsage/platform' },
-        master_branch: 'main',
-        sender: { login: 'srijan' },
-        pusher_type: 'user',
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'create',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(200);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('acknowledged');
-    });
-
-    it('accepts tag delete event', async () => {
-      const payload = {
-        ref: 'v1.0.0',
-        ref_type: 'tag',
-        repository: { full_name: 'devsage/platform' },
-        sender: { login: 'srijan' },
-        pusher_type: 'user',
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'delete',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('accepted');
-    });
-
-    it('acknowledges branch delete without enqueuing', async () => {
-      const payload = {
-        ref: 'feature-branch',
-        ref_type: 'branch',
-        repository: { full_name: 'devsage/platform' },
-        sender: { login: 'srijan' },
-        pusher_type: 'user',
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'delete',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(200);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('acknowledged');
-    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { received: boolean };
+    expect(json.received).toBe(true);
   });
 
-  describe('installation events', () => {
-    it('accepts installation created event', async () => {
-      const payload = {
-        action: 'created',
-        installation: {
-          id: 12345,
-        },
-        repositories: [
-          { full_name: 'devsage/platform' },
-          { full_name: 'devsage/docs' },
-        ],
-        sender: { login: 'srijan' },
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
+  it('rejects an invalid HMAC signature with 401', async () => {
+    const payload = JSON.stringify({ action: 'opened' });
 
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'installation',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('accepted');
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': 'sha256=0000000000000000000000000000000000000000000000000000000000000000',
+        'X-GitHub-Event': 'push',
+        'X-GitHub-Delivery': crypto.randomUUID(),
+      },
+      body: payload,
     });
 
-    it('accepts installation_repositories event', async () => {
-      const payload = {
-        action: 'added',
-        installation: {
-          id: 12345,
-        },
-        repositories_added: [
-          { full_name: 'devsage/new-repo' },
-        ],
-        sender: { login: 'srijan' },
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'installation_repositories',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(202);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('accepted');
-    });
+    expect(res.status).toBe(401);
   });
 
-  describe('unknown events', () => {
-    it('acknowledges pull_request event without processing', async () => {
-      const payload = {
-        action: 'opened',
-        pull_request: { number: 1 },
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
-
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'pull_request',
-        },
-        body,
-      });
-
-      expect(response.status).toBe(200);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('acknowledged');
+  it('returns error when X-Hub-Signature-256 header is missing', async () => {
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GitHub-Event': 'push',
+        'X-GitHub-Delivery': crypto.randomUUID(),
+      },
+      body: JSON.stringify({ action: 'opened' }),
     });
 
-    it('acknowledges issues event without processing', async () => {
-      const payload = {
-        action: 'opened',
-        issue: { number: 1 },
-      };
-      const body = JSON.stringify(payload);
-      const signature = await githubSignature(env.GITHUB_WEBHOOK_SECRET, body);
+    expect(res.status).toBe(400);
+  });
 
-      const response = await SELF.fetch('http://localhost/webhooks/github', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hub-Signature-256': signature,
-          'X-GitHub-Delivery': crypto.randomUUID(),
-          'X-GitHub-Event': 'issues',
-        },
-        body,
-      });
+  it('returns error when X-GitHub-Event header is missing', async () => {
+    const payload = JSON.stringify({ action: 'opened' });
+    const signature = await signPayload(payload, WEBHOOK_SECRET);
 
-      expect(response.status).toBe(200);
-      const responseBody = (await response.json()) as { ok: boolean; data: { message: string } };
-      expect(responseBody.ok).toBe(true);
-      expect(responseBody.data.message).toContain('acknowledged');
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+        'X-GitHub-Delivery': crypto.randomUUID(),
+      },
+      body: payload,
     });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns error when X-GitHub-Delivery header is missing', async () => {
+    const payload = JSON.stringify({ action: 'opened' });
+    const signature = await signPayload(payload, WEBHOOK_SECRET);
+
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+        'X-GitHub-Event': 'push',
+      },
+      body: payload,
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('records delivery in webhook_deliveries for a push event', async () => {
+    const deliveryId = crypto.randomUUID();
+    const payload = makePushPayload();
+    const signature = await signPayload(payload, WEBHOOK_SECRET);
+
+    await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+        'X-GitHub-Event': 'push',
+        'X-GitHub-Delivery': deliveryId,
+      },
+      body: payload,
+    });
+
+    // waitUntil runs async — give it a moment
+    await new Promise(r => setTimeout(r, 300));
+
+    const row = await env.DB.prepare(
+      'SELECT * FROM webhook_deliveries WHERE delivery_id = ?'
+    ).bind(deliveryId).first();
+
+    expect(row).toBeTruthy();
+    expect(row!.event_type).toBe('push');
+  });
+
+  it('handles unknown event type gracefully (returns ignored)', async () => {
+    const payload = JSON.stringify({ something: 'irrelevant' });
+    const signature = await signPayload(payload, WEBHOOK_SECRET);
+
+    const res = await SELF.fetch('http://localhost/webhooks/github', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+        'X-GitHub-Event': 'totally_unknown_event',
+        'X-GitHub-Delivery': crypto.randomUUID(),
+      },
+      body: payload,
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { received: boolean; action: string };
+    expect(json.received).toBe(true);
+    expect(json.action).toBe('ignored');
   });
 });

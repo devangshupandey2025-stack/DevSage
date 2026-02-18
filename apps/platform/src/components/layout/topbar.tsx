@@ -8,8 +8,18 @@ import {
   User,
   ChevronDown,
   Command,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
+import { apiRequest } from '@/lib/api';
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 interface TopBarProps {
   sidebarCollapsed: boolean;
@@ -19,13 +29,49 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  useEffect(() => {
+    apiRequest<{ data: { count: number } }>('/api/v1/notifications/unread-count')
+      .then((res) => setUnreadCount(res.data.count))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (notifOpen) {
+      apiRequest<{ data: Notification[] }>('/api/v1/notifications?limit=10')
+        .then((res) => setNotifications(res.data ?? []))
+        .catch(() => {});
+    }
+  }, [notifOpen]);
+
+  const markRead = async (id: string) => {
+    try {
+      await apiRequest(`/api/v1/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch {}
+  };
+
+  const markAllRead = async () => {
+    try {
+      await apiRequest('/api/v1/notifications/read-all', { method: 'PATCH' });
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {}
+  };
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClick);
@@ -79,15 +125,63 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
       {/* Right side */}
       <div className="flex items-center gap-3 ml-4">
         {/* Notification bell */}
-        <button
-          type="button"
-          className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02] text-white/40 transition hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-white/60"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#CCFF00] text-[8px] font-bold text-black pulse-lime">
-            3
-          </span>
-        </button>
+        <div className="relative" ref={notifRef}>
+          <button
+            type="button"
+            onClick={() => setNotifOpen((p) => !p)}
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02] text-white/40 transition hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-white/60"
+          >
+            <Bell className="h-4 w-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#CCFF00] text-[8px] font-bold text-black pulse-lime">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {notifOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-white/[0.08] bg-black/95 shadow-2xl backdrop-blur-xl"
+              >
+                <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+                  <p className="text-sm font-semibold text-white">Notifications</p>
+                  {unreadCount > 0 && (
+                    <button onClick={markAllRead} className="text-[10px] text-[#CCFF00] hover:underline">
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-xs text-white/30">No notifications</p>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => !n.is_read && markRead(n.id)}
+                        className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.04] ${n.is_read ? 'opacity-50' : ''}`}
+                      >
+                        <div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-[#CCFF00]'}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-white/80 truncate">{n.title}</p>
+                          {n.body && <p className="text-[10px] text-white/30 truncate">{n.body}</p>}
+                          <p className="text-[9px] text-white/20 mt-0.5">
+                            {new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Connection indicator */}
         <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">

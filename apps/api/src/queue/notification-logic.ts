@@ -67,7 +67,7 @@ export async function resolveNotificationRecipients(
         FROM team_members tm
         JOIN teams t ON tm.team_id = t.id
         JOIN users u ON tm.user_id = u.id
-        WHERE t.hackathon_id = ? AND t.status != 'dissolved'
+        WHERE t.hackathon_id = ? AND t.ready = 1
       `).bind(hackathonId).all<Recipient>();
       return members.results || [];
     }

@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Building2, Trophy, Activity } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Building2, Trophy, Activity, Database } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface PlatformStats {
   total_users: number;
@@ -72,7 +74,7 @@ export function AdminDashboardPage() {
           <CardTitle className="text-white">Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <a
               href="/invites"
               className="rounded-lg border border-white/10 bg-white/5 p-4 text-center transition hover:border-[#CCFF00]/20 hover:bg-white/10"
@@ -92,8 +94,46 @@ export function AdminDashboardPage() {
               className="rounded-lg border border-white/10 bg-white/5 p-4 text-center transition hover:border-[#CCFF00]/20 hover:bg-white/10"
             >
               <p className="font-medium text-white">Admins</p>
-              <p className="mt-1 text-xs text-white/40">View platform administrators</p>
+              <p className="mt-1 text-xs text-white/40">Manage platform administrators</p>
             </a>
+            <a
+              href="/users"
+              className="rounded-lg border border-white/10 bg-white/5 p-4 text-center transition hover:border-[#CCFF00]/20 hover:bg-white/10"
+            >
+              <p className="font-medium text-white">Users</p>
+              <p className="mt-1 text-xs text-white/40">Browse all platform users</p>
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Maintenance */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Database className="h-5 w-5 text-[#CCFF00]" /> Maintenance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-white">Audit Hash Backfill</p>
+              <p className="text-xs text-white/40 mt-1">Process unhashed audit events to maintain hash chain integrity.</p>
+            </div>
+            <Button
+              onClick={async () => {
+                try {
+                  const res = await apiRequest<{ data: { processed: number } }>('/api/v1/admin/audit/backfill', { method: 'POST' });
+                  toast.success(`Processed ${res.data.processed} audit events`);
+                } catch {
+                  toast.error('Backfill failed');
+                }
+              }}
+              variant="outline"
+              className="border-white/10 text-white hover:bg-white/10"
+            >
+              Run Backfill
+            </Button>
           </div>
         </CardContent>
       </Card>

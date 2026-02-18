@@ -26,14 +26,19 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
   }
 
   const body = await c.req.json<{
-    name: string; slug: string; description?: string;
-    start_date?: string; end_date?: string; submission_deadline?: string;
+    title: string; slug: string; tagline?: string; description?: string; rules_md?: string;
+    starts_at?: string; judging_starts?: string; judging_ends?: string;
     max_team_size?: number; min_team_size?: number; max_teams?: number;
+    submission_tag_pattern?: string; allow_resubmission?: number;
+    allow_registration_during_active?: number; notify_all_on_deadline?: number;
+    show_judge_comments_to_participants?: number; registration_mode?: string;
+    allowed_email_domains?: string; require_repo?: number; timezone?: string;
+    tracks?: unknown[]; prizes?: unknown[];
     settings?: Record<string, unknown>; template_id?: string;
   }>();
 
-  if (!body.name || !body.slug) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name and slug are required');
+  if (!body.title || !body.slug) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and slug are required');
   }
 
   // Check slug uniqueness
@@ -49,7 +54,9 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
   const now = new Date().toISOString();
 
   // Apply template if provided
-  let settings = body.settings ? JSON.stringify(body.settings) : null;
+  let settings = body.settings ? JSON.stringify(body.settings) : '{}';
+  let tracks = body.tracks ? JSON.stringify(body.tracks) : '[]';
+  let prizes = body.prizes ? JSON.stringify(body.prizes) : '[]';
   if (body.template_id) {
     const template = await c.env.DB.prepare(
       'SELECT settings, tracks, rounds, rubric FROM hackathon_templates WHERE id = ?'
@@ -58,18 +65,25 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
     }>();
     if (template) {
       settings = template.settings;
-      // TODO: Apply tracks, rounds, rubric from template
+      tracks = template.tracks ?? tracks;
+      // TODO: Apply rounds, rubric from template
     }
   }
 
   await c.env.DB.prepare(
-    `INSERT INTO hackathons (id, workspace_id, name, slug, description, start_date, end_date, submission_deadline, max_team_size, min_team_size, max_teams, settings, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO hackathons (id, workspace_id, slug, title, tagline, description, rules_md, status, starts_at, judging_starts, judging_ends, min_team_size, max_team_size, max_teams, submission_tag_pattern, allow_resubmission, allow_registration_during_active, notify_all_on_deadline, show_judge_comments_to_participants, registration_mode, allowed_email_domains, require_repo, timezone, template_id, tracks, prizes, settings, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, workspaceId, body.name, body.slug, body.description ?? null,
-    body.start_date ?? null, body.end_date ?? null, body.submission_deadline ?? null,
-    body.max_team_size ?? 5, body.min_team_size ?? 1, body.max_teams ?? null,
-    settings, user.id, now, now
+    id, workspaceId, body.slug, body.title, body.tagline ?? null,
+    body.description ?? null, body.rules_md ?? null,
+    body.starts_at ?? null, body.judging_starts ?? null, body.judging_ends ?? null,
+    body.min_team_size ?? 1, body.max_team_size ?? 5, body.max_teams ?? null,
+    body.submission_tag_pattern ?? 'submission_v%', body.allow_resubmission ?? 0,
+    body.allow_registration_during_active ?? 0, body.notify_all_on_deadline ?? 0,
+    body.show_judge_comments_to_participants ?? 0, body.registration_mode ?? 'open',
+    body.allowed_email_domains ?? '[]', body.require_repo ?? 1, body.timezone ?? 'UTC',
+    body.template_id ?? null, tracks, prizes, settings,
+    user.id, now, now
   ).run();
 
   // Add creator as organizer
@@ -89,10 +103,10 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
       hackathon_id: id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'hackathon.created',
+      action: 'hackathon.created',
       entity_type: 'hackathon',
       entity_id: id,
-      metadata: { name: body.name, slug: body.slug },
+      details: { title: body.title, slug: body.slug },
     })
   );
 
@@ -149,14 +163,21 @@ hackathons.patch('/:slug', authMiddleware, hackathonContext, requireRole('co_org
   const hackathon = c.get('hackathon')!;
   const body = await c.req.json<Record<string, unknown>>();
 
-  const allowedFields = ['name', 'description', 'start_date', 'end_date', 'submission_deadline', 'max_team_size', 'min_team_size', 'max_teams', 'settings'];
+  const allowedFields = [
+    'title', 'tagline', 'description', 'rules_md', 'starts_at', 'judging_starts', 'judging_ends',
+    'min_team_size', 'max_team_size', 'max_teams', 'submission_tag_pattern',
+    'allow_resubmission', 'allow_registration_during_active', 'notify_all_on_deadline',
+    'show_judge_comments_to_participants', 'registration_mode', 'allowed_email_domains',
+    'require_repo', 'timezone', 'tracks', 'prizes', 'settings',
+  ];
+  const jsonFields = new Set(['settings', 'tracks', 'prizes']);
   const updates: string[] = [];
   const values: unknown[] = [];
 
   for (const field of allowedFields) {
     if (field in body) {
       updates.push(`${field} = ?`);
-      values.push(field === 'settings' ? JSON.stringify(body[field]) : body[field]);
+      values.push(jsonFields.has(field) ? JSON.stringify(body[field]) : body[field]);
     }
   }
 
@@ -177,7 +198,7 @@ hackathons.patch('/:slug', authMiddleware, hackathonContext, requireRole('co_org
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'hackathon.updated',
+      action: 'hackathon.updated',
       entity_type: 'hackathon',
       entity_id: hackathon.id,
       changes: body,
@@ -198,9 +219,11 @@ hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRo
     return errorResponse(c, 400, 'VALIDATION_ERROR', 'target_status and version are required');
   }
 
-  // Get submission_deadline for alarm setup
-  const full = await c.env.DB.prepare(
-    'SELECT submission_deadline FROM hackathons WHERE id = ?'
+  // Get submission_deadline from the active round for alarm setup
+  const activeRound = await c.env.DB.prepare(
+    `SELECT submission_deadline FROM hackathon_rounds
+     WHERE hackathon_id = ? AND status IN ('active', 'upcoming')
+     ORDER BY round_number ASC LIMIT 1`
   ).bind(hackathon.id).first<{ submission_deadline: string | null }>();
 
   const stub = getHackathonDOStub(c.env.HACKATHON_SM, hackathon.id);
@@ -209,7 +232,7 @@ hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRo
     body: JSON.stringify({
       target_status: body.target_status,
       version: body.version,
-      submission_deadline: full?.submission_deadline,
+      submission_deadline: activeRound?.submission_deadline,
     }),
   }));
 
@@ -228,7 +251,7 @@ hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRo
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'hackathon.transitioned',
+      action: 'hackathon.transitioned',
       entity_type: 'hackathon',
       entity_id: hackathon.id,
       changes: { status: { old: hackathon.status, new: body.target_status } },
@@ -273,7 +296,7 @@ hackathons.delete('/:slug', authMiddleware, hackathonContext, requireRole('organ
       hackathon_id: hackathon.id,
       actor_id: user.id,
       actor_type: 'user',
-      event_type: 'hackathon.deleted',
+      action: 'hackathon.deleted',
       entity_type: 'hackathon',
       entity_id: hackathon.id,
     })

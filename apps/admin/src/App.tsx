@@ -8,6 +8,8 @@ import { AdminsPage } from '@/pages/admins';
 import { ProfilePage } from '@/pages/profile';
 import { WorkspacesPage } from '@/pages/workspaces';
 import { WorkspaceDetailPage } from '@/pages/workspace-detail';
+import { UsersPage } from '@/pages/users';
+import { HackathonsPage } from '@/pages/hackathons';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -23,6 +25,8 @@ const router = createBrowserRouter([
           { path: '/admins', element: <AdminsPage /> },
           { path: '/workspaces', element: <WorkspacesPage /> },
           { path: '/workspaces/:id', element: <WorkspaceDetailPage /> },
+          { path: '/users', element: <UsersPage /> },
+          { path: '/hackathons', element: <HackathonsPage /> },
           { path: '/profile', element: <ProfilePage /> },
         ],
       },
