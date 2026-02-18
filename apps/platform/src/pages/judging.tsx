@@ -101,14 +101,15 @@ export function JudgingPage() {
     try {
       await apiRequest(`/api/v1/hackathons/${slug}/judging/judges`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: inviteUserId }),
+        body: JSON.stringify({ email: inviteUserId }),
       });
       toast.success('Judge invited!');
       setInviteDialogOpen(false);
       setInviteUserId('');
       fetchData();
-    } catch (_err) {
-      toast.error('Failed to invite judge');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to invite judge';
+      toast.error(message);
     }
   };
 
@@ -139,14 +140,15 @@ export function JudgingPage() {
               <DialogHeader>
                 <DialogTitle className="text-white text-xl font-black">Invite Judge</DialogTitle>
                 <DialogDescription className="text-white/35">
-                  Enter the user ID of the person you want to invite as a judge.
+                  Enter the email address of the person you want to invite as a judge.
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
                 <Input
                   value={inviteUserId}
                   onChange={(e) => setInviteUserId(e.target.value)}
-                  placeholder="User ID"
+                  placeholder="judge@example.com"
+                  type="email"
                   className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
                 />
               </div>

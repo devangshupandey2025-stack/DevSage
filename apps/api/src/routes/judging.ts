@@ -91,9 +91,18 @@ judging.delete('/rubric/:criterionId', authMiddleware, requireRole('co_organizer
 judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ user_id: string; track_id?: string | null }>();
+  const body = await c.req.json<{ email?: string; user_id?: string; track_id?: string | null }>();
 
-  if (!body.user_id) return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_id is required');
+  let targetUserId = body.user_id;
+
+  // If email provided, look up the user
+  if (body.email && !targetUserId) {
+    const found = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(body.email.trim().toLowerCase()).first<{ id: string }>();
+    if (!found) return errorResponse(c, 404, 'USER_NOT_FOUND', 'No user found with that email. They must sign up first.');
+    targetUserId = found.id;
+  }
+
+  if (!targetUserId) return errorResponse(c, 400, 'VALIDATION_ERROR', 'email or user_id is required');
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -101,7 +110,7 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
   try {
     await c.env.DB.prepare(
       `INSERT INTO judges (id, hackathon_id, user_id, invite_status, track_id, invited_by, invited_at) VALUES (?, ?, ?, 'pending', ?, ?, ?)`
-    ).bind(id, hackathon.id, body.user_id, body.track_id ?? null, user.id, now).run();
+    ).bind(id, hackathon.id, targetUserId, body.track_id ?? null, user.id, now).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
       return errorResponse(c, 409, 'JUDGE_ALREADY_INVITED', 'Judge already invited');
@@ -114,7 +123,7 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     c.env.NOTIFICATION_QUEUE.send({
       type: 'judge.invited',
       hackathon_id: hackathon.id,
-      data: { judge_id: id, user_id: body.user_id },
+      data: { judge_id: id, user_id: targetUserId },
     })
   );
 
@@ -122,11 +131,11 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
       action: 'judge.invited', entity_type: 'judge', entity_id: id,
-      details: { user_id: body.user_id },
+      details: { user_id: targetUserId },
     })
   );
 
-  return successResponse(c, { id, user_id: body.user_id }, { status: 201 });
+  return successResponse(c, { id, user_id: targetUserId }, { status: 201 });
 });
 
 // Bulk invite judges
