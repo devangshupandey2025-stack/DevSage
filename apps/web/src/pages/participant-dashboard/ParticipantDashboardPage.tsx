@@ -21,6 +21,7 @@ import {
   useTeamDetail,
   useSubmissions,
   useRubric,
+  useAnnouncements,
 } from './hooks';
 import {
   resolveDashboardPhase,
@@ -38,6 +39,7 @@ import { SubmissionHistory } from './components/SubmissionHistory';
 import { ActivityFeed } from './components/ActivityFeed';
 import { NoTeamCTA } from './components/NoTeamCTA';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { AnnouncementsTab } from './components/AnnouncementsTab';
 
 export function ParticipantDashboardPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -63,6 +65,10 @@ export function ParticipantDashboardPage() {
 
   // Rubric (available after hackathon is active)
   const rubricQuery = useRubric(slug!);
+
+  // Announcements for the hackathon
+  const announcementsQuery = useAnnouncements(slug!);
+  const announcements = announcementsQuery.data ?? [];
 
   /* ── Derived state ─────────────────────────────────────────── */
   const hackathon = hackathonQuery.data;
@@ -244,6 +250,12 @@ export function ParticipantDashboardPage() {
             Syncing…
           </div>
         )}
+
+      {/* Announcements Tab */}
+      <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+        <h2 className="text-lg font-bold text-white mb-4">Announcements</h2>
+        <AnnouncementsTab announcements={announcements} isLoading={announcementsQuery.isLoading} />
+      </div>
     </div>
   );
 }

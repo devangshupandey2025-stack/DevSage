@@ -19,6 +19,7 @@ announcements.get('/', async (c) => {
        WHERE a.hackathon_id = ?
        ORDER BY a.pinned DESC, a.created_at DESC`
     ).bind(hackathon.id).all();
+    console.log('[announcements] List fetch:', { hackathonId: hackathon.id, count: rows.results?.length ?? 0 });
     return successResponse(c, rows.results || []);
   } catch (err) {
     console.error('[announcements] List error:', err);
@@ -58,6 +59,7 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
      WHERE a.id = ?`
   ).bind(id).first();
 
+  console.log('[announcements] Created announcement:', created);
   return successResponse(c, created, { status: 201 });
 });
 

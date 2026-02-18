@@ -132,3 +132,17 @@ export function useLeaderboard(slug: string, enabled: boolean) {
     staleTime: 60_000,
   });
 }
+
+/* ── Announcements ───────────────────────────────────────────── */
+export function useAnnouncements(slug: string) {
+  return useQuery({
+    queryKey: [...dashboardKeys.all, 'announcements', slug],
+    queryFn: async () => {
+      const res = await apiRequest<ApiEnvelope<any[]>>(
+        `/api/v1/hackathons/${slug}/announcements`
+      );
+      return res.data;
+    },
+    staleTime: 30_000,
+  });
+}
