@@ -14,6 +14,9 @@ interface QueueEnv {
   NOTIFICATION_QUEUE: Queue;
   RESEND_API_KEY: string;
   SMTP_URL?: string;
+  SMTP_USERNAME?: string;
+  SMTP_PASSWORD?: string;
+  SMTP_EMAIL_ADDR?: string;
   EMAIL_FROM: string;
   FRONTEND_URL: string;
   PLATFORM_URL: string;

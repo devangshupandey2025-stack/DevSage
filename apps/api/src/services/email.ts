@@ -11,6 +11,9 @@ const RESEND_TIMEOUT = 10_000;
 
 export interface EmailEnv {
   SMTP_URL?: string;
+  SMTP_USERNAME?: string;
+  SMTP_PASSWORD?: string;
+  SMTP_EMAIL_ADDR?: string;
   RESEND_API_KEY?: string;
   EMAIL_FROM: string;
 }
@@ -33,23 +36,33 @@ export async function sendEmail(
 ): Promise<boolean> {
   const to = Array.isArray(options.to) ? options.to : [options.to];
 
-  // Prefer SMTP
+  // Prefer SMTP (combined URL)
   if (env.SMTP_URL) {
     try {
       const config = parseSmtpUrl(env.SMTP_URL);
-      const sent = await sendSmtp(
-        config,
-        env.EMAIL_FROM,
-        to,
-        options.subject,
-        options.html,
-      );
+      const from = env.SMTP_EMAIL_ADDR || env.EMAIL_FROM;
+      const sent = await sendSmtp(config, from, to, options.subject, options.html);
       if (sent) return true;
-      console.warn('SMTP returned false, trying Resend fallback');
+      console.warn('SMTP (URL) returned false, trying next transport');
     } catch (err) {
-      console.warn(
-        `SMTP error: ${err instanceof Error ? err.message : err}`,
-      );
+      console.warn(`SMTP (URL) error: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // Fallback: individual SMTP secrets (SMTP_USERNAME + SMTP_PASSWORD)
+  if (!env.SMTP_URL && env.SMTP_USERNAME && env.SMTP_PASSWORD) {
+    try {
+      // Derive SMTP host from email domain (e.g. noreply@devsage.org → mail.spacemail.com is configured per-domain)
+      // Use the EMAIL_FROM domain to build a reasonable host guess, or use the explicit SMTP_URL next time
+      const from = env.SMTP_EMAIL_ADDR || env.EMAIL_FROM;
+      const domain = from.split('@')[1] || 'devsage.org';
+      const smtpHost = `mail.${domain}`;
+      const config = { host: smtpHost, port: 465, username: env.SMTP_USERNAME, password: env.SMTP_PASSWORD };
+      const sent = await sendSmtp(config, from, to, options.subject, options.html);
+      if (sent) return true;
+      console.warn('SMTP (individual secrets) returned false, trying Resend');
+    } catch (err) {
+      console.warn(`SMTP (individual) error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
