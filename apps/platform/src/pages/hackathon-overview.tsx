@@ -94,7 +94,7 @@ export function HackathonOverviewPage() {
       const [teamsRes, submissionsRes, judgesRes] = await Promise.all([
         apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/teams`),
         apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/submissions`),
-        apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/judges`),
+        apiRequest<{ ok: boolean; data: unknown[] }>(`/api/v1/hackathons/${slug}/judging/judges`),
       ]);
       setMetrics({
         teams: teamsRes.data?.length ?? 0,

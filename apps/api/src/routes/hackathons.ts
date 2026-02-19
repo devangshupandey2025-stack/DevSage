@@ -227,6 +227,21 @@ hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRo
   ).bind(hackathon.id).first<{ submission_deadline: string | null }>();
 
   const stub = getHackathonDOStub(c.env.HACKATHON_SM, hackathon.id);
+
+  // Auto-initialize DO if not yet initialized (handles seeded hackathons)
+  const initRes = await stub.fetch(new Request('http://do/initialize', {
+    method: 'POST',
+    body: JSON.stringify({
+      hackathon_id: hackathon.id,
+      status: hackathon.status,
+      submission_deadline: activeRound?.submission_deadline,
+    }),
+  }));
+  if (!initRes.ok) {
+    const initResult = await initRes.json() as { ok: boolean; error?: unknown };
+    return c.json(initResult, initRes.status as 400 | 500);
+  }
+
   const doRes = await stub.fetch(new Request('http://do/transition', {
     method: 'POST',
     body: JSON.stringify({
