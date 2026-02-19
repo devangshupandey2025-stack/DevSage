@@ -6,21 +6,28 @@ import { apiRequest } from './api';
 interface Hackathon {
   id: string;
   workspace_id: string;
-  name: string;
   slug: string;
+  title: string;
   tagline: string | null;
+  description: string | null;
+  rules_md: string | null;
   status: string;
-  max_team_size: number;
-  min_team_size: number;
-  submission_tag_pattern: string;
-  registration_open: boolean;
   starts_at: string | null;
-  submission_deadline: string | null;
-  ends_at: string | null;
+  judging_starts: string | null;
+  judging_ends: string | null;
+  min_team_size: number;
+  max_team_size: number;
+  max_teams: number | null;
+  submission_tag_pattern: string;
+  allow_resubmission: number;
+  registration_mode: string;
+  timezone: string;
+  tracks: string;
+  prizes: string;
+  settings: string;
   created_by: string;
   created_at: string;
   updated_at: string;
-  version: number;
 }
 
 interface Team {

@@ -29,10 +29,9 @@ interface Hackathon {
   id: string;
   slug: string;
   title: string;
-  description: string;
+  description: string | null;
   status: HackathonStatus;
   starts_at: string | null;
-  submission_deadline: string | null;
   judging_starts: string | null;
   judging_ends: string | null;
   min_team_size: number;
@@ -284,7 +283,6 @@ function OverviewTab({ hackathon }: { hackathon: Hackathon }) {
         </CardHeader>
         <CardContent className="space-y-4">
           {hackathon.starts_at && <TimelineItem label="Starts At" date={hackathon.starts_at} />}
-          {hackathon.submission_deadline && <TimelineItem label="Submission Deadline" date={hackathon.submission_deadline} />}
           {hackathon.judging_starts && <TimelineItem label="Judging Starts" date={hackathon.judging_starts} />}
           {hackathon.judging_ends && <TimelineItem label="Judging Ends" date={hackathon.judging_ends} />}
         </CardContent>

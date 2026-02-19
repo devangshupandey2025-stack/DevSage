@@ -222,9 +222,9 @@ interface HackathonSettings {
   min_team_size: number;
   max_team_size: number;
   starts_at: string | null;
-  submission_deadline: string | null;
+  judging_starts: string | null;
   registration_mode: string | null;
-  allow_resubmission: boolean;
+  allow_resubmission: number;
   status: string;
 }
 
@@ -259,9 +259,9 @@ export function SettingsPage() {
         setMinTeamSize(String(h.min_team_size ?? 1));
         setMaxTeamSize(String(h.max_team_size ?? 5));
         setStartsAt(h.starts_at ? h.starts_at.slice(0, 16) : '');
-        setSubDeadline(h.submission_deadline ? h.submission_deadline.slice(0, 16) : '');
+        setSubDeadline(h.judging_starts ? h.judging_starts.slice(0, 16) : '');
         setRequireApproval(h.registration_mode === 'approval');
-        setAllowLateSubmissions(h.allow_resubmission ?? false);
+        setAllowLateSubmissions(!!h.allow_resubmission);
         setHackathonStatus(h.status);
       } catch {
         toast.error('Failed to load settings');
@@ -284,8 +284,9 @@ export function SettingsPage() {
           min_team_size: parseInt(minTeamSize),
           max_team_size: parseInt(maxTeamSize),
           starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+          judging_starts: subDeadline ? new Date(subDeadline).toISOString() : null,
           registration_mode: requireApproval ? 'approval' : 'open',
-          allow_resubmission: allowLateSubmissions,
+          allow_resubmission: allowLateSubmissions ? 1 : 0,
         }),
       });
       setSaved(true);
@@ -413,7 +414,7 @@ export function SettingsPage() {
         <SettingsSection title="Dates & Deadlines" icon={Calendar} accent="#60A5FA">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InputField label="Starts At" value={startsAt} onChange={setStartsAt} type="datetime-local" />
-            <InputField label="Submission Deadline" value={subDeadline} onChange={setSubDeadline} type="datetime-local" />
+            <InputField label="Judging Starts" value={subDeadline} onChange={setSubDeadline} type="datetime-local" />
           </div>
           {startsAt && subDeadline && new Date(subDeadline) > new Date(startsAt) && (
             <motion.div

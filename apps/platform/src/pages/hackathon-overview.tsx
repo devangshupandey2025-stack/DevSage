@@ -24,10 +24,9 @@ interface Hackathon {
   id: string;
   slug: string;
   title: string;
-  description: string;
+  description: string | null;
   status: string;
   starts_at: string | null;
-  submission_deadline: string | null;
   judging_starts: string | null;
   judging_ends: string | null;
   max_team_size: number;
@@ -311,17 +310,17 @@ export function HackathonOverviewPage() {
               <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#CCFF00] animate-ping" />
             </div>
             <span className="text-[11px] font-bold uppercase tracking-widest text-[#CCFF00]/80">
-              {hackathon.status === 'active' ? 'Submission Deadline' : 'Next Milestone'}
+              {hackathon.status === 'active' ? 'Judging Starts' : 'Next Milestone'}
             </span>
           </div>
-          {hackathon.submission_deadline ? (
+          {hackathon.judging_starts ? (
             <CountdownTimer
-              targetDate={hackathon.submission_deadline}
+              targetDate={hackathon.judging_starts}
               label=""
               className="p-0 bg-transparent border-none"
             />
           ) : (
-            <p className="text-white/30 text-sm font-medium">No deadline set</p>
+            <p className="text-white/30 text-sm font-medium">No date set</p>
           )}
         </motion.div>
       </div>
@@ -386,8 +385,8 @@ export function HackathonOverviewPage() {
             <div className="relative space-y-1">
               {[
                 { label: 'Kickoff', date: hackathon.starts_at, icon: Zap },
-                { label: 'Submissions Close', date: hackathon.submission_deadline, icon: FileCode },
                 { label: 'Judging Begins', date: hackathon.judging_starts, icon: Scale },
+                { label: 'Judging Ends', date: hackathon.judging_ends, icon: FileCode },
               ].filter((event) => event.date).map((event, idx, arr) => {
                 const isPast = new Date(event.date!) < new Date();
                 const isLast = idx === arr.length - 1;

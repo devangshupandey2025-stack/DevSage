@@ -25,10 +25,9 @@ interface Hackathon {
   workspace_id: string;
   slug: string;
   title: string;
-  description: string;
+  description: string | null;
   status: HackathonStatus;
   starts_at: string | null;
-  submission_deadline: string | null;
   judging_starts: string | null;
   judging_ends: string | null;
   max_team_size: number;
@@ -159,7 +158,7 @@ export function DashboardPage() {
     title: '',
     description: '',
     startsAt: '',
-    submissionDeadline: '',
+    judgingStarts: '',
     maxTeamSize: '4',
   });
 
@@ -194,7 +193,7 @@ export function DashboardPage() {
   };
 
   const createHackathon = async () => {
-    if (!formData.title || !formData.startsAt || !formData.submissionDeadline) {
+    if (!formData.title || !formData.startsAt || !formData.judgingStarts) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -213,13 +212,13 @@ export function DashboardPage() {
           title: formData.title,
           description: formData.description,
           startsAt: new Date(formData.startsAt).toISOString(),
-          submissionDeadline: new Date(formData.submissionDeadline).toISOString(),
+          judgingStarts: new Date(formData.judgingStarts).toISOString(),
           maxTeamSize: parseInt(formData.maxTeamSize, 10),
         }),
       });
       toast.success('Hackathon created!');
       setCreateDialogOpen(false);
-      setFormData({ title: '', description: '', startsAt: '', submissionDeadline: '', maxTeamSize: '4' });
+      setFormData({ title: '', description: '', startsAt: '', judgingStarts: '', maxTeamSize: '4' });
       fetchHackathons();
     } catch (_error) {
       toast.error('Failed to create hackathon');
@@ -253,8 +252,8 @@ export function DashboardPage() {
   const sortedHackathons = [...hackathons].sort((a, b) => {
     const byS = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byS !== 0) return byS;
-    const aT = a.submission_deadline ? new Date(a.submission_deadline).getTime() : Number.POSITIVE_INFINITY;
-    const bT = b.submission_deadline ? new Date(b.submission_deadline).getTime() : Number.POSITIVE_INFINITY;
+    const aT = a.judging_starts ? new Date(a.judging_starts).getTime() : Number.POSITIVE_INFINITY;
+    const bT = b.judging_starts ? new Date(b.judging_starts).getTime() : Number.POSITIVE_INFINITY;
     return aT - bT;
   });
 
@@ -442,8 +441,8 @@ export function DashboardPage() {
                     </span>
                     <span className="flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5" />
-                      {hackathon.submission_deadline
-                        ? new Date(hackathon.submission_deadline).toLocaleDateString('en-US', {
+                      {hackathon.judging_starts
+                        ? new Date(hackathon.judging_starts).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                           })
@@ -522,16 +521,16 @@ export function DashboardPage() {
                   <p className="mt-2 text-lg font-black text-white">{selected.max_team_size}</p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/4 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Deadline</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">Judging Starts</p>
                   <p className="mt-2 text-sm font-bold text-white">
-                    {selected.submission_deadline
-                      ? new Date(selected.submission_deadline).toLocaleString('en-US', {
+                    {selected.judging_starts
+                      ? new Date(selected.judging_starts).toLocaleString('en-US', {
                           month: 'short',
                           day: 'numeric',
                           hour: '2-digit',
                           minute: '2-digit',
                         })
-                      : 'No deadline'}
+                      : 'Not set'}
                   </p>
                 </div>
               </div>
@@ -635,12 +634,12 @@ export function DashboardPage() {
                 </div>
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
-                    Submission Deadline *
+                    Judging Starts *
                   </label>
                   <input
                     type="datetime-local"
-                    value={formData.submissionDeadline}
-                    onChange={(e) => setFormData((f) => ({ ...f, submissionDeadline: e.target.value }))}
+                    value={formData.judgingStarts}
+                    onChange={(e) => setFormData((f) => ({ ...f, judgingStarts: e.target.value }))}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
                   />
                 </div>
