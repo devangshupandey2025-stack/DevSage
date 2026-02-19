@@ -171,8 +171,8 @@ judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async 
 judging.get('/judges', async (c) => {
   const hackathon = c.get('hackathon')!;
   const judges = await c.env.DB.prepare(`
-    SELECT j.id, j.invite_status, j.user_id, j.track_id, j.invited_at, j.responded_at,
-           u.name, u.avatar_url
+    SELECT j.id, j.invite_status as status, j.user_id, j.track_id, j.invited_at, j.responded_at,
+           u.name as display_name, u.email, u.avatar_url
     FROM judges j
     LEFT JOIN users u ON j.user_id = u.id
     WHERE j.hackathon_id = ?

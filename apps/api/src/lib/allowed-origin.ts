@@ -4,6 +4,7 @@ interface OriginEnv {
   ADMIN_URL: string;
   HACKATHON_ORIGIN_PATTERN?: string; // e.g. "https://*.hackathon.devsage.org"
   PAGES_ORIGIN_PATTERN?: string;     // e.g. "https://*.pages.dev"
+  WORKERS_ORIGIN_PATTERN?: string;   // e.g. "https://*.workers.dev"
 }
 
 /**
@@ -18,7 +19,7 @@ export function getAllowedOrigins(env: OriginEnv): (origin: string) => boolean {
   // Build an array of RegExp matchers from wildcard patterns
   const patterns: RegExp[] = [];
 
-  for (const raw of [env.HACKATHON_ORIGIN_PATTERN, env.PAGES_ORIGIN_PATTERN]) {
+  for (const raw of [env.HACKATHON_ORIGIN_PATTERN, env.PAGES_ORIGIN_PATTERN, env.WORKERS_ORIGIN_PATTERN]) {
     if (!raw) continue;
     // Convert glob pattern to regex:
     //   https://*.example.com → https://[a-z0-9.-]+\.example\.com

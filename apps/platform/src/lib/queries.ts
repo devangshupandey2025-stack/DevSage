@@ -55,6 +55,20 @@ interface Submission {
   is_current: boolean;
   team_name?: string;
   repo_url?: string;
+  title?: string;
+  description?: string;
+  ai_score?: number | null;
+  analysis_json?: string | null;
+  ai_review_json?: string | null;
+  analysis?: Record<string, unknown>;
+  ai_review?: {
+    summary: string;
+    score: number;
+    strengths: string[];
+    improvements: string[];
+    tech_stack_assessment: string;
+    hackathon_readiness: string;
+  };
 }
 
 interface Judge {
@@ -155,6 +169,12 @@ export const hackathonQueries = {
       queryKey: ['hackathons', slug, 'submissions'],
       queryFn: () => apiRequest<ApiResponse<Submission[]>>(`/api/v1/hackathons/${slug}/submissions`),
       enabled: !!slug,
+    }),
+  submissionDetail: (slug: string, submissionId: string) =>
+    queryOptions({
+      queryKey: ['hackathons', slug, 'submissions', submissionId],
+      queryFn: () => apiRequest<ApiResponse<Submission>>(`/api/v1/hackathons/${slug}/submissions/${submissionId}`),
+      enabled: !!slug && !!submissionId,
     }),
   judges: (slug: string) =>
     queryOptions({

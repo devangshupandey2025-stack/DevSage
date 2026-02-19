@@ -66,7 +66,7 @@ auth.post('/register', async (c) => {
     })
   );
 
-  return successResponse(c, { id, email, name }, { status: 201 });
+  return successResponse(c, { id, email, name, access_token: jwt }, { status: 201 });
 });
 
 auth.post('/login', async (c) => {
@@ -113,7 +113,7 @@ auth.post('/login', async (c) => {
     })
   );
 
-  return successResponse(c, { id: user.id, email: user.email, name: user.name });
+  return successResponse(c, { id: user.id, email: user.email, name: user.name, access_token: jwt });
 });
 
 auth.post('/refresh', async (c) => {
@@ -221,6 +221,7 @@ auth.get('/me', authMiddleware, async (c) => {
       email: user.email,
       name: user.name,
       avatar_url: user.avatar_url,
+      github_username: user.github_username,
       created_at: user.created_at,
     },
     roles: [],

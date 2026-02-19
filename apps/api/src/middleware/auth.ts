@@ -9,7 +9,8 @@ import { verifyJWT } from '../lib/jwt.js';
  * Never rejects — downstream handlers check user themselves.
  */
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const token = getCookie(c, 'access_token');
+  // Try Authorization header first, then fall back to cookie
+  let token = c.req.header('Authorization')?.replace('Bearer ', '') || getCookie(c, 'access_token');
 
   if (!token) {
     c.set('user', null);
@@ -25,7 +26,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const user = await c.env.DB.prepare(
     'SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?'
   ).bind(payload.sub).first<{
-    id: string; email: string; name: string; avatar_url: string | null; created_at: string;
+    id: string; email: string; name: string; avatar_url: string | null; github_username: string; created_at: string;
   }>();
 
   if (!user) {

@@ -15,6 +15,9 @@ export interface AppEnv {
     JWT_SECRET: string;
     GITHUB_WEBHOOK_SECRET: string;
     RESEND_API_KEY: string;
+    GEMINI_API_KEY?: string;
+    GITHUB_CLIENT_ID?: string;
+    GITHUB_CLIENT_SECRET?: string;
     // Vars
     NODE_ENV?: string;
     FRONTEND_URL: string;
@@ -38,6 +41,7 @@ export interface UserContext {
   email: string;
   name: string;
   avatar_url: string | null;
+  github_username: string;
   created_at: string;
 }
 
