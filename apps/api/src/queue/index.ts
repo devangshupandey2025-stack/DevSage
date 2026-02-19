@@ -13,6 +13,7 @@ interface QueueEnv {
   WEBHOOK_QUEUE: Queue;
   NOTIFICATION_QUEUE: Queue;
   RESEND_API_KEY: string;
+  SMTP_URL?: string;
   EMAIL_FROM: string;
   FRONTEND_URL: string;
   PLATFORM_URL: string;

@@ -12,6 +12,17 @@ export async function resolveNotificationRecipients(
   if (!hackathonId) return [];
 
   switch (type) {
+    case 'judge.invited': {
+      // Notify the invited judge (the user being invited, not organizers)
+      const userId = data?.user_id as string | undefined;
+      if (!userId) return [];
+      const user = await db
+        .prepare('SELECT id as user_id, email FROM users WHERE id = ?')
+        .bind(userId)
+        .first<Recipient>();
+      return user ? [user] : [];
+    }
+
     case 'submission.received':
     case 'submission.validated':
     case 'submission.tag_deleted': {
