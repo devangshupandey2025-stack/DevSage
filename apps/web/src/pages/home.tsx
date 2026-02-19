@@ -42,7 +42,6 @@ import type { LucideIcon } from 'lucide-react';
 // Local team photos (imported from src/photos)
 import kevinImg from '@/photos/kevin.jpeg';
 import harshImg from '@/photos/harsh.png';
-import deeptanshuImg from '@/photos/deeptanshu.png';
 import ibhanImg from '@/photos/ibhan.jpeg';
 import devangshuImg from '@/photos/devangshu.png';
 import srijanImg from '@/photos/srijan.png';
@@ -807,7 +806,6 @@ const teamMembers = [
   { name: 'Srijan Guchhait', role: 'System Architecture & Backend', linkedin: 'https://www.linkedin.com/in/srijan-guchhait/', image: srijanImg, accent: '#9CA3AF' },
   { name: 'Devangshu Pandey', role: 'Frontend', linkedin: 'https://www.linkedin.com/in/devangshu-pandey-606611372/', image: devangshuImg, accent: '#A0887A' },
   { name: 'Ibhan Mukherjee', role: 'AI/ML', linkedin: 'https://www.linkedin.com/in/ibhan-mukherjee/', image: ibhanImg, accent: '#2D3A6E' },
-  { name: 'Deeptanshu Samanta', role: 'UI/UX', linkedin: 'https://www.linkedin.com/in/deeptanshu-samanta-3750b6312/', image: deeptanshuImg, accent: '#8B9BAA' },
   { name: 'Harsh', role: 'Security & DevOps', linkedin: 'https://www.linkedin.com/in/harsh-zz/', image: harshImg, accent: '#4B5563' },
 ];
 
@@ -1825,7 +1823,6 @@ const SplitSection = () => {
 const Footer = () => {
   const socialLinks: { icon: LucideIcon; href: string; isEmail?: boolean }[] = [
     { icon: Mail, href: 'https://mail.google.com/mail/?view=cm&fs=1&to=admin@devsage.org&su=Project%20Inquiry' },
-    { icon: Twitter, href: '#' },
     { icon: Linkedin, href: 'https://www.linkedin.com/in/devsage/' },
     { icon: Instagram, href: 'https://www.instagram.com/devsage26/' },
   ];
