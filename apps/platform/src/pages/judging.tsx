@@ -107,11 +107,15 @@ export function JudgingPage() {
   const inviteJudge = async () => {
     if (!inviteUserId.trim()) return;
     try {
-      await apiRequest(`/api/v1/hackathons/${slug}/judging/judges`, {
+      const res = await apiRequest<{ data: { already_invited?: boolean; message?: string } }>(`/api/v1/hackathons/${slug}/judging/judges`, {
         method: 'POST',
         body: JSON.stringify({ email: inviteUserId }),
       });
-      toast.success('Judge invited!');
+      if (res.data?.already_invited) {
+        toast.info(res.data.message ?? 'Judge already invited — invite email re-sent.');
+      } else {
+        toast.success('Judge invited!');
+      }
       setInviteDialogOpen(false);
       setInviteUserId('');
       fetchData();

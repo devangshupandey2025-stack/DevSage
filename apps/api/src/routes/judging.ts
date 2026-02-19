@@ -113,6 +113,28 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     ).bind(id, hackathon.id, targetUserId, body.track_id ?? null, user.id, now).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
+      // Judge already exists — re-send the invite email and return the existing record
+      const existing = await c.env.DB.prepare(
+        'SELECT id, invite_status FROM judges WHERE hackathon_id = ? AND user_id = ?'
+      ).bind(hackathon.id, targetUserId).first<{ id: string; invite_status: string }>();
+
+      if (existing) {
+        // Re-send invite notification so they get the email again
+        c.executionCtx.waitUntil(
+          c.env.NOTIFICATION_QUEUE.send({
+            type: 'judge.invited',
+            hackathon_id: hackathon.id,
+            data: { judge_id: existing.id, user_id: targetUserId },
+          })
+        );
+        return successResponse(c, {
+          id: existing.id,
+          user_id: targetUserId,
+          already_invited: true,
+          invite_status: existing.invite_status,
+          message: `Judge already invited (status: ${existing.invite_status}). Invite email re-sent.`,
+        });
+      }
       return errorResponse(c, 409, 'JUDGE_ALREADY_INVITED', 'Judge already invited');
     }
     throw err;
