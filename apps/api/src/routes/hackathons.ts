@@ -11,7 +11,129 @@ import { VALID_TRANSITIONS } from '../lib/constants.js';
 
 const hackathons = new Hono<AppEnv>();
 
-// Create hackathon under a workspace
+// Create hackathon (workspaceId in body — matches frontend)
+hackathons.post('/', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const raw = await c.req.json<Record<string, unknown>>();
+  const workspaceId = (raw.workspaceId ?? raw.workspace_id) as string;
+  if (!workspaceId) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'workspaceId is required');
+  }
+
+  // Normalize camelCase → snake_case
+  const body = {
+    title: raw.title as string,
+    slug: raw.slug as string,
+    tagline: raw.tagline as string | undefined,
+    description: raw.description as string | undefined,
+    rules_md: (raw.rules_md ?? raw.rulesMd) as string | undefined,
+    starts_at: (raw.starts_at ?? raw.startsAt) as string | undefined,
+    judging_starts: (raw.judging_starts ?? raw.judgingStarts) as string | undefined,
+    judging_ends: (raw.judging_ends ?? raw.judgingEnds) as string | undefined,
+    max_team_size: (raw.max_team_size ?? raw.maxTeamSize) as number | undefined,
+    min_team_size: (raw.min_team_size ?? raw.minTeamSize) as number | undefined,
+    max_teams: (raw.max_teams ?? raw.maxTeams) as number | undefined,
+    submission_tag_pattern: (raw.submission_tag_pattern ?? raw.submissionTagPattern) as string | undefined,
+    allow_resubmission: (raw.allow_resubmission ?? raw.allowResubmission) as number | undefined,
+    allow_registration_during_active: (raw.allow_registration_during_active ?? raw.allowRegistrationDuringActive) as number | undefined,
+    notify_all_on_deadline: (raw.notify_all_on_deadline ?? raw.notifyAllOnDeadline) as number | undefined,
+    show_judge_comments_to_participants: (raw.show_judge_comments_to_participants ?? raw.showJudgeCommentsToParticipants) as number | undefined,
+    registration_mode: (raw.registration_mode ?? raw.registrationMode) as string | undefined,
+    allowed_email_domains: (raw.allowed_email_domains ?? raw.allowedEmailDomains) as string | undefined,
+    require_repo: (raw.require_repo ?? raw.requireRepo) as number | undefined,
+    timezone: raw.timezone as string | undefined,
+    tracks: raw.tracks as unknown[] | undefined,
+    prizes: raw.prizes as unknown[] | undefined,
+    settings: raw.settings as Record<string, unknown> | undefined,
+    template_id: (raw.template_id ?? raw.templateId) as string | undefined,
+  };
+
+  // Verify user is workspace owner/admin
+  const membership = await c.env.DB.prepare(
+    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
+  ).bind(workspaceId, user.id).first<{ role: string }>();
+
+  if (!membership || !['owner', 'admin', 'workspace_owner', 'workspace_admin'].includes(membership.role)) {
+    return errorResponse(c, 403, 'FORBIDDEN', 'Must be workspace owner or admin');
+  }
+
+  if (!body.title || !body.slug) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and slug are required');
+  }
+
+  // Check slug uniqueness
+  const existingSlug = await c.env.DB.prepare(
+    'SELECT id FROM hackathons WHERE slug = ?'
+  ).bind(body.slug).first();
+
+  if (existingSlug) {
+    return errorResponse(c, 409, 'SLUG_TAKEN', 'This slug is already in use');
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Apply template if provided
+  let settings = body.settings ? JSON.stringify(body.settings) : '{}';
+  let tracks = body.tracks ? JSON.stringify(body.tracks) : '[]';
+  let prizes = body.prizes ? JSON.stringify(body.prizes) : '[]';
+  if (body.template_id) {
+    const template = await c.env.DB.prepare(
+      'SELECT settings, tracks, rounds, rubric FROM hackathon_templates WHERE id = ?'
+    ).bind(body.template_id).first<{
+      settings: string; tracks: string; rounds: string; rubric: string;
+    }>();
+    if (template) {
+      settings = template.settings;
+      tracks = template.tracks ?? tracks;
+    }
+  }
+
+  await c.env.DB.prepare(
+    `INSERT INTO hackathons (id, workspace_id, slug, title, tagline, description, rules_md, status, starts_at, judging_starts, judging_ends, min_team_size, max_team_size, max_teams, submission_tag_pattern, allow_resubmission, allow_registration_during_active, notify_all_on_deadline, show_judge_comments_to_participants, registration_mode, allowed_email_domains, require_repo, timezone, template_id, tracks, prizes, settings, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, workspaceId, body.slug, body.title, body.tagline ?? null,
+    body.description ?? null, body.rules_md ?? null,
+    body.starts_at ?? null, body.judging_starts ?? null, body.judging_ends ?? null,
+    body.min_team_size ?? 1, body.max_team_size ?? 5, body.max_teams ?? null,
+    body.submission_tag_pattern ?? 'submission_v%', body.allow_resubmission ?? 0,
+    body.allow_registration_during_active ?? 0, body.notify_all_on_deadline ?? 0,
+    body.show_judge_comments_to_participants ?? 0, body.registration_mode ?? 'open',
+    body.allowed_email_domains ?? '[]', body.require_repo ?? 1, body.timezone ?? 'UTC',
+    body.template_id ?? null, tracks, prizes, settings,
+    user.id, now, now
+  ).run();
+
+  // Add creator as organizer
+  await c.env.DB.prepare(
+    'INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), id, user.id, 'organizer', now).run();
+
+  // Initialize DO
+  const stub = getHackathonDOStub(c.env.HACKATHON_SM, id);
+  await stub.fetch(new Request('http://do/initialize', {
+    method: 'POST',
+    body: JSON.stringify({ hackathon_id: id, status: 'draft' }),
+  }));
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: id,
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'hackathon.created',
+      entity_type: 'hackathon',
+      entity_id: id,
+      details: { title: body.title, slug: body.slug },
+    })
+  );
+
+  const created = await c.env.DB.prepare('SELECT * FROM hackathons WHERE id = ?').bind(id).first();
+  return successResponse(c, created, { status: 201 });
+});
+
+// Create hackathon under a workspace (legacy URL)
 hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
@@ -21,7 +143,7 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
     'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
   ).bind(workspaceId, user.id).first<{ role: string }>();
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+  if (!membership || !['owner', 'admin', 'workspace_owner', 'workspace_admin'].includes(membership.role)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be workspace owner or admin');
   }
 
@@ -88,8 +210,8 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
 
   // Add creator as organizer
   await c.env.DB.prepare(
-    'INSERT INTO organizer_roles (id, hackathon_id, user_id, role) VALUES (?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), id, user.id, 'organizer').run();
+    'INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), id, user.id, 'organizer', now).run();
 
   // Initialize DO
   const stub = getHackathonDOStub(c.env.HACKATHON_SM, id);
