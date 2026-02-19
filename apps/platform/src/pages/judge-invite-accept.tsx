@@ -46,7 +46,7 @@ export function JudgeInviteAcceptPage() {
     try {
       await apiRequest(`/api/v1/invites/judge/${token}`, { method: 'POST' });
       toast.success('Invite accepted! You are now a judge.');
-      navigate('/judge/assignments');
+      navigate(`/hackathons/${invite?.hackathon_slug}/judge`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to accept invite');
     } finally {

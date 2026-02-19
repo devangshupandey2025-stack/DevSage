@@ -224,6 +224,31 @@ judging.get('/judges/:judgeId/assignments', authMiddleware, async (c) => {
   return successResponse(c, assignments.results || []);
 });
 
+// Get MY assignments (for current user as judge)
+judging.get('/my-assignments', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+
+  // Find judge record for current user
+  const judge = await c.env.DB.prepare(
+    'SELECT id FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = ?'
+  ).bind(hackathon.id, user.id, 'accepted').first<{ id: string }>();
+
+  if (!judge) return successResponse(c, []);
+
+  const assignments = await c.env.DB.prepare(`
+    SELECT ja.id, ja.submission_id, ja.team_id, ja.round, ja.status, ja.assigned_at, ja.completed_at,
+           s.tag_name, s.commit_sha, t.name as team_name
+    FROM judge_assignments ja
+    LEFT JOIN submissions s ON ja.submission_id = s.id
+    JOIN teams t ON ja.team_id = t.id
+    WHERE ja.judge_id = ?
+    ORDER BY ja.assigned_at ASC
+  `).bind(judge.id).all();
+
+  return successResponse(c, assignments.results || []);
+});
+
 // === Scoring (judges only) ===
 
 // Submit scores for a submission

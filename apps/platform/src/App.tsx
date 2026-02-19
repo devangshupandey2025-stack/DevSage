@@ -52,8 +52,7 @@ const router = createBrowserRouter([
           { path: '/hackathons/:slug/judge', element: <JudgeScoringPage /> },
 
           // Judge-specific routes
-          { path: '/judge/assignments', element: <JudgeAssignmentsPage /> },
-          { path: '/judge/score/:teamId', element: <JudgeScoringPage /> },
+          { path: '/hackathons/:slug/judge/assignments', element: <JudgeAssignmentsPage /> },
         ],
       },
     ],

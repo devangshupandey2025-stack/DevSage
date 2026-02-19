@@ -179,19 +179,19 @@ export const hackathonQueries = {
   judges: (slug: string) =>
     queryOptions({
       queryKey: ['hackathons', slug, 'judges'],
-      queryFn: () => apiRequest<ApiResponse<Judge[]>>(`/api/v1/hackathons/${slug}/judges`),
+      queryFn: () => apiRequest<ApiResponse<Judge[]>>(`/api/v1/hackathons/${slug}/judging/judges`),
       enabled: !!slug,
     }),
   rubric: (slug: string) =>
     queryOptions({
       queryKey: ['hackathons', slug, 'rubric'],
-      queryFn: () => apiRequest<ApiResponse<RubricCriterion[]>>(`/api/v1/hackathons/${slug}/rubric`),
+      queryFn: () => apiRequest<ApiResponse<RubricCriterion[]>>(`/api/v1/hackathons/${slug}/judging/rubric`),
       enabled: !!slug,
     }),
   leaderboard: (slug: string) =>
     queryOptions({
       queryKey: ['hackathons', slug, 'leaderboard'],
-      queryFn: () => apiRequest<ApiResponse<LeaderboardEntry[]>>(`/api/v1/hackathons/${slug}/leaderboard`),
+      queryFn: () => apiRequest<ApiResponse<LeaderboardEntry[]>>(`/api/v1/hackathons/${slug}/judging/leaderboard`),
       enabled: !!slug,
     }),
   audit: (slug: string) =>
@@ -203,10 +203,11 @@ export const hackathonQueries = {
 };
 
 export const judgeQueries = {
-  assignments: () =>
+  assignments: (slug: string) =>
     queryOptions({
-      queryKey: ['judge', 'assignments'],
-      queryFn: () => apiRequest<ApiResponse<JudgeAssignment[]>>('/api/v1/judge/assignments'),
+      queryKey: ['judge', slug, 'assignments'],
+      queryFn: () => apiRequest<ApiResponse<JudgeAssignment[]>>(`/api/v1/hackathons/${slug}/judging/my-assignments`),
+      enabled: !!slug,
     }),
 };
 

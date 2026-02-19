@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { judgeQueries } from '@/lib/queries';
 import { PageHeader } from '@/components/common';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,7 +9,8 @@ import { ClipboardCheck, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function JudgeAssignmentsPage() {
-  const { data: assignmentsRes, isPending } = useQuery(judgeQueries.assignments());
+  const { slug } = useParams<{ slug: string }>();
+  const { data: assignmentsRes, isPending } = useQuery(judgeQueries.assignments(slug!));
   const assignments = assignmentsRes?.data ?? [];
 
   const statusColors: Record<string, string> = {
@@ -61,7 +62,7 @@ export function JudgeAssignmentsPage() {
                   {assignment.status}
                 </Badge>
                 {assignment.status === 'pending' && (
-                  <Link to={`/judge/score/${assignment.team_id}`}>
+                  <Link to={`/hackathons/${slug}/judge`}>
                     <Button size="sm" className="bg-[#CCFF00] text-black hover:bg-[#CCFF00]/80">
                       Score <ArrowRight className="ml-1 h-4 w-4" />
                     </Button>
