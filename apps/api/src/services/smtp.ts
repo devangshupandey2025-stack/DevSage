@@ -178,6 +178,8 @@ export async function sendSmtp(
   const { host, port, username, password } = config;
   const directTls = port === 465;
 
+  console.warn(`[smtp] Connecting to ${host}:${port} (${directTls ? 'direct TLS' : 'STARTTLS'}) as ${username}`);
+
   let socket = connect(
     { hostname: host, port },
     { secureTransport: directTls ? 'on' : 'starttls' },
@@ -195,48 +197,57 @@ export async function sendSmtp(
   try {
     // 1. Read server greeting
     const greeting = await conn.readResponse();
+    console.warn(`[smtp] Greeting: ${greeting.code} ${greeting.text.slice(0, 80)}`);
     if (greeting.code !== 220)
       throw new Error(`Greeting: ${greeting.code} ${greeting.text}`);
 
     // 2. EHLO
     let ehlo = await conn.command('EHLO devsage.org');
+    console.warn(`[smtp] EHLO: ${ehlo.code}`);
     if (ehlo.code !== 250) throw new Error(`EHLO: ${ehlo.code}`);
 
     // 3. STARTTLS upgrade for port 587
     if (!directTls) {
       const tls = await conn.command('STARTTLS');
+      console.warn(`[smtp] STARTTLS: ${tls.code}`);
       if (tls.code !== 220) throw new Error(`STARTTLS: ${tls.code}`);
       conn.release();
       socket = socket.startTls();
       conn = new SmtpConnection(socket.readable, socket.writable);
       ehlo = await conn.command('EHLO devsage.org');
+      console.warn(`[smtp] EHLO post-TLS: ${ehlo.code}`);
       if (ehlo.code !== 250) throw new Error(`EHLO post-TLS: ${ehlo.code}`);
     }
 
     // 4. AUTH PLAIN
     const creds = btoa(`\0${username}\0${password}`);
     const auth = await conn.command(`AUTH PLAIN ${creds}`);
+    console.warn(`[smtp] AUTH: ${auth.code}`);
     if (auth.code !== 235)
       throw new Error(`AUTH: ${auth.code} ${auth.text}`);
 
     // 5. Envelope
     const mf = await conn.command(`MAIL FROM:<${from}>`);
+    console.warn(`[smtp] MAIL FROM: ${mf.code}`);
     if (mf.code !== 250) throw new Error(`MAIL FROM: ${mf.code}`);
 
     for (const recipient of to) {
       const rc = await conn.command(`RCPT TO:<${recipient}>`);
+      console.warn(`[smtp] RCPT TO <${recipient}>: ${rc.code}`);
       if (rc.code !== 250)
         throw new Error(`RCPT TO <${recipient}>: ${rc.code}`);
     }
 
     // 6. DATA
     const dataCmd = await conn.command('DATA');
+    console.warn(`[smtp] DATA: ${dataCmd.code}`);
     if (dataCmd.code !== 354) throw new Error(`DATA: ${dataCmd.code}`);
 
     const message = buildMessage(from, to, subject, html);
     await conn.writeRaw(message + '\r\n.\r\n');
 
     const sent = await conn.readResponse();
+    console.warn(`[smtp] DATA end: ${sent.code}`);
     if (sent.code !== 250)
       throw new Error(`DATA end: ${sent.code} ${sent.text}`);
 
