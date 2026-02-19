@@ -19,17 +19,16 @@ export async function handleNotificationMessage(
 ): Promise<void> {
   const { type, hackathon_id, data } = body;
 
-  // ── Idempotency ────────────────────────────────────────────────
+  // ── Idempotency (check-before, insert-after-success) ───────────
   const idempotencyKey = `${type}:${hackathon_id}:${JSON.stringify(data ?? {})}`;
-  const idempotencyId = crypto.randomUUID();
 
-  const inserted = await env.DB.prepare(
-    'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key) VALUES (?, ?)',
+  const existing = await env.DB.prepare(
+    'SELECT 1 FROM notification_idempotency WHERE idempotency_key = ?',
   )
-    .bind(idempotencyId, idempotencyKey)
-    .run();
+    .bind(idempotencyKey)
+    .first();
 
-  if (inserted.meta.rows_written === 0) return; // Already processed
+  if (existing) return; // Already processed successfully
 
   // ── Resolve recipients ─────────────────────────────────────────
   const recipients = await resolveNotificationRecipients(
@@ -50,11 +49,13 @@ export async function handleNotificationMessage(
 
   // ── Fan-out to each recipient ──────────────────────────────────
   for (const recipient of recipients) {
+    const now = new Date().toISOString();
+
     // In-app notification
     const notifId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, link)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, action_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         notifId,
@@ -64,6 +65,7 @@ export async function handleNotificationMessage(
         content.title,
         content.body,
         content.link,
+        now,
       )
       .run();
 
@@ -77,19 +79,27 @@ export async function handleNotificationMessage(
 
       const deliveryId = crypto.randomUUID();
       await env.DB.prepare(
-        `INSERT INTO notification_deliveries (id, notification_type, channel, recipient_id, recipient_email, status)
-         VALUES (?, ?, 'email', ?, ?, ?)`,
+        `INSERT INTO notification_deliveries (id, event_id, user_id, channel, notification_type, status, created_at)
+         VALUES (?, ?, ?, 'email', ?, ?, ?)`,
       )
         .bind(
           deliveryId,
-          type,
+          notifId,
           recipient.user_id,
-          recipient.email,
+          type,
           emailSent ? 'sent' : 'failed',
+          now,
         )
         .run();
     }
   }
+
+  // ── Mark as processed (only after success) ─────────────────────
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key, created_at) VALUES (?, ?, ?)',
+  )
+    .bind(crypto.randomUUID(), idempotencyKey, new Date().toISOString())
+    .run();
 }
 
 // ── Content generation ─────────────────────────────────────────────
