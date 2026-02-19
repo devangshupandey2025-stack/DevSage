@@ -232,9 +232,9 @@ export function DashboardPage() {
     const nextStatus = NEXT_STATUS[currentStatus];
     if (!nextStatus) return;
     try {
-      await apiRequest(`/api/v1/hackathons/${slug}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ targetStatus: nextStatus }),
+      await apiRequest(`/api/v1/hackathons/${slug}/transition`, {
+        method: 'POST',
+        body: JSON.stringify({ target_status: nextStatus, version: -1 }),
       });
       toast.success(`Phase advanced to ${nextStatus.replace(/_/g, ' ')}`);
       fetchHackathons();

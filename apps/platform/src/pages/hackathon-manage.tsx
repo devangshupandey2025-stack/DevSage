@@ -140,7 +140,7 @@ export function HackathonManagePage() {
       await apiRequest(`/api/v1/hackathons/${slug}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_status: targetStatus, version: 0 }),
+        body: JSON.stringify({ target_status: targetStatus, version: -1 }),
       });
 
       toast.success(`Transitioned to ${NEXT_PHASE_LABEL[hackathon.status]}`);
