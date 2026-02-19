@@ -17,6 +17,10 @@ const HackathonDetailPage = lazy(() => import('@/pages/hackathon-detail').then(m
 const ProfilePage = lazy(() => import('@/pages/profile').then(m => ({ default: m.ProfilePage })));
 const ParticipantDashboardPage = lazy(() => import('@/pages/participant-dashboard/ParticipantDashboardPage').then(m => ({ default: m.ParticipantDashboardPage })));
 const BrowseHackathonsPage = lazy(() => import('@/pages/browse-hackathons').then(m => ({ default: m.BrowseHackathonsPage })));
+const PrivacyPolicyPage = lazy(() => import('@/pages/privacy-policy').then(m => ({ default: m.PrivacyPolicyPage })));
+const TermsOfServicePage = lazy(() => import('@/pages/terms-of-service').then(m => ({ default: m.TermsOfServicePage })));
+const FAQPage = lazy(() => import('@/pages/faq').then(m => ({ default: m.FAQPage })));
+const AboutUsPage = lazy(() => import('@/pages/about-us').then(m => ({ default: m.AboutUsPage })));
 
 const LazyWrapper = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<div className="min-h-50" />}>{children}</Suspense>
@@ -28,6 +32,10 @@ const router = createBrowserRouter([
   { path: '/register', element: <RegisterPage /> },
 { path: '/about', element: <AboutPage /> },
   { path: '/hackathons', element: <LazyWrapper><BrowseHackathonsPage /></LazyWrapper> },
+  { path: '/privacy', element: <LazyWrapper><PrivacyPolicyPage /></LazyWrapper> },
+  { path: '/terms', element: <LazyWrapper><TermsOfServicePage /></LazyWrapper> },
+  { path: '/faq', element: <LazyWrapper><FAQPage /></LazyWrapper> },
+  { path: '/about-us', element: <LazyWrapper><AboutUsPage /></LazyWrapper> },
 
   {
     element: <ProtectedRoute />,
