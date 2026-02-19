@@ -28,8 +28,8 @@ workspaces.post('/', authMiddleware, async (c) => {
 
   // Add creator as owner
   await c.env.DB.prepare(
-    'INSERT INTO workspace_members (id, workspace_id, user_id, role) VALUES (?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), id, user.id, 'owner').run();
+    'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), id, user.id, 'owner', now, now).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
