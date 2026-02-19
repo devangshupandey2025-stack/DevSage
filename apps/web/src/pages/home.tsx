@@ -756,9 +756,11 @@ const HackathonGallery = () => {
 /* ─────────────────────────────────────────────
    PARTNERS SECTION
    ───────────────────────────────────────────── */
+
 const partners = [
-  'Vercel', 'GitHub', 'Docker', 'AWS', 'Stripe', 'Figma',
-  'Cloudflare', 'MongoDB', 'Supabase', 'Linear',
+  { name: 'Hack Club', url: 'https://hackclub.com' },
+  { name: 'Google Developer Groups (GDG)', url: 'https://developers.google.com/community/gdg' },
+  { name: '180 Degrees Consulting', url: 'https://180dc.org' },
 ];
 
 const PartnersSection = () => {
@@ -766,7 +768,11 @@ const PartnersSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-80px' });
 
   return (
-    <section id="partners" ref={ref} className="py-12 md:py-20 bg-black border-y border-white/4">
+    <section
+      id="partners"
+      ref={ref}
+      className="py-12 md:py-20 bg-black border-y border-white/4"
+    >
       <div className="max-w-360 mx-auto px-6 md:px-12">
         <motion.p
           initial={{ opacity: 1, y: 20 }}
@@ -776,17 +782,21 @@ const PartnersSection = () => {
         >
           Trusted by teams at
         </motion.p>
+
         <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
-          {partners.map((name, i) => (
-            <motion.span
-              key={name}
+          {partners.map((partner, i) => (
+            <motion.a
+              key={partner.name}
+              href={partner.url}
+              target="_blank"
+              rel="noopener noreferrer"
               initial={{ opacity: 1, y: 10 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ delay: i * 0.05, duration: 0.4 }}
               className="text-white/20 hover:text-white/50 text-lg md:text-xl font-bold tracking-tight transition-colors duration-300 cursor-default"
             >
-              {name}
-            </motion.span>
+              {partner.name}
+            </motion.a>
           ))}
         </div>
       </div>
