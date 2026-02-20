@@ -57,8 +57,16 @@ export const SEED = {
 /**
  * Returns a Bearer token string for use in Authorization headers.
  * The JWT payload matches the new UserContext shape expected by the API middleware.
+ * Pass optional overrides to set platformAdmin, hackathonRoles, or workspaceRoles.
  */
-export async function authCookie(userId: string): Promise<string> {
+export async function authCookie(
+  userId: string,
+  overrides?: {
+    platformAdmin?: boolean;
+    hackathonRoles?: Record<string, string[]>;
+    workspaceRoles?: Record<string, string>;
+  },
+): Promise<string> {
   // Look up seed user info for richer JWT payload
   const seedUsers = [SEED.srijan, SEED.admin, SEED.organizer, SEED.coOrganizer, SEED.judge, SEED.lead, SEED.participant];
   const seedUser = seedUsers.find((u) => u.id === userId);
@@ -69,9 +77,9 @@ export async function authCookie(userId: string): Promise<string> {
       email: seedUser?.email ?? `${userId}@test.local`,
       name: seedUser?.name ?? 'Test User',
       image: null,
-      platformAdmin: false,
-      hackathonRoles: {},
-      workspaceRoles: {},
+      platformAdmin: overrides?.platformAdmin ?? false,
+      hackathonRoles: overrides?.hackathonRoles ?? {},
+      workspaceRoles: overrides?.workspaceRoles ?? {},
     },
     JWT_SECRET,
   );

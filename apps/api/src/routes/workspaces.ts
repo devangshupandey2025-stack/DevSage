@@ -69,11 +69,9 @@ workspaces.patch('/:workspaceId', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
@@ -115,11 +113,9 @@ workspaces.post('/:workspaceId/invites', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
@@ -144,11 +140,9 @@ workspaces.delete('/:workspaceId/members/:userId', authMiddleware, async (c) => 
   const workspaceId = c.req.param('workspaceId');
   const targetId = c.req.param('userId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || membership.role !== 'owner') {
+  if (!workspaceRole || workspaceRole !== 'owner') {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only owner can remove members');
   }
 

@@ -22,7 +22,7 @@ describe('platform admin middleware', () => {
     await insertUser(SEED.participant.id, SEED.participant.email, SEED.participant.name);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/users', {
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(403);
@@ -35,7 +35,7 @@ describe('platform admin middleware', () => {
     await insertPlatformAdmin(SEED.admin.id);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/users', {
-      headers: { Cookie: await authCookie(SEED.admin.id) },
+      headers: { Authorization: await authCookie(SEED.admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -65,7 +65,7 @@ describe('platform admin middleware', () => {
     await insertPlatformAdmin(SEED.admin.id);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/admins', {
-      headers: { Cookie: await authCookie(SEED.admin.id) },
+      headers: { Authorization: await authCookie(SEED.admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);

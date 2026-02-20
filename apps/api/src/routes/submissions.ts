@@ -11,7 +11,13 @@ submissions.use('/*', hackathonContext);
 // Get current user's GitHub repos (public repos via GitHub API)
 submissions.get('/github/repos', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const username = user.github_username;
+
+  // Look up GitHub username from Better Auth account table
+  const account = await c.env.DB.prepare(
+    "SELECT username FROM account WHERE userId = ? AND providerId = 'github' LIMIT 1"
+  ).bind(user.id).first<{ username: string | null }>();
+
+  const username = account?.username;
 
   if (!username) {
     return errorResponse(c, 400, 'NO_GITHUB', 'No GitHub username linked to your account');

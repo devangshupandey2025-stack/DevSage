@@ -246,10 +246,10 @@ teams.patch('/:teamId', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    // Check if organizer
-    const isOrg = await c.env.DB.prepare(
-      'SELECT id FROM organizer_roles WHERE hackathon_id = ? AND user_id = ?'
-    ).bind(hackathon.id, user.id).first();
+    // Check if organizer via JWT hackathon roles
+    const slug = c.get('hackathon')?.slug;
+    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
+    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can update team');
     }
@@ -291,9 +291,10 @@ teams.delete('/:teamId/members/:userId', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    const isOrg = await c.env.DB.prepare(
-      'SELECT id FROM organizer_roles WHERE hackathon_id = ? AND user_id = ?'
-    ).bind(hackathon.id, user.id).first();
+    // Check if organizer via JWT hackathon roles
+    const slug = c.get('hackathon')?.slug;
+    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
+    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can remove members');
     }
@@ -422,9 +423,10 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    const isOrg = await c.env.DB.prepare(
-      'SELECT id FROM organizer_roles WHERE hackathon_id = ? AND user_id = ?'
-    ).bind(hackathon.id, user.id).first();
+    // Check if organizer via JWT hackathon roles
+    const slug = c.get('hackathon')?.slug;
+    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
+    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can dissolve team');
     }

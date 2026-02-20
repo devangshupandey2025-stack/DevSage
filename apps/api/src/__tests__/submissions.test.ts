@@ -39,7 +39,7 @@ describe('submission routes', () => {
       await insertSubmission({ id: 'sub-2', teamId: SEED.team, hackathonId: SEED.hackathon, roundId: SEED.round, tagName: 'submission_v2', isFinal: true });
 
       const res = await SELF.fetch(BASE, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(200);
@@ -56,7 +56,7 @@ describe('submission routes', () => {
       await insertSubmission({ id: 'sub-b', teamId: team2, hackathonId: SEED.hackathon, roundId: SEED.round, tagName: 'submission_v2', isFinal: true });
 
       const res = await SELF.fetch(`${BASE}?team_id=${SEED.team}`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(200);
@@ -71,7 +71,7 @@ describe('submission routes', () => {
       }
 
       const res = await SELF.fetch(`${BASE}?limit=2&offset=0`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(200);
@@ -83,7 +83,7 @@ describe('submission routes', () => {
     it('returns 404 for nonexistent hackathon', async () => {
       await seedScenario();
       const res = await SELF.fetch('http://localhost/api/v1/hackathons/nonexistent-slug/submissions', {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
       expect(res.status).toBe(404);
     });
@@ -95,7 +95,7 @@ describe('submission routes', () => {
       await insertSubmission({ id: 'sub-single', teamId: SEED.team, hackathonId: SEED.hackathon, roundId: SEED.round, isFinal: true });
 
       const res = await SELF.fetch(`${BASE}/sub-single`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(200);
@@ -107,7 +107,7 @@ describe('submission routes', () => {
     it('returns 404 for nonexistent submission', async () => {
       await seedScenario();
       const res = await SELF.fetch(`${BASE}/does-not-exist`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
       expect(res.status).toBe(404);
       const body = await res.json() as ApiResponse;
@@ -123,7 +123,7 @@ describe('submission routes', () => {
       await insertSubmission({ id: 'sub-final', teamId: SEED.team, hackathonId: SEED.hackathon, roundId: SEED.round, tagName: 'submission_v2', isFinal: true });
 
       const res = await SELF.fetch(`${BASE}/team/${SEED.team}/current`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(200);
@@ -138,7 +138,7 @@ describe('submission routes', () => {
       await insertSubmission({ id: 'sub-nonfinal', teamId: SEED.team, hackathonId: SEED.hackathon, roundId: SEED.round, isFinal: false });
 
       const res = await SELF.fetch(`${BASE}/team/${SEED.team}/current`, {
-        headers: { Cookie: await authCookie(SEED.lead.id) },
+        headers: { Authorization: await authCookie(SEED.lead.id) },
       });
 
       expect(res.status).toBe(404);

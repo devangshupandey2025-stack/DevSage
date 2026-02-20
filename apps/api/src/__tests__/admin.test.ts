@@ -33,7 +33,7 @@ describe('admin routes', () => {
     await insertUser(participant.id, participant.email, participant.name);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/users', {
-      headers: { Cookie: await authCookie(participant.id) },
+      headers: { Authorization: await authCookie(participant.id) },
     });
 
     expect(res.status).toBe(403);
@@ -52,7 +52,7 @@ describe('admin routes', () => {
     await insertPlatformAdmin(admin.id);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/users?limit=10&offset=0', {
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -75,7 +75,7 @@ describe('admin routes', () => {
     await insertPlatformAdmin(admin.id);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/users?limit=1&offset=0', {
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -101,7 +101,7 @@ describe('admin routes', () => {
     await insertHackathon({ id: crypto.randomUUID(), workspaceId: workspace, slug: 'admin-h2', createdBy: admin.id, status: 'active' });
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/hackathons', {
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -125,7 +125,7 @@ describe('admin routes', () => {
     await insertPlatformAdmin(srijan.id);
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/admins', {
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -152,7 +152,7 @@ describe('admin routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(admin.id),
+        Authorization: await authCookie(admin.id, { platformAdmin: true }),
       },
       body: JSON.stringify({ user_id: participant.id }),
     });
@@ -181,7 +181,7 @@ describe('admin routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(admin.id),
+        Authorization: await authCookie(admin.id, { platformAdmin: true }),
       },
       body: JSON.stringify({ user_id: participant.id }),
     });
@@ -201,7 +201,7 @@ describe('admin routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(admin.id),
+        Authorization: await authCookie(admin.id, { platformAdmin: true }),
       },
       body: JSON.stringify({}),
     });
@@ -223,7 +223,7 @@ describe('admin routes', () => {
 
     const res = await SELF.fetch(`http://localhost/api/v1/admin/admins/${srijan.id}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -245,7 +245,7 @@ describe('admin routes', () => {
 
     const res = await SELF.fetch(`http://localhost/api/v1/admin/admins/${admin.id}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(409);
@@ -268,7 +268,7 @@ describe('admin routes', () => {
     await insertSubmission({ id: crypto.randomUUID(), teamId: team, hackathonId: hackathon, roundId: round });
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/stats', {
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);
@@ -292,7 +292,7 @@ describe('admin routes', () => {
 
     const res = await SELF.fetch('http://localhost/api/v1/admin/audit/backfill', {
       method: 'POST',
-      headers: { Cookie: await authCookie(admin.id) },
+      headers: { Authorization: await authCookie(admin.id, { platformAdmin: true }) },
     });
 
     expect(res.status).toBe(200);

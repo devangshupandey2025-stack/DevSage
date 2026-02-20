@@ -29,7 +29,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(organizer.id),
+        Authorization: await authCookie(organizer.id, { workspaceRoles: { [workspace]: 'owner' } }),
       },
       body: JSON.stringify({ slug: 'hack-day', title: 'Hack Day' }),
     });
@@ -72,7 +72,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(participant.id),
+        Authorization: await authCookie(participant.id),
       },
       body: JSON.stringify({ slug: 'forbidden-hack', title: 'Forbidden' }),
     });
@@ -95,7 +95,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(participant.id),
+        Authorization: await authCookie(participant.id, { workspaceRoles: { [workspace]: 'workspace_member' } }),
       },
       body: JSON.stringify({ slug: 'member-hack', title: 'Member Hack' }),
     });
@@ -119,7 +119,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(organizer.id),
+        Authorization: await authCookie(organizer.id, { workspaceRoles: { [workspace]: 'owner' } }),
       },
       body: JSON.stringify({ slug: 'dup-slug', title: 'Duplicate' }),
     });
@@ -205,7 +205,7 @@ describe('hackathon CRUD routes', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(coOrganizer.id),
+        Authorization: await authCookie(coOrganizer.id),
       },
       body: JSON.stringify({ title: 'Updated Title', description: 'New desc' }),
     });
@@ -228,7 +228,7 @@ describe('hackathon CRUD routes', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(participant.id),
+        Authorization: await authCookie(participant.id),
       },
       body: JSON.stringify({ title: 'Should Fail' }),
     });
@@ -254,7 +254,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(organizer.id),
+        Authorization: await authCookie(organizer.id),
       },
       body: JSON.stringify({ target_status: 'active', version: 0 }),
     });
@@ -275,7 +275,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(organizer.id),
+        Authorization: await authCookie(organizer.id),
       },
       body: JSON.stringify({}),
     });
@@ -297,7 +297,7 @@ describe('hackathon CRUD routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(participant.id),
+        Authorization: await authCookie(participant.id),
       },
       body: JSON.stringify({ target_status: 'active', version: 0 }),
     });
@@ -317,7 +317,7 @@ describe('hackathon CRUD routes', () => {
 
     const res = await SELF.fetch('http://localhost/api/v1/hackathons/del-hack', {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(organizer.id) },
+      headers: { Authorization: await authCookie(organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -340,7 +340,7 @@ describe('hackathon CRUD routes', () => {
 
     const res = await SELF.fetch('http://localhost/api/v1/hackathons/active-del', {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(organizer.id) },
+      headers: { Authorization: await authCookie(organizer.id) },
     });
 
     expect(res.status).toBe(409);
@@ -359,7 +359,7 @@ describe('hackathon CRUD routes', () => {
 
     const res = await SELF.fetch('http://localhost/api/v1/hackathons/no-del', {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(participant.id) },
+      headers: { Authorization: await authCookie(participant.id) },
     });
 
     expect(res.status).toBe(403);

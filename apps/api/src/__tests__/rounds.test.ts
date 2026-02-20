@@ -37,7 +37,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.organizer.id),
+        Authorization: await authCookie(SEED.organizer.id),
       },
       body: JSON.stringify({ name: 'Round 1', round_number: 1, type: 'standard' }),
     });
@@ -59,7 +59,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.coOrganizer.id),
+        Authorization: await authCookie(SEED.coOrganizer.id),
       },
       body: JSON.stringify({ name: 'Round 2', round_number: 2 }),
     });
@@ -91,7 +91,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.participant.id),
+        Authorization: await authCookie(SEED.participant.id),
       },
       body: JSON.stringify({ name: 'Forbidden', round_number: 1 }),
     });
@@ -128,7 +128,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.organizer.id),
+        Authorization: await authCookie(SEED.organizer.id),
       },
       body: JSON.stringify({ name: 'New Name', status: 'active' }),
     });
@@ -148,7 +148,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
 
     const res = await SELF.fetch(`${baseUrl}/r-del`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -167,7 +167,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
 
     const res = await SELF.fetch(`${baseUrl}/r-nodel`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(403);
@@ -185,7 +185,7 @@ describe('round routes — /api/v1/hackathons/:slug/rounds', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: await authCookie(SEED.organizer.id),
+          Authorization: await authCookie(SEED.organizer.id),
         },
         body: JSON.stringify({ name: `Round ${i}`, round_number: i }),
       });

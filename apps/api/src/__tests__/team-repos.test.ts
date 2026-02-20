@@ -43,7 +43,7 @@ describe('team-repo routes — /api/v1/hackathons/:slug/teams/:teamId/repo', () 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.lead.id),
+        Authorization: await authCookie(SEED.lead.id),
       },
       body: JSON.stringify({ github_repo_url: 'https://github.com/test-org/test-repo' }),
     });
@@ -65,7 +65,7 @@ describe('team-repo routes — /api/v1/hackathons/:slug/teams/:teamId/repo', () 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.participant.id),
+        Authorization: await authCookie(SEED.participant.id),
       },
       body: JSON.stringify({ github_repo_url: 'https://github.com/other/repo' }),
     });
@@ -97,7 +97,7 @@ describe('team-repo routes — /api/v1/hackathons/:slug/teams/:teamId/repo', () 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.lead.id),
+        Authorization: await authCookie(SEED.lead.id),
       },
       body: JSON.stringify({ github_repo_url: 'not-a-url' }),
     });
@@ -151,7 +151,7 @@ describe('team-repo routes — /api/v1/hackathons/:slug/teams/:teamId/repo', () 
 
     const res = await SELF.fetch(repoUrl(SEED.team), {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.lead.id) },
+      headers: { Authorization: await authCookie(SEED.lead.id) },
     });
 
     expect(res.status).toBe(200);
@@ -175,7 +175,7 @@ describe('team-repo routes — /api/v1/hackathons/:slug/teams/:teamId/repo', () 
 
     const res = await SELF.fetch(repoUrl(SEED.team), {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(403);

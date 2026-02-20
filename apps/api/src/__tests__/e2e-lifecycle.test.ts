@@ -2,14 +2,16 @@
  * E2E: Full Hackathon Lifecycle
  *
  * Sequential integration test covering the entire lifecycle:
- *   register → admin → workspace → hackathon → organizers → rounds →
+ *   setup → admin → workspace → hackathon → organizers → rounds →
  *   rubric → judges → teams → repo → submission → judging → scoring →
  *   leaderboard → notifications → admin stats → cleanup verification
+ *
+ * Uses JWT-based auth via authCookie() helper (Bearer tokens).
  */
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it, beforeAll } from 'vitest';
 import {
-  ensureSchema, resetDb, authCookie,
+  ensureSchema, resetDb, authCookie, insertUser,
   insertPlatformAdmin, insertSubmission,
   SEED, env,
 } from './helpers.js';
@@ -27,12 +29,11 @@ let assignmentId: string;
 
 const HACK_SLUG = 'e2e-hack';
 const WS_SLUG = 'e2e-ws';
-const PASSWORD = 'e2eStrongPass1!';
 
 /** POST JSON helper */
-async function post(path: string, body: unknown, cookie?: string) {
+async function post(path: string, body: unknown, token?: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (cookie) headers['Cookie'] = cookie;
+  if (token) headers['Authorization'] = token;
   return SELF.fetch(`http://localhost${path}`, {
     method: 'POST',
     headers,
@@ -41,21 +42,22 @@ async function post(path: string, body: unknown, cookie?: string) {
 }
 
 /** GET helper */
-async function get(path: string, cookie?: string) {
+async function get(path: string, token?: string) {
   const headers: Record<string, string> = {};
-  if (cookie) headers['Cookie'] = cookie;
+  if (token) headers['Authorization'] = token;
   return SELF.fetch(`http://localhost${path}`, { headers });
 }
 
-/** Extract auth cookie from Set-Cookie response header */
-function extractAuthCookie(res: Response): string {
-  const setCookie = res.headers.get('Set-Cookie') ?? '';
-  const match = setCookie.match(/access_token=[^;]+/);
-  return match ? match[0] : '';
+/** PATCH helper */
+async function patch(path: string, body: unknown, token?: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = token;
+  return SELF.fetch(`http://localhost${path}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+  });
 }
-
-// Store cookies obtained via register (real hashed passwords)
-const cookies: Record<string, string> = {};
 
 describe('E2E: Full Hackathon Lifecycle', () => {
   beforeAll(async () => {
@@ -63,71 +65,49 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     await resetDb();
   });
 
-  // ── 1. Setup: Register all 7 users ──────────────────────────
-  it('1. registers all 7 seed users via /auth/register', async () => {
+  // ── 1. Setup: Insert all 7 users and platform admins ──────────
+  it('1. inserts all 7 seed users and platform admins', async () => {
     const users = [
-      { key: 'srijan', ...SEED.srijan },
-      { key: 'admin', ...SEED.admin },
-      { key: 'organizer', ...SEED.organizer },
-      { key: 'coOrganizer', ...SEED.coOrganizer },
-      { key: 'judge', ...SEED.judge },
-      { key: 'lead', ...SEED.lead },
-      { key: 'participant', ...SEED.participant },
+      SEED.srijan,
+      SEED.admin,
+      SEED.organizer,
+      SEED.coOrganizer,
+      SEED.judge,
+      SEED.lead,
+      SEED.participant,
     ];
 
     for (const u of users) {
-      const res = await post('/auth/register', {
-        email: u.email,
-        password: PASSWORD,
-        name: u.name,
-      });
-
-      expect(res.status).toBe(201);
-      const body = await res.json() as { ok: boolean; data: { id: string; email: string } };
-      expect(body.ok).toBe(true);
-      expect(body.data.email).toBe(u.email);
-
-      // Save the real auth cookie from registration
-      const cookie = extractAuthCookie(res);
-      expect(cookie).toBeTruthy();
-      cookies[u.key] = cookie;
+      await insertUser(u.id, u.email, u.name);
     }
 
-    // Insert platform_admin records for srijan and admin
-    // We need their actual user IDs from DB
-    const srijanRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.srijan.email).first<{ id: string }>();
-    const adminRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.admin.email).first<{ id: string }>();
-    expect(srijanRow).not.toBeNull();
-    expect(adminRow).not.toBeNull();
+    // Verify all users are in DB
+    const count = await env.DB.prepare('SELECT COUNT(*) as cnt FROM users').first<{ cnt: number }>();
+    expect(count?.cnt).toBe(7);
 
-    await insertPlatformAdmin(srijanRow!.id);
-    await insertPlatformAdmin(adminRow!.id);
+    // Insert platform_admin records for srijan and admin
+    await insertPlatformAdmin(SEED.srijan.id);
+    await insertPlatformAdmin(SEED.admin.id);
   });
 
   // ── 2. Platform Admin: verify stats, add organizer as admin ─
   it('2. platform admin verifies stats and manages admin list', async () => {
-    const res = await get('/api/v1/admin/stats', cookies.admin);
+    const adminToken = await authCookie(SEED.admin.id, { platformAdmin: true });
+
+    const res = await get('/api/v1/admin/stats', adminToken);
     expect(res.status).toBe(200);
     const body = await res.json() as { ok: boolean; data: { users: number } };
     expect(body.ok).toBe(true);
     expect(body.data.users).toBe(7);
 
-    // Get organizer's actual ID for adding as admin
-    const orgRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.organizer.email).first<{ id: string }>();
-
-    const addRes = await post('/api/v1/admin/admins', { user_id: orgRow!.id }, cookies.admin);
+    // Add organizer as platform admin
+    const addRes = await post('/api/v1/admin/admins', { user_id: SEED.organizer.id }, adminToken);
     expect(addRes.status).toBe(201);
     const addBody = await addRes.json() as { ok: boolean; data: { id: string } };
     expect(addBody.ok).toBe(true);
 
     // Verify admin list now has 3 admins
-    const listRes = await get('/api/v1/admin/admins', cookies.admin);
+    const listRes = await get('/api/v1/admin/admins', adminToken);
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json() as { ok: boolean; data: Array<{ user_id: string }> };
     expect(listBody.ok).toBe(true);
@@ -136,11 +116,13 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 3. Workspace Creation ───────────────────────────────────
   it('3. creates a workspace as srijan', async () => {
+    const srijanToken = await authCookie(SEED.srijan.id);
+
     const res = await post('/api/v1/workspaces', {
       name: 'E2E Workspace',
       slug: WS_SLUG,
       type: 'organization',
-    }, cookies.srijan);
+    }, srijanToken);
 
     expect(res.status).toBe(201);
     const body = await res.json() as { ok: boolean; data: { id: string; slug: string; name: string } };
@@ -150,7 +132,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     workspaceId = body.data.id;
 
     // Verify workspace appears in list
-    const listRes = await get('/api/v1/workspaces', cookies.srijan);
+    const listRes = await get('/api/v1/workspaces', srijanToken);
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json() as { ok: boolean; data: Array<{ slug: string }> };
     expect(listBody.ok).toBe(true);
@@ -159,10 +141,15 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 4. Hackathon Creation ───────────────────────────────────
   it('4. creates a hackathon in the workspace', async () => {
+    // Srijan now has workspace owner role — include in JWT
+    const srijanToken = await authCookie(SEED.srijan.id, {
+      workspaceRoles: { [workspaceId]: 'owner' },
+    });
+
     const res = await post(
       `/api/v1/hackathons/workspaces/${workspaceId}/hackathons`,
       { title: 'E2E Hackathon', slug: HACK_SLUG },
-      cookies.srijan,
+      srijanToken,
     );
 
     expect(res.status).toBe(201);
@@ -177,25 +164,23 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
     // Verify creator was added as organizer
     const orgRole = await env.DB.prepare(
-      'SELECT role FROM organizer_roles WHERE hackathon_id = ? AND user_id = (SELECT id FROM users WHERE email = ?)'
-    ).bind(hackathonId, SEED.srijan.email).first<{ role: string }>();
+      'SELECT role FROM organizer_roles WHERE hackathon_id = ? AND user_id = ?'
+    ).bind(hackathonId, SEED.srijan.id).first<{ role: string }>();
     expect(orgRole?.role).toBe('organizer');
   });
 
   // ── 5. Add Organizers ───────────────────────────────────────
   it('5. adds organizer and co-organizer roles', async () => {
-    const orgRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.organizer.email).first<{ id: string }>();
-    const coOrgRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.coOrganizer.email).first<{ id: string }>();
+    // Srijan is organizer of this hackathon
+    const srijanToken = await authCookie(SEED.srijan.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
 
     // Add organizer user as 'organizer'
     const res1 = await post(
       `/api/v1/hackathons/${HACK_SLUG}/organizers`,
-      { user_id: orgRow!.id, role: 'organizer' },
-      cookies.srijan,
+      { user_id: SEED.organizer.id, role: 'organizer' },
+      srijanToken,
     );
     expect(res1.status).toBe(201);
     const body1 = await res1.json() as { ok: boolean; data: { role: string } };
@@ -205,8 +190,8 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Add coOrganizer user as 'co_organizer'
     const res2 = await post(
       `/api/v1/hackathons/${HACK_SLUG}/organizers`,
-      { user_id: coOrgRow!.id, role: 'co_organizer' },
-      cookies.srijan,
+      { user_id: SEED.coOrganizer.id, role: 'co_organizer' },
+      srijanToken,
     );
     expect(res2.status).toBe(201);
     const body2 = await res2.json() as { ok: boolean; data: { role: string } };
@@ -216,7 +201,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Verify with GET
     const listRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/organizers`,
-      cookies.srijan,
+      srijanToken,
     );
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json() as {
@@ -230,10 +215,14 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 6. Create Rounds ───────────────────────────────────────
   it('6. creates a round as organizer', async () => {
+    const organizerToken = await authCookie(SEED.organizer.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
+
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/rounds`,
       { name: 'Final Round', round_number: 2, type: 'standard' },
-      cookies.organizer,
+      organizerToken,
     );
 
     expect(res.status).toBe(201);
@@ -259,6 +248,10 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 7. Create Rubric ───────────────────────────────────────
   it('7. creates rubric criteria', async () => {
+    const organizerToken = await authCookie(SEED.organizer.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
+
     const criteria = [
       { name: 'Innovation', weight: 2.0, max_score: 10 },
       { name: 'Execution', weight: 1.5, max_score: 10 },
@@ -270,7 +263,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
       const res = await post(
         `/api/v1/hackathons/${HACK_SLUG}/judging/rubric`,
         c,
-        cookies.organizer,
+        organizerToken,
       );
       expect(res.status).toBe(201);
       const body = await res.json() as { ok: boolean; data: { id: string; name: string } };
@@ -282,7 +275,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Verify with GET
     const listRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/judging/rubric`,
-      cookies.organizer,
+      organizerToken,
     );
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json() as { ok: boolean; data: Array<{ name: string }> };
@@ -292,32 +285,32 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 8. Invite Judge ─────────────────────────────────────────
   it('8. invites a judge', async () => {
-    const judgeRow = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(SEED.judge.email).first<{ id: string }>();
+    const organizerToken = await authCookie(SEED.organizer.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
 
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/judging/judges`,
-      { user_id: judgeRow!.id },
-      cookies.organizer,
+      { user_id: SEED.judge.id },
+      organizerToken,
     );
 
     expect(res.status).toBe(201);
     const body = await res.json() as { ok: boolean; data: { id: string; user_id: string } };
     expect(body.ok).toBe(true);
-    expect(body.data.user_id).toBe(judgeRow!.id);
+    expect(body.data.user_id).toBe(SEED.judge.id);
     judgeRecordId = body.data.id;
 
     // Verify with GET
     const listRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/judging/judges`,
-      cookies.organizer,
+      organizerToken,
     );
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json() as { ok: boolean; data: Array<{ user_id: string }> };
     expect(listBody.ok).toBe(true);
     expect(listBody.data.length).toBe(1);
-    expect(listBody.data[0].user_id).toBe(judgeRow!.id);
+    expect(listBody.data[0].user_id).toBe(SEED.judge.id);
   });
 
   // ── 9. Set Hackathon Active (via DB) ────────────────────────
@@ -335,10 +328,12 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 10. Team Creation ──────────────────────────────────────
   it('10. creates a team as team lead', async () => {
+    const leadToken = await authCookie(SEED.lead.id);
+
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/teams`,
       { name: 'E2E Team' },
-      cookies.lead,
+      leadToken,
     );
 
     expect(res.status).toBe(201);
@@ -355,10 +350,12 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 11. Join Team ──────────────────────────────────────────
   it('11. participant joins team via invite code', async () => {
+    const participantToken = await authCookie(SEED.participant.id);
+
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/teams/join`,
       { invite_code: inviteCode },
-      cookies.participant,
+      participantToken,
     );
 
     expect(res.status).toBe(201);
@@ -398,10 +395,12 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 13. Link Repo ──────────────────────────────────────────
   it('13. links a GitHub repo to the team', async () => {
+    const leadToken = await authCookie(SEED.lead.id);
+
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/teams/${teamId}/repo`,
       { github_repo_url: 'https://github.com/e2e-org/e2e-repo' },
-      cookies.lead,
+      leadToken,
     );
 
     expect(res.status).toBe(201);
@@ -466,10 +465,12 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 16. Judge Accepts Invite ───────────────────────────────
   it('16. judge accepts the invite', async () => {
+    const judgeToken = await authCookie(SEED.judge.id);
+
     const res = await post(
       `/api/v1/invites/judge/${judgeRecordId}`,
       {},
-      cookies.judge,
+      judgeToken,
     );
 
     expect(res.status).toBe(200);
@@ -486,10 +487,14 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 17. Auto-assign Judges ─────────────────────────────────
   it('17. auto-assigns judges to submissions', async () => {
+    const organizerToken = await authCookie(SEED.organizer.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
+
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/judging/assign`,
       {},
-      cookies.organizer,
+      organizerToken,
     );
 
     expect(res.status).toBe(200);
@@ -507,6 +512,8 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 18. Score Submission ───────────────────────────────────
   it('18. judge scores the submission', async () => {
+    const judgeToken = await authCookie(SEED.judge.id);
+
     const scores = criterionIds.map((criteriaId, i) => ({
       criteria_id: criteriaId,
       score: 7 + i, // 7, 8, 9
@@ -518,7 +525,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     const res = await post(
       `/api/v1/hackathons/${HACK_SLUG}/judging/submissions/${submissionId}/scores`,
       { scores },
-      cookies.judge,
+      judgeToken,
     );
 
     expect(res.status).toBe(200);
@@ -551,9 +558,11 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 20. View Submissions ───────────────────────────────────
   it('20. views submissions for the hackathon', async () => {
+    const leadToken = await authCookie(SEED.lead.id);
+
     const res = await get(
       `/api/v1/hackathons/${HACK_SLUG}/submissions`,
-      cookies.lead,
+      leadToken,
     );
 
     expect(res.status).toBe(200);
@@ -568,16 +577,19 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 21. Notifications ──────────────────────────────────────
   it('21. checks notifications for users', async () => {
+    const leadToken = await authCookie(SEED.lead.id);
+    const judgeToken = await authCookie(SEED.judge.id);
+
     // Notifications may or may not be generated by the routes above depending
     // on queue processing; verify the endpoint works for each user
-    const res = await get('/api/v1/notifications', cookies.lead);
+    const res = await get('/api/v1/notifications', leadToken);
     expect(res.status).toBe(200);
     const body = await res.json() as { ok: boolean; data: unknown[] };
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.data)).toBe(true);
 
     // Unread count endpoint
-    const countRes = await get('/api/v1/notifications/unread-count', cookies.judge);
+    const countRes = await get('/api/v1/notifications/unread-count', judgeToken);
     expect(countRes.status).toBe(200);
     const countBody = await countRes.json() as { ok: boolean; data: { count: number } };
     expect(countBody.ok).toBe(true);
@@ -586,7 +598,9 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 22. Admin Overview ─────────────────────────────────────
   it('22. admin stats reflect the E2E data', async () => {
-    const res = await get('/api/v1/admin/stats', cookies.admin);
+    const adminToken = await authCookie(SEED.admin.id, { platformAdmin: true });
+
+    const res = await get('/api/v1/admin/stats', adminToken);
 
     expect(res.status).toBe(200);
     const body = await res.json() as {
@@ -602,6 +616,14 @@ describe('E2E: Full Hackathon Lifecycle', () => {
 
   // ── 23. Cleanup / Verification ─────────────────────────────
   it('23. verifies full lifecycle state is consistent', async () => {
+    const srijanToken = await authCookie(SEED.srijan.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+      workspaceRoles: { [workspaceId]: 'owner' },
+    });
+    const organizerToken = await authCookie(SEED.organizer.id, {
+      hackathonRoles: { [HACK_SLUG]: ['organizer'] },
+    });
+
     // Hackathon details
     const hackRes = await get(`/api/v1/hackathons/${HACK_SLUG}`);
     expect(hackRes.status).toBe(200);
@@ -637,7 +659,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Rubric criteria
     const rubricRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/judging/rubric`,
-      cookies.organizer,
+      organizerToken,
     );
     expect(rubricRes.status).toBe(200);
     const rubricBody = await rubricRes.json() as {
@@ -654,7 +676,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Organizers
     const orgRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/organizers`,
-      cookies.srijan,
+      srijanToken,
     );
     expect(orgRes.status).toBe(200);
     const orgBody = await orgRes.json() as {
@@ -667,7 +689,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     // Judges
     const judgeRes = await get(
       `/api/v1/hackathons/${HACK_SLUG}/judging/judges`,
-      cookies.organizer,
+      organizerToken,
     );
     expect(judgeRes.status).toBe(200);
     const judgeBody = await judgeRes.json() as {
@@ -685,7 +707,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     expect(scoresCount?.cnt).toBe(3);
 
     // Workspace still exists
-    const wsRes = await get(`/api/v1/workspaces/${workspaceId}`, cookies.srijan);
+    const wsRes = await get(`/api/v1/workspaces/${workspaceId}`, srijanToken);
     expect(wsRes.status).toBe(200);
     const wsBody = await wsRes.json() as { ok: boolean; data: { slug: string } };
     expect(wsBody.ok).toBe(true);
