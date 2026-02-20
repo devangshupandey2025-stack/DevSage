@@ -40,9 +40,9 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260206.0",
     "@secretlint/secretlint-rule-preset-recommend": "^9.3.0",
-    "@typescript-eslint/eslint-plugin": "^8.54.0",
-    "@typescript-eslint/parser": "^8.54.0",
-    "eslint": "^9.39.2",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^10.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0",
     "secretlint": "^9.3.0",
@@ -50,6 +50,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "gsap": "^3.14.2"
+    "gsap": "^3.14.2",
+    "pnpm": "^10.30.1"
   }
 }
