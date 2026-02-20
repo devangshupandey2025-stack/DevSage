@@ -22,6 +22,7 @@ out/
 !apps/web/.env.production
 !apps/admin/.env.production
 !apps/platform/.env.production
+!apps/judge/.env.production
 !**/.env.example
 .dev.vars
 .envrc
