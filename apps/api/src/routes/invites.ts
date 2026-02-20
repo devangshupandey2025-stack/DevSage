@@ -58,9 +58,9 @@ invites.post('/team/:token', authMiddleware, async (c) => {
 invites.get('/judge/:id/details', async (c) => {
   const judgeId = c.req.param('id');
   const invite = await c.env.DB.prepare(
-    `SELECT j.id, j.invite_status as status, j.invited_at as expires_at,
-            h.name as hackathon_name, h.slug as hackathon_slug,
-            u.name as inviter_name
+    `SELECT j.id, j.invite_status as status,
+            h.title as hackathon_name, h.slug as hackathon_slug,
+            u.display_name as inviter_name
      FROM judges j
      JOIN hackathons h ON j.hackathon_id = h.id
      LEFT JOIN users u ON j.invited_by = u.id
