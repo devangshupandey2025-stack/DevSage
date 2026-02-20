@@ -157,8 +157,10 @@ export function CustomCursor() {
   const transformTemplate = ({ x, y, scale }: { x?: string; y?: string; scale?: number }) =>
     `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-50%, -50%) scale(${scale ?? 1})`;
 
-  const imageTransformTemplate = ({ x, y, scale }: { x?: string; y?: string; scale?: number }) =>
-    `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-8%, -15%) scale(${scale ?? 1}) rotate(90deg)`;
+  const imageTransformTemplate = ({ x, y, scale, rotate }: { x?: string; y?: string; scale?: number; rotate?: string | number }) => {
+    const rot = typeof rotate === 'number' ? `${rotate}deg` : (rotate || '90deg');
+    return `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-25%, -75%) scale(${scale ?? 1}) rotate(${rot})`;
+  };
 
   return (
     <>
@@ -200,12 +202,13 @@ export function CustomCursor() {
 
       <motion.div
         className="fixed top-0 left-0 pointer-events-none"
-        style={{ x: dotX, y: dotY, zIndex: 9999 }}
+        style={{ x: dotX, y: dotY, zIndex: 9999, transformOrigin: '25% 75%' }}
         animate={{
           width: iconSize,
           height: iconSize,
           opacity: iconOpacity,
           scale: iconScale,
+          rotate: variant === 'pointer' ? 0 : 90,
         }}
         transition={{ type: 'spring', stiffness: 900, damping: 40 }}
         transformTemplate={imageTransformTemplate}
