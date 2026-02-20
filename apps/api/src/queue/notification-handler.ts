@@ -123,12 +123,12 @@ async function generateNotificationContent(
     case 'judge.invited': {
       const hackathon = hackathonId
         ? await db
-            .prepare('SELECT name, slug FROM hackathons WHERE id = ?')
+            .prepare('SELECT title, slug FROM hackathons WHERE id = ?')
             .bind(hackathonId)
-            .first<{ name: string; slug: string }>()
+            .first<{ title: string; slug: string }>()
         : null;
 
-      const hackathonName = hackathon?.name ?? 'a hackathon';
+      const hackathonName = hackathon?.title ?? 'a hackathon';
       const judgeId = data?.judge_id as string | undefined;
       const inviteLink = `${env.PLATFORM_URL}/invite/judge/${judgeId}`;
 
