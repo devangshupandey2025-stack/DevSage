@@ -1,3 +1,4 @@
+export { user, session, account, verification } from './auth.js';
 export { users } from './users.js';
 export { refreshTokens } from './refresh-tokens.js';
 export { platformAdmins } from './platform-admins.js';

@@ -1,0 +1,149 @@
+# generated: 2026-02-20
+# project: DevSage
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-20
+project: DevSage
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Baseline User Slice & Developer Foundation
+  epic-1: in-progress
+  1-0-day-0-usable-slice: review
+  1-1-monorepo-configuration-tooling-upgrade: backlog
+  1-2-shared-schema-package-zod-4-migration: backlog
+  1-3-database-package-setup-drizzle-045x-foundation: backlog
+  1-4-design-system-package-devsage-ui: backlog
+  1-5-api-worker-scaffolding: backlog
+  1-6-web-app-scaffolding: backlog
+  1-7-platform-app-scaffolding: backlog
+  1-8-admin-app-scaffolding: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Authentication & User Identity
+  epic-2: backlog
+  2-1-github-oauth-registration-login: backlog
+  2-2-google-oauth-registration-login: backlog
+  2-3-email-password-registration-with-otp-verification: backlog
+  2-4-session-management-logout: backlog
+  2-5-dpdpa-consent-data-privacy-notices: backlog
+  2-6-account-deletion-personal-data-export: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Workspace & Subscription Management
+  epic-3: backlog
+  3-1-workspace-creation-settings: backlog
+  3-2-workspace-member-management: backlog
+  3-3-subscription-tier-selection-enforcement: backlog
+  3-4-multi-tenant-data-isolation: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Hackathon Lifecycle & Configuration
+  epic-4: backlog
+  4-1-hackathon-creation-request-admin-approval-workflow: backlog
+  4-2-hackathon-configuration-settings: backlog
+  4-3-hackathon-state-machine: backlog
+  4-4-multi-round-configuration-with-deadlines-tag-patterns: backlog
+  4-5-co-organizer-management: backlog
+  4-6-hackathon-cloning: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Team Formation & Participation
+  epic-5: backlog
+  5-1-team-creation-invite-code-generation: backlog
+  5-2-team-join-via-invite-code: backlog
+  5-3-github-repository-linking-via-github-app: backlog
+  5-4-team-membership-constraints-enforcement: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Git-Native Submission Pipeline
+  epic-6: backlog
+  6-1-github-webhook-receiver-cryptographic-verification: backlog
+  6-2-submission-record-creation-from-tag-events: backlog
+  6-3-idempotent-processing-dead-letter-queue: backlog
+  6-4-late-submission-detection-final-submission-marking: backlog
+  6-5-force-push-detection-tag-deletion-manual-reconciliation: backlog
+  6-6-manual-commit-sha-upload-fallback: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Judging, Scoring & Leaderboard
+  epic-7: backlog
+  7-1-judge-invitation-role-assignment: backlog
+  7-2-rubric-builder: backlog
+  7-3-submission-assignment-judge-dashboard: backlog
+  7-4-score-entry-per-criterion-feedback: backlog
+  7-5-score-aggregation-normalization-leaderboard: backlog
+  7-6-multi-round-progression-elimination: backlog
+  7-7-conflict-of-interest-scoring-anomaly-detection: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: Notifications & Communication
+  epic-8: backlog
+  8-1-notification-queue-email-delivery-service: backlog
+  8-2-event-driven-notification-triggers: backlog
+  8-3-organizer-announcements: backlog
+  8-4-otp-email-delivery: backlog
+  8-5-real-time-submission-status: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: Platform Administration
+  epic-9: backlog
+  9-1-hackathon-request-queue-approval-workflow: backlog
+  9-2-platform-wide-hackathon-monitoring-dashboard: backlog
+  9-3-platform-admin-management-privilege-isolation: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10: Audit Trail & Compliance
+  epic-10: backlog
+  10-1-audit-event-logging-with-hash-chain-integrity: backlog
+  10-2-audit-log-query-api-retention-policy: backlog
+  10-3-dpdpa-compliance-data-minimization-anonymization: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Participant Sites
+  epic-11: backlog
+  11-1-hackathon-site-template-generation-pipeline: backlog
+  11-2-public-hackathon-info-schedule-leaderboard-display: backlog
+  11-3-team-dashboard-submission-history-on-participant-site: backlog
+  11-4-participant-site-theming-custom-domain: backlog
+  epic-11-retrospective: optional
+
+  # Epic 12: Analytics, Export & Feedback
+  epic-12: backlog
+  12-1-organizer-analytics-dashboard: backlog
+  12-2-results-export-csv-pdf: backlog
+  12-3-participant-feedback-visibility: backlog
+  epic-12-retrospective: optional

@@ -1,24 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import path from 'path';
 
 export default defineConfig(async () => {
   const plugins: any[] = [
+    TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
     react(),
     tailwindcss(),
   ];
 
-  // Add bundle visualizer when ANALYZE env var is set (run locally with
-  // `set ANALYZE=true && pnpm --filter @devsage/web run build` on Windows)
   if (process.env.ANALYZE) {
     try {
       const { visualizer } = await import('rollup-plugin-visualizer');
       plugins.push(visualizer({ filename: 'dist/bundle-analysis.html', open: false, gzipSize: true }));
-    } catch (err) {
-      // optional dev dependency — ignore if not installed
-      // eslint-disable-next-line no-console
-      console.warn('Bundle visualizer not available:', err);
+    } catch {
+      // optional dev dependency
     }
   }
 
@@ -31,7 +29,7 @@ export default defineConfig(async () => {
     },
     server: {
       proxy: {
-        '/api/v1': {
+        '/api': {
           target: 'http://localhost:8787',
           changeOrigin: true,
         },
@@ -39,15 +37,12 @@ export default defineConfig(async () => {
           target: 'http://localhost:8787',
           changeOrigin: true,
         },
-        '/hackathons': {
-          target: 'http://localhost:8787',
-          changeOrigin: true,
-        },
-        '/webhooks': {
-          target: 'http://localhost:8787',
-          changeOrigin: true,
-        },
       },
+    },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: [],
     },
   };
 });

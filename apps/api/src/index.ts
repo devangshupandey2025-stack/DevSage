@@ -1,64 +1,18 @@
-import { Hono } from 'hono';
-import type { AppEnv } from './types/env.js';
-import { successResponse } from './lib/response.js';
+import { createApp } from './app.js';
+import authHandler from './routes/auth-handler.js';
+import health from './routes/health.js';
+import hackathonShell from './routes/hackathon-shell.js';
 
-// Middleware
-import { corsMiddleware } from './middleware/cors.js';
-import { requestIdMiddleware } from './middleware/request-id.js';
-import { optionalAuth } from './middleware/auth.js';
-import { errorHandler } from './middleware/error-handler.js';
-
-// Routes
-import auth from './routes/auth.js';
-import hackathons from './routes/hackathons.js';
-import teams from './routes/teams.js';
-import teamRepos from './routes/team-repos.js';
-import submissions from './routes/submissions.js';
-import judging from './routes/judging.js';
-import rounds from './routes/rounds.js';
-import webhooks from './routes/webhooks.js';
-import workspaces from './routes/workspaces.js';
-import admin from './routes/admin.js';
-import notifications from './routes/notifications.js';
-import invites from './routes/invites.js';
-import audit from './routes/audit.js';
-import organizers from './routes/organizers.js';
-import announcements from './routes/announcements.js';
-
-// Queue & Cron
+// Queue & Cron (existing — will be updated in future stories)
 import { queueHandler } from './queue/index.js';
 import { cronHandler } from './cron/index.js';
 
-const app = new Hono<AppEnv>();
+const app = createApp()
+  .route('/api/auth', authHandler)
+  .route('/api/v1', health)
+  .route('/api/v1', hackathonShell);
 
-// Root route for health check or info
-app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));
-
-// Global middleware chain
-app.use('*', corsMiddleware);
-app.use('*', requestIdMiddleware);
-app.use('*', optionalAuth);
-app.onError(errorHandler);
-
-// Health check
-app.get('/health', (c) => c.json({ ok: true, timestamp: new Date().toISOString() }));
-
-// Mount routes
-app.route('/auth', auth);
-app.route('/api/v1/hackathons', hackathons);
-app.route('/api/v1/hackathons/:slug/teams', teams);
-app.route('/api/v1/hackathons/:slug/teams', teamRepos);
-app.route('/api/v1/hackathons/:slug/submissions', submissions);
-app.route('/api/v1/hackathons/:slug/judging', judging);
-app.route('/api/v1/hackathons/:slug/rounds', rounds);
-app.route('/api/v1/hackathons/:slug/organizers', organizers);
-app.route('/api/v1/hackathons/:slug/audit', audit);
-app.route('/api/v1/hackathons/:slug/announcements', announcements);
-app.route('/api/v1/workspaces', workspaces);
-app.route('/api/v1/admin', admin);
-app.route('/api/v1/notifications', notifications);
-app.route('/api/v1/invites', invites);
-app.route('/webhooks', webhooks);
+export type AppType = typeof app;
 
 // Export Worker handlers
 export default {

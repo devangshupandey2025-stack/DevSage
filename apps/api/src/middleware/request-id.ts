@@ -1,9 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../types/env.js';
+import type { AuthAppEnv } from '../types/env.js';
 
-export const requestIdMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const requestId = crypto.randomUUID();
+export const requestIdMiddleware: MiddlewareHandler<AuthAppEnv> = async (c, next) => {
+  const requestId = c.req.header('x-request-id') ?? crypto.randomUUID();
   c.set('requestId', requestId);
-  c.header('X-Request-Id', requestId);
-  return next();
+  c.header('x-request-id', requestId);
+  await next();
 };

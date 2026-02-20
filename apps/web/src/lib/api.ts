@@ -50,12 +50,14 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   }
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const errorMessage = typeof errorData.error === 'object' && errorData.error?.message
-      ? errorData.error.message
-      : typeof errorData.error === 'string'
-        ? errorData.error
-        : response.statusText || 'API Request Failed';
+    const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const err = errorData.error;
+    const errorMessage =
+      typeof err === 'object' && err !== null && 'message' in err && typeof (err as Record<string, unknown>).message === 'string'
+        ? (err as Record<string, unknown>).message as string
+        : typeof err === 'string'
+          ? err
+          : response.statusText || 'API Request Failed';
     throw new ApiError(response.status, errorMessage);
   }
 
