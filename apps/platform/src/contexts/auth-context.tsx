@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshToken = useCallback(async (): Promise<string | null> => {
     try {
       const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
-      const res = await fetch(${authUrl}/token, { credentials: 'include' });
+      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
       if (!res.ok) return null;
       const data = await res.json();
       setToken(data.token);

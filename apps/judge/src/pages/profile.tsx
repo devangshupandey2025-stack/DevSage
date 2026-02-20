@@ -13,8 +13,8 @@ export function ProfilePage() {
       <Card className="border-white/10 bg-white/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-3">
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="h-14 w-14 rounded-xl object-cover" />
+            {user?.image ? (
+              <img src={user.image} alt="" className="h-14 w-14 rounded-xl object-cover" />
             ) : (
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#CCFF00] text-xl font-bold text-black">
                 {user?.name?.charAt(0)?.toUpperCase() ?? '?'}
@@ -35,7 +35,7 @@ export function ProfilePage() {
           </div>
           <div className="flex items-center gap-3 text-white/60">
             <Calendar className="h-4 w-4" />
-            <span>Joined {user?.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Unknown'}</span>
+            <span>Judge</span>
           </div>
         </CardContent>
       </Card>

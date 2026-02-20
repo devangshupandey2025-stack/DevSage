@@ -1,72 +1,105 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { apiRequest } from '@/lib/api';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { authClient } from '../lib/auth-client';
+import { setTokenGetter } from '../lib/api';
 
 interface User {
   id: string;
   email: string;
   name: string;
-  avatar_url: string | null;
-  created_at: string;
-}
-
-interface AuthResponse {
-  ok: boolean;
-  data: {
-    user: User;
-    roles: string[];
-    isPlatformAdmin: boolean;
-    isOrganizer: boolean;
-    isJudge: boolean;
-  };
-  meta: unknown;
+  image: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
-  isAuthenticated: boolean;
+  token: string | null;
   isLoading: boolean;
+  isAuthenticated: boolean;
   isJudge: boolean;
+  hackathonRoles: Record<string, string[]>;
+  refreshToken: () => Promise<string | null>;
   logout: () => Promise<void>;
-  refreshAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isJudge, setIsJudge] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isJudge, setIsJudge] = useState(false);
+  const [hackathonRoles, setHackathonRoles] = useState<Record<string, string[]>>({});
 
-  async function refreshAuth() {
+  const refreshToken = useCallback(async (): Promise<string | null> => {
     try {
-      const response = await apiRequest<AuthResponse>('/auth/me');
-      setUser(response.data.user);
-      setIsJudge(response.data.isJudge);
-    } catch (_error) {
-      setUser(null);
-      setIsJudge(false);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+      const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
+      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      setToken(data.token);
 
-  useEffect(() => {
-    refreshAuth();
+      // Decode JWT payload to extract roles
+      const payload = JSON.parse(atob(data.token.split('.')[1]));
+      setHackathonRoles(payload.hackathonRoles || {});
+      setIsJudge(
+        Object.values(payload.hackathonRoles || {}).some((roles: any) =>
+          roles.includes('judge'),
+        ),
+      );
+
+      return data.token;
+    } catch {
+      return null;
+    }
   }, []);
 
-  async function logout() {
-    try {
-      await apiRequest('/auth/logout', { method: 'POST' });
-      setUser(null);
-      setIsJudge(false);
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('Logout failed', error);
+  useEffect(() => {
+    async function init() {
+      try {
+        const session = await authClient.getSession();
+        if (session.data?.user) {
+          setUser({
+            id: session.data.user.id,
+            email: session.data.user.email,
+            name: session.data.user.name,
+            image: session.data.user.image || null,
+          });
+          await refreshToken();
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }
+    init();
+  }, [refreshToken]);
+
+  useEffect(() => {
+    setTokenGetter(refreshToken);
+  }, [refreshToken]);
+
+  const logout = useCallback(async () => {
+    await authClient.signOut();
+    setUser(null);
+    setToken(null);
+    setIsJudge(false);
+    setHackathonRoles({});
+    window.location.href = '/login';
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, isJudge, logout, refreshAuth }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        isAuthenticated: !!user,
+        isJudge,
+        hackathonRoles,
+        refreshToken,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

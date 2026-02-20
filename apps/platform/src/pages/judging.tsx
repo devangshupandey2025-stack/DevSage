@@ -93,7 +93,8 @@ const item = {
 
 export function JudgingPage() {
   const { slug } = useParams<{ slug: string }>();
-  const { isJudge, refreshAuth } = useAuth();
+  const { hackathonRoles, refreshToken } = useAuth();
+  const isJudge = slug ? (hackathonRoles[slug] || []).includes('judge') : false;
   const [judges, setJudges] = useState<Judge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [rubric, setRubric] = useState<RubricCriterion[]>([]);
@@ -217,7 +218,7 @@ export function JudgingPage() {
       } else if (res.data?.self_accepted) {
         toast.success('You have been added as a judge!');
         // Refresh auth so isJudge picks up immediately
-        await refreshAuth();
+        await refreshToken();
       } else {
         toast.success('Judge invited!');
       }
@@ -300,7 +301,7 @@ export function JudgingPage() {
       });
       toast.success('Judge invite accepted!');
       // Refresh auth in case the accepted judge is the current user
-      await refreshAuth();
+      await refreshToken();
       fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to accept invite');

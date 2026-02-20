@@ -161,9 +161,9 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
             onClick={() => setProfileOpen((p) => !p)}
             className="flex items-center gap-2 rounded-xl border border-white/ bg-white/2 px-2.5 py-1.5 transition hover:border-[#CCFF00]/30 hover:bg-white/4"
           >
-            {user?.avatar_url ? (
+            {user?.image ? (
               <img
-                src={user.avatar_url}
+                src={user.image}
                 alt=""
                 className="h-7 w-7 rounded-lg object-cover"
               />
