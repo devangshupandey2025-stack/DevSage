@@ -48,6 +48,8 @@ export async function handleNotificationMessage(
   );
 
   // ── Fan-out to each recipient ──────────────────────────────────
+  let anyEmailFailed = false;
+
   for (const recipient of recipients) {
     const now = new Date().toISOString();
 
@@ -77,6 +79,8 @@ export async function handleNotificationMessage(
         html: content.html,
       });
 
+      if (!emailSent) anyEmailFailed = true;
+
       const deliveryId = crypto.randomUUID();
       await env.DB.prepare(
         `INSERT INTO notification_deliveries (id, event_id, user_id, channel, notification_type, status, created_at)
@@ -94,12 +98,14 @@ export async function handleNotificationMessage(
     }
   }
 
-  // ── Mark as processed (only after success) ─────────────────────
-  await env.DB.prepare(
-    'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key, created_at) VALUES (?, ?, ?)',
-  )
-    .bind(crypto.randomUUID(), idempotencyKey, new Date().toISOString())
-    .run();
+  // ── Mark as processed only if all emails sent successfully ─────
+  if (!anyEmailFailed) {
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key, created_at) VALUES (?, ?, ?)',
+    )
+      .bind(crypto.randomUUID(), idempotencyKey, new Date().toISOString())
+      .run();
+  }
 }
 
 // ── Content generation ─────────────────────────────────────────────
