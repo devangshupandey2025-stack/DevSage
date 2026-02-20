@@ -29,9 +29,9 @@ teams.get('/me', authMiddleware, async (c) => {
 
   const members = await c.env.DB.prepare(`
     SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
-           u.name, u.email, u.avatar_url
+           u.name, u.email, u.image
     FROM team_members tm
-    JOIN users u ON tm.user_id = u.id
+    JOIN user u ON tm.user_id = u.id
     WHERE tm.team_id = ?
     ORDER BY tm.joined_at ASC
   `).bind(membership.id).all();
@@ -149,9 +149,9 @@ teams.get('/:teamId/members', async (c) => {
 
   const members = await c.env.DB.prepare(`
     SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
-           u.name, u.email, u.avatar_url
+           u.name, u.email, u.image
     FROM team_members tm
-    JOIN users u ON tm.user_id = u.id
+    JOIN user u ON tm.user_id = u.id
     WHERE tm.team_id = ?
     ORDER BY tm.joined_at ASC
   `).bind(teamId).all();

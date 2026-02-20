@@ -13,9 +13,9 @@ announcements.get('/', async (c) => {
   const hackathon = c.get('hackathon')!;
   try {
     const rows = await c.env.DB.prepare(
-      `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
+      `SELECT a.*, u.name as author_name, u.image as author_avatar
        FROM announcements a
-       LEFT JOIN users u ON a.author_id = u.id
+       LEFT JOIN user u ON a.author_id = u.id
        WHERE a.hackathon_id = ?
        ORDER BY a.pinned DESC, a.created_at DESC`
     ).bind(hackathon.id).all();
@@ -53,9 +53,9 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
   ).bind(id, hackathon.id, user?.id, body.title, body.content, body.pinned ? 1 : 0, now, now).run();
 
   const created = await c.env.DB.prepare(
-    `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
+    `SELECT a.*, u.name as author_name, u.image as author_avatar
      FROM announcements a
-     LEFT JOIN users u ON a.author_id = u.id
+     LEFT JOIN user u ON a.author_id = u.id
      WHERE a.id = ?`
   ).bind(id).first();
 
@@ -99,9 +99,9 @@ announcements.patch('/:announcementId', authMiddleware, requireRole('co_organize
   await c.env.DB.prepare(`UPDATE announcements SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
   const updated = await c.env.DB.prepare(
-    `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
+    `SELECT a.*, u.name as author_name, u.image as author_avatar
      FROM announcements a
-     LEFT JOIN users u ON a.author_id = u.id
+     LEFT JOIN user u ON a.author_id = u.id
      WHERE a.id = ?`
   ).bind(announcementId).first();
 

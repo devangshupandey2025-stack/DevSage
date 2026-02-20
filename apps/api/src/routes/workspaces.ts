@@ -99,9 +99,9 @@ workspaces.get('/:workspaceId/members', authMiddleware, async (c) => {
   const workspaceId = c.req.param('workspaceId');
   const members = await c.env.DB.prepare(`
     SELECT wm.id, wm.user_id, wm.role, wm.created_at,
-           u.name, u.email, u.avatar_url
+           u.name, u.email, u.image
     FROM workspace_members wm
-    JOIN users u ON wm.user_id = u.id
+    JOIN user u ON wm.user_id = u.id
     WHERE wm.workspace_id = ?
     ORDER BY wm.created_at ASC
   `).bind(workspaceId).all();

@@ -82,7 +82,7 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     }
 
     // Verify all users are in DB
-    const count = await env.DB.prepare('SELECT COUNT(*) as cnt FROM users').first<{ cnt: number }>();
+    const count = await env.DB.prepare('SELECT COUNT(*) as cnt FROM user').first<{ cnt: number }>();
     expect(count?.cnt).toBe(7);
 
     // Insert platform_admin records for srijan and admin
