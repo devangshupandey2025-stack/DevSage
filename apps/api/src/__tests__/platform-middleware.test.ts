@@ -55,7 +55,7 @@ describe('platform admin middleware', () => {
     ];
 
     for (const url of endpoints) {
-      const res = await SELF.fetch(url, { headers: { Cookie: cookie } });
+      const res = await SELF.fetch(url, { headers: { Authorization: cookie } });
       expect(res.status).toBe(403);
     }
   });

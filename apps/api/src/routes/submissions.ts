@@ -376,6 +376,7 @@ submissions.post('/', authMiddleware, async (c) => {
     repo_url: string;
     demo_url?: string;
     video_url?: string;
+    slide_url?: string;
     round_id?: string;
     analysis_json?: string;
     ai_review_json?: string;

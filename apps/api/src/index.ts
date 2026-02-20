@@ -30,14 +30,14 @@ import { cronHandler } from './cron/index.js';
 
 const app = new Hono<AppEnv>();
 
-// Root route for health check or info
-app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));
-
 // Global middleware chain
 app.use('*', corsMiddleware);
 app.use('*', requestIdMiddleware);
 app.use('*', optionalAuth);
 app.onError(errorHandler);
+
+// Root route for health check or info
+app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));
 
 // Health check
 app.get('/health', (c) => c.json({ ok: true, timestamp: new Date().toISOString() }));

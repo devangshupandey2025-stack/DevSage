@@ -694,11 +694,11 @@ describe('E2E: Full Hackathon Lifecycle', () => {
     expect(judgeRes.status).toBe(200);
     const judgeBody = await judgeRes.json() as {
       ok: boolean;
-      data: Array<{ invite_status: string }>;
+      data: Array<{ status: string }>;
     };
     expect(judgeBody.ok).toBe(true);
     expect(judgeBody.data.length).toBe(1);
-    expect(judgeBody.data[0].invite_status).toBe('accepted');
+    expect(judgeBody.data[0].status).toBe('accepted');
 
     // Scores exist
     const scoresCount = await env.DB.prepare(

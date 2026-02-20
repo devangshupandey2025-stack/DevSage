@@ -235,6 +235,7 @@ export async function ensureSchema() {
       submission_deadline text,
       started_at text,
       completed_at text,
+      is_initialized integer DEFAULT 0 NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL,
       FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE
@@ -440,8 +441,7 @@ export async function ensureSchema() {
       hackathon_id text,
       type text NOT NULL,
       title text NOT NULL,
-      body text NOT NULL,
-      icon text DEFAULT 'info' NOT NULL,
+      body text,
       link text,
       read_at text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

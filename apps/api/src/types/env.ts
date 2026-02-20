@@ -12,6 +12,8 @@ export interface AppEnv {
     SMTP_PASSWORD: string;
     SMTP_EMAIL_ADDR?: string;
     GEMINI_API_KEY?: string;
+    GITHUB_CLIENT_ID?: string;
+    GITHUB_CLIENT_SECRET?: string;
     NODE_ENV?: string;
     FRONTEND_URL: string;
     PLATFORM_URL: string;
