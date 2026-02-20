@@ -23,6 +23,7 @@ import invites from './routes/invites.js';
 import audit from './routes/audit.js';
 import organizers from './routes/organizers.js';
 import announcements from './routes/announcements.js';
+import judgePortal from './routes/judge-portal.js';
 
 // Queue & Cron
 import { queueHandler } from './queue/index.js';
@@ -56,6 +57,7 @@ app.route('/api/v1/workspaces', workspaces);
 app.route('/api/v1/admin', admin);
 app.route('/api/v1/notifications', notifications);
 app.route('/api/v1/invites', invites);
+app.route('/api/v1/judge', judgePortal);
 app.route('/webhooks', webhooks);
 
 // Export Worker handlers

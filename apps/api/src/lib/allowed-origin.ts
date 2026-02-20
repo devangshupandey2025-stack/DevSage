@@ -2,6 +2,7 @@ interface OriginEnv {
   FRONTEND_URL: string;
   PLATFORM_URL: string;
   ADMIN_URL: string;
+  JUDGE_URL: string;
   HACKATHON_ORIGIN_PATTERN?: string; // e.g. "https://*.hackathon.devsage.org"
   PAGES_ORIGIN_PATTERN?: string;     // e.g. "https://*.pages.dev"
   WORKERS_ORIGIN_PATTERN?: string;   // e.g. "https://*.workers.dev"
@@ -14,7 +15,7 @@ interface OriginEnv {
  *  3. Cloudflare Pages dev pattern (*.pages.dev)
  */
 export function getAllowedOrigins(env: OriginEnv): (origin: string) => boolean {
-  const staticOrigins = [env.FRONTEND_URL, env.PLATFORM_URL, env.ADMIN_URL];
+  const staticOrigins = [env.FRONTEND_URL, env.PLATFORM_URL, env.ADMIN_URL, env.JUDGE_URL];
 
   // Build an array of RegExp matchers from wildcard patterns
   const patterns: RegExp[] = [];

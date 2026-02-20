@@ -4,7 +4,7 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
-import { requireRole, requireExactRole } from '../middleware/role.js';
+import { requireRole } from '../middleware/role.js';
 import { assignSubmissionsRoundRobin, computeLeaderboard } from '../services/judging-service.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { KV_TTL } from '../lib/constants.js';
@@ -104,13 +104,17 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
 
   if (!targetUserId) return errorResponse(c, 400, 'VALIDATION_ERROR', 'email or user_id is required');
 
+  // Auto-accept if the organizer is inviting themselves as judge
+  const isSelfInvite = targetUserId === user.id;
+  const initialStatus = isSelfInvite ? 'accepted' : 'pending';
+
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {
     await c.env.DB.prepare(
-      `INSERT INTO judges (id, hackathon_id, user_id, invite_status, track_id, invited_by, invited_at) VALUES (?, ?, ?, 'pending', ?, ?, ?)`
-    ).bind(id, hackathon.id, targetUserId, body.track_id ?? null, user.id, now).run();
+      `INSERT INTO judges (id, hackathon_id, user_id, invite_status, track_id, invited_by, invited_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, hackathon.id, targetUserId, initialStatus, body.track_id ?? null, user.id, now, isSelfInvite ? now : null).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
       // Judge already exists — re-send the invite email and return the existing record
@@ -140,24 +144,26 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     throw err;
   }
 
-  // Send invite notification via queue
-  c.executionCtx.waitUntil(
-    c.env.NOTIFICATION_QUEUE.send({
-      type: 'judge.invited',
-      hackathon_id: hackathon.id,
-      data: { judge_id: id, user_id: targetUserId },
-    })
-  );
+  // Send invite notification via queue (skip for self-invites)
+  if (!isSelfInvite) {
+    c.executionCtx.waitUntil(
+      c.env.NOTIFICATION_QUEUE.send({
+        type: 'judge.invited',
+        hackathon_id: hackathon.id,
+        data: { judge_id: id, user_id: targetUserId },
+      })
+    );
+  }
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
-      action: 'judge.invited', entity_type: 'judge', entity_id: id,
+      action: isSelfInvite ? 'judge.self_invited' : 'judge.invited', entity_type: 'judge', entity_id: id,
       details: { user_id: targetUserId },
     })
   );
 
-  return successResponse(c, { id, user_id: targetUserId }, { status: 201 });
+  return successResponse(c, { id, user_id: targetUserId, invite_status: initialStatus, self_accepted: isSelfInvite }, { status: 201 });
 });
 
 // Bulk invite judges
@@ -220,6 +226,24 @@ judging.post('/judges/:judgeId/tracks', authMiddleware, requireRole('co_organize
   return successResponse(c, { updated: true });
 });
 
+// Organizer-accept a judge invite (for testing/manual approval workflows)
+judging.post('/judges/:judgeId/accept', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const judgeId = c.req.param('judgeId');
+  const now = new Date().toISOString();
+  const judge = await c.env.DB.prepare(
+    'SELECT id, invite_status FROM judges WHERE id = ?'
+  ).bind(judgeId).first<{ id: string; invite_status: string }>();
+
+  if (!judge) return errorResponse(c, 404, 'NOT_FOUND', 'Judge not found');
+  if (judge.invite_status === 'accepted') return successResponse(c, { already_accepted: true });
+
+  await c.env.DB.prepare(
+    'UPDATE judges SET invite_status = ?, responded_at = ? WHERE id = ?'
+  ).bind('accepted', now, judgeId).run();
+
+  return successResponse(c, { accepted: true });
+});
+
 // === Assignments (organizer+) ===
 
 // Auto-assign submissions to judges (round-robin)
@@ -274,7 +298,7 @@ judging.get('/my-assignments', authMiddleware, async (c) => {
 // === Scoring (judges only) ===
 
 // Submit scores for a submission
-judging.post('/submissions/:submissionId/scores', authMiddleware, requireExactRole('judge'), async (c) => {
+judging.post('/submissions/:submissionId/scores', authMiddleware, requireRole('judge'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
   const submissionId = c.req.param('submissionId');

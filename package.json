@@ -19,6 +19,7 @@
     "deploy:web": "pnpm --filter @devsage/web run deploy",
     "deploy:platform": "pnpm --filter @devsage/platform run deploy",
     "deploy:admin": "pnpm --filter @devsage/admin run deploy",
+    "deploy:judge": "pnpm --filter @devsage/judge run deploy",
     "deploy:api:dev": "pnpm --filter @devsage/api run deploy:dev",
     "deploy:web:dev": "pnpm --filter @devsage/web run deploy:dev",
     "generate:hackathons": "node ./scripts/generate-hackathon-pages.js",
@@ -28,6 +29,7 @@
     "deploy:auth:secrets": "pnpm --filter @devsage/auth run deploy:secrets",
     "deploy:all": "pnpm deploy:auth && pnpm deploy:api && pnpm deploy:web && pnpm deploy:platform && pnpm deploy:admin",
     "deploy:admin:dev": "pnpm --filter @devsage/admin run deploy:dev",
+    "deploy:judge:dev": "pnpm --filter @devsage/judge run deploy:dev",
     "prepare": "husky",
     "secrets:staged": "lint-staged -q --allow-empty",
     "secrets:scan": "secretlint --maskSecrets --format compact ."

@@ -15,9 +15,10 @@ export async function assignSubmissionsRoundRobin(
     return { assigned: 0 };
   }
 
-  // Get current submissions that need assignment
-  let submissionQuery = 'SELECT s.id, s.team_id FROM submissions s WHERE s.hackathon_id = ? AND s.is_final = 1 AND s.status = ?';
-  const params: unknown[] = [hackathonId, 'validated'];
+  // Get current final submissions that need assignment
+  // Accept any status — submissions are created as 'received' and there may not be a validation step
+  let submissionQuery = 'SELECT s.id, s.team_id FROM submissions s WHERE s.hackathon_id = ? AND s.is_final = 1';
+  const params: unknown[] = [hackathonId];
 
   if (roundId) {
     submissionQuery += ' AND s.round_id = ?';

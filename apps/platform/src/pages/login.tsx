@@ -44,7 +44,8 @@ export function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      window.location.href = '/dashboard';
+      const redirectTo = searchParams.get('redirect') || '/dashboard';
+      window.location.href = redirectTo;
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

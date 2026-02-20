@@ -6,6 +6,7 @@ interface NotificationEnv extends EmailEnv {
   DB: D1Database;
   FRONTEND_URL: string;
   PLATFORM_URL: string;
+  JUDGE_URL: string;
 }
 
 export async function handleNotificationMessage(
@@ -122,7 +123,7 @@ async function generateNotificationContent(
   type: string,
   hackathonId: string | undefined,
   data: Record<string, unknown> | undefined,
-  env: { FRONTEND_URL: string; PLATFORM_URL: string },
+  env: { FRONTEND_URL: string; PLATFORM_URL: string; JUDGE_URL: string },
 ): Promise<NotificationContent> {
   switch (type) {
     // ── Judge invitation (the critical path) ───────────────────
@@ -136,7 +137,7 @@ async function generateNotificationContent(
 
       const hackathonName = hackathon?.title ?? 'a hackathon';
       const judgeId = data?.judge_id as string | undefined;
-      const inviteLink = `${env.PLATFORM_URL}/invite/judge/${judgeId}`;
+      const inviteLink = `${env.JUDGE_URL}/invite/judge/${judgeId}`;
 
       return {
         title: `You're invited to judge ${hackathonName}`,

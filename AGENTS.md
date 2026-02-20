@@ -7,7 +7,7 @@
 
 DevSage — edge-native GitHub-native hackathon platform. Turborepo monorepo: Cloudflare Workers API (Hono + D1 + Durable Objects + Queues) + three React SPAs (Vite + Tailwind v4 + shadcn/ui). pnpm workspaces, TypeScript strict throughout.
 
-Three frontend apps: Admin (`shikdd.devsage.org`), Organizer/Judge Platform (`platform.devsage.org`), Main Website (`devsage.org`). Participant sites (`{slug}.devsage.org`) live in separate repos.
+Four frontend apps: Admin (`shikdd.devsage.org`), Organizer Platform (`platform.devsage.org`), Judge Portal (`judge.devsage.org`), Main Website (`devsage.org`). Participant sites (`{slug}.devsage.org`) live in separate repos.
 
 ## STRUCTURE
 
@@ -16,7 +16,8 @@ DevSage/
 ├── apps/
 │   ├── api/          # Cloudflare Worker — Hono API, DOs, queue consumer, cron
 │   ├── admin/        # shikdd.devsage.org — Platform admin panel (React + Vite)
-│   ├── platform/     # platform.devsage.org — Organizer/Judge dashboard (React + Vite + Tailwind v4 + shadcn/ui)
+│   ├── judge/        # judge.devsage.org — Judge scoring portal (React + Vite + Tailwind v4 + shadcn/ui)
+│   ├── platform/     # platform.devsage.org — Organizer dashboard (React + Vite + Tailwind v4 + shadcn/ui)
 │   └── web/          # devsage.org — Main website (React + Vite)
 ├── packages/
 │   ├── config/       # Shared tsconfig variants (base, react, worker) + ESLint flat config
@@ -40,6 +41,7 @@ DevSage/
 | Add Zod schema | `packages/shared/src/schemas/` | Re-export from `src/index.ts` with `.js` extension |
 | Add admin page | `apps/admin/src/pages/` | shikdd.devsage.org — platform admin features |
 | Add organizer page | `apps/platform/src/pages/` | platform.devsage.org — hackathon management |
+| Add judge page | `apps/judge/src/pages/` | judge.devsage.org — judge scoring portal |
 | Add website page | `apps/web/src/pages/` | devsage.org — public marketing/info pages |
 | Add judging endpoint | `apps/api/src/routes/judging.ts` | Judge invites, rubric, scoring, leaderboard |
 | Add webhook handler | `apps/api/src/routes/webhooks.ts` | HMAC signature verification, enqueue to WEBHOOK_QUEUE |
@@ -55,6 +57,7 @@ DevSage/
 ```
 apps/api      → @devsage/shared, @devsage/db, @devsage/config
 apps/admin    → @devsage/shared
+apps/judge    → @devsage/shared
 apps/platform → @devsage/shared
 apps/web      → @devsage/shared
 packages/db     → @devsage/config
@@ -63,7 +66,7 @@ packages/config → (standalone, configs only)
 ```
 
 **Dependency rules:**
-- `apps/admin`, `apps/platform`, `apps/web` may import from `packages/shared` only (never from `db` or `api`)
+- `apps/admin`, `apps/judge`, `apps/platform`, `apps/web` may import from `packages/shared` only (never from `db` or `api`)
 - No circular dependencies. No cross-app imports
 - Participant sites (`{slug}.devsage.org`) are maintained in separate repositories
 
@@ -157,6 +160,7 @@ pnpm secrets:staged          # Scan staged files only
 pnpm deploy:api              # Deploy API worker
 pnpm deploy:api:secrets      # Upload API secrets (.env.production)
 pnpm deploy:web              # Deploy web app
+pnpm deploy:judge            # Deploy judge portal
 ```
 
 ## TESTING
@@ -178,11 +182,11 @@ pnpm deploy:web              # Deploy web app
 - API prod secrets: deploy via `wrangler secret put` or `wrangler secret bulk`
 - Web env: only `VITE_*` (client-visible). **Never put secrets in web app.**
 - `.env*` files gitignored (except `apps/web/.env.production`)
-- Required secrets: `JWT_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `PLATFORM_URL`, `ADMIN_URL`, `SMTP_URL/USERNAME/PASSWORD/EMAIL_ADDR`
+- Required secrets: `JWT_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `GITHUB_WEBHOOK_SECRET`, `FRONTEND_URL`, `PLATFORM_URL`, `JUDGE_URL`, `ADMIN_URL`, `SMTP_URL/USERNAME/PASSWORD/EMAIL_ADDR`
 
 ## NOTES
 
-- Three frontend apps: `admin` (shikdd.devsage.org), `platform` (platform.devsage.org), `web` (devsage.org)
+- Three frontend apps: `admin` (shikdd.devsage.org), `platform` (platform.devsage.org), `judge` (judge.devsage.org), `web` (devsage.org)
 - Participant sites (`{slug}.devsage.org`) are separate repos, generated from `templates/hackathon-site/`
 - Vite dev proxy: `/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (prefix matching)
 - Production API: `https://api.devsage.org`. Routes use `/api/v1/` prefix with slug-based hackathon addressing

@@ -1,18 +1,21 @@
-import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { sql } from 'drizzle-orm';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { judges } from './judges.js';
 import { submissions } from './submissions.js';
 import { hackathons } from './hackathons.js';
+import { teams } from './teams.js';
 
 export const judgeAssignments = sqliteTable('judge_assignments', {
   id: text('id').primaryKey(),
-  judge_id: text('judge_id').notNull().references(() => judges.id, { onDelete: 'cascade' }),
-  submission_id: text('submission_id').notNull().references(() => submissions.id, { onDelete: 'cascade' }),
   hackathon_id: text('hackathon_id').notNull().references(() => hackathons.id, { onDelete: 'cascade' }),
+  judge_id: text('judge_id').notNull().references(() => judges.id, { onDelete: 'cascade' }),
+  team_id: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  submission_id: text('submission_id').references(() => submissions.id),
+  round: integer('round').notNull().default(1),
   status: text('status').notNull().default('pending'),
-  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  assigned_at: text('assigned_at').notNull(),
+  completed_at: text('completed_at'),
 }, (table) => ({
-  judgeSubmissionUniq: uniqueIndex('uq_judge_assignments_judge_submission').on(table.judge_id, table.submission_id),
-  submissionIdx: index('idx_judge_assignments_submission').on(table.submission_id),
-  hackathonIdx: index('idx_judge_assignments_hackathon').on(table.hackathon_id),
+  judgeTeamRoundUniq: uniqueIndex('judge_assignments_judge_id_team_id_round_unique').on(table.judge_id, table.team_id, table.round),
+  hackathonRoundIdx: index('idx_judge_assignments_hackathon_round').on(table.hackathon_id, table.round, table.status),
+  judgeIdx: index('idx_judge_assignments_judge').on(table.judge_id, table.status),
 }));

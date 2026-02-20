@@ -1,4 +1,4 @@
-import { sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { hackathons } from './hackathons.js';
 import { user } from './auth-user.js';
@@ -14,5 +14,6 @@ export const judges = sqliteTable('judges', {
   created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
   accepted_at: text('accepted_at'),
 }, (table) => ({
-  hackathonEmailUniq: uniqueIndex('uq_judges_hackathon_email').on(table.hackathon_id, table.email),
+  hackathonUserUniq: uniqueIndex('judges_hackathon_id_user_id_unique').on(table.hackathon_id, table.user_id),
+  userIdx: index('idx_judges_user').on(table.user_id),
 }));

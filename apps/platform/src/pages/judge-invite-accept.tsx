@@ -20,7 +20,7 @@ interface JudgeInvite {
 
 export function JudgeInviteAcceptPage() {
   const { token } = useParams<{ token: string }>();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const [invite, setInvite] = useState<JudgeInvite | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,6 +46,8 @@ export function JudgeInviteAcceptPage() {
     try {
       await apiRequest(`/api/v1/invites/judge/${token}`, { method: 'POST' });
       toast.success('Invite accepted! You are now a judge.');
+      // Refresh auth so ProtectedRoute picks up isJudge: true
+      await refreshAuth();
       navigate(`/hackathons/${invite?.hackathon_slug}/judge`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to accept invite');

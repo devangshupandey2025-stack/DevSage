@@ -63,6 +63,7 @@ export function createAuth(env: AuthEnv['Bindings']) {
       'https://devsage.org',
       'https://platform.devsage.org',
       'https://shikdd.devsage.org',
+      'https://judge.devsage.org',
     ],
   });
 }

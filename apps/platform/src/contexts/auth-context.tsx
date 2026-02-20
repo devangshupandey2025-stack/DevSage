@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+﻿import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authClient } from '../lib/auth-client';
 import { setTokenGetter } from '../lib/api';
 
@@ -36,12 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshToken = useCallback(async (): Promise<string | null> => {
     try {
       const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
-      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
+      const res = await fetch(${authUrl}/token, { credentials: 'include' });
       if (!res.ok) return null;
       const data = await res.json();
       setToken(data.token);
 
-      // Decode JWT payload to extract roles (no verification needed on client)
       const payload = JSON.parse(atob(data.token.split('.')[1]));
       setIsPlatformAdmin(!!payload.platformAdmin);
       setHackathonRoles(payload.hackathonRoles || {});

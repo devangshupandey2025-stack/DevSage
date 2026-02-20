@@ -16,15 +16,11 @@ import { AnnouncementsPage } from '@/pages/announcements';
 import { ActivityPage } from '@/pages/activity';
 import { AnalyticsPage } from '@/pages/analytics';
 import { SettingsPage } from '@/pages/settings';
-import { JudgeScoringPage } from '@/pages/judge-scoring';
-import { JudgeAssignmentsPage } from '@/pages/judge-assignments';
-import { JudgeInviteAcceptPage } from '@/pages/judge-invite-accept';
 
 const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <LoginPage /> },
 { path: '/invite/:code', element: <InviteAcceptPage /> },
-  { path: '/invite/judge/:token', element: <JudgeInviteAcceptPage /> },
 
   // Protected routes with app shell
   {
@@ -49,10 +45,6 @@ const router = createBrowserRouter([
           { path: '/hackathons/:slug/audit', element: <ActivityPage /> },
           { path: '/hackathons/:slug/analytics', element: <AnalyticsPage /> },
           { path: '/hackathons/:slug/settings', element: <SettingsPage /> },
-          { path: '/hackathons/:slug/judge', element: <JudgeScoringPage /> },
-
-          // Judge-specific routes
-          { path: '/hackathons/:slug/judge/assignments', element: <JudgeAssignmentsPage /> },
         ],
       },
     ],

@@ -32,17 +32,23 @@ const mainNavItems: NavItem[] = [
 ];
 
 function getHackathonNavItems(slug: string): NavItem[] {
-  return [
+  const items: NavItem[] = [
     { label: 'Overview', icon: Sparkles, path: `/hackathons/${slug}` },
     { label: 'Teams', icon: Users, path: `/hackathons/${slug}/teams` },
     { label: 'Submissions', icon: FileCode, path: `/hackathons/${slug}/submissions` },
     { label: 'Judging', icon: Scale, path: `/hackathons/${slug}/judging` },
+  ];
+
+  items.push(
+    { label: 'Leaderboard', icon: Trophy, path: `/hackathons/${slug}/leaderboard` },
     { label: 'Rounds', icon: Award, path: `/hackathons/${slug}/rounds` },
     { label: 'Announcements', icon: Megaphone, path: `/hackathons/${slug}/announcements` },
     { label: 'Activity', icon: Activity, path: `/hackathons/${slug}/activity` },
     { label: 'Analytics', icon: BarChart3, path: `/hackathons/${slug}/analytics` },
     { label: 'Settings', icon: Settings, path: `/hackathons/${slug}/settings` },
-  ];
+  );
+
+  return items;
 }
 
 interface SidebarProps {
@@ -60,10 +66,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     : mainNavItems;
 
   const isActive = (path: string) => {
+    // Exact match for overview page
     if (path === `/hackathons/${slug}`) {
       return location.pathname === path;
     }
-    return location.pathname.startsWith(path);
+    // Segment-based matching to avoid prefix overlap
+    // e.g. /judge shouldn't match /judging
+    return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
   return (

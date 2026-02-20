@@ -19,6 +19,7 @@ export interface AppEnv {
     PLATFORM_URL: string;
     ADMIN_URL: string;
     AUTH_URL: string;
+    JUDGE_URL: string;
     API_URL: string;
     EMAIL_FROM: string;
     HACKATHON_ORIGIN_PATTERN?: string;

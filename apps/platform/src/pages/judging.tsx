@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/contexts/auth-context';
 import { PageHeader, EmptyState } from '@/components/common';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -22,13 +24,17 @@ import {
   Trophy,
   Star,
   Users,
-  CheckCircle,
-  Clock,
-  ArrowUpDown,
   Plus,
   Shuffle,
   Trash2,
   Loader2,
+  Gavel,
+  ArrowLeft,
+  ArrowRight,
+  Send,
+  ClipboardCheck,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface Judge {
@@ -47,6 +53,23 @@ interface LeaderboardEntry {
   score: number;
   judges_completed: number;
   total_judges: number;
+}
+
+interface Assignment {
+  id: string;
+  submission_id: string;
+  team_id: string;
+  team_name: string;
+  tag_name: string;
+  commit_sha: string;
+  round: number;
+  status: string;
+  assigned_at: string;
+}
+
+interface ScoreInput {
+  score: string;
+  comment: string;
 }
 
 interface RubricCriterion {
@@ -70,17 +93,24 @@ const item = {
 
 export function JudgingPage() {
   const { slug } = useParams<{ slug: string }>();
+  const { isJudge, refreshAuth } = useAuth();
   const [judges, setJudges] = useState<Judge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [rubric, setRubric] = useState<RubricCriterion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric' | 'scoring'>('leaderboard');
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteUserId, setInviteUserId] = useState('');
   const [rubricDialogOpen, setRubricDialogOpen] = useState(false);
   const [newCriterion, setNewCriterion] = useState({ name: '', description: '', max_score: '10', weight: '1' });
   const [isCreatingCriterion, setIsCreatingCriterion] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+
+  // Judge scoring state
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
+  const [isSubmittingScores, setIsSubmittingScores] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -89,14 +119,21 @@ export function JudgingPage() {
 
   const fetchData = async () => {
     try {
-      const [judgesRes, leaderboardRes, rubricRes] = await Promise.allSettled([
+      const promises: Promise<unknown>[] = [
         apiRequest<{ data: Judge[] }>(`/api/v1/hackathons/${slug}/judging/judges`),
         apiRequest<{ data: LeaderboardEntry[] }>(`/api/v1/hackathons/${slug}/judging/leaderboard`),
         apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/judging/rubric`),
-      ]);
+      ];
+      // Fetch judge assignments if user is a judge
+      if (isJudge) {
+        promises.push(apiRequest<{ data: Assignment[] }>(`/api/v1/hackathons/${slug}/judging/my-assignments`));
+      }
+
+      const [judgesRes, leaderboardRes, rubricRes, assignmentsRes] = await Promise.allSettled(promises) as PromiseSettledResult<any>[];
       if (judgesRes.status === 'fulfilled') setJudges(judgesRes.value.data ?? []);
       if (leaderboardRes.status === 'fulfilled') setLeaderboard(leaderboardRes.value.data ?? []);
       if (rubricRes.status === 'fulfilled') setRubric(rubricRes.value.data ?? []);
+      if (assignmentsRes?.status === 'fulfilled') setAssignments(assignmentsRes.value.data ?? []);
     } catch (_err) {
       // graceful
     } finally {
@@ -104,15 +141,83 @@ export function JudgingPage() {
     }
   };
 
+  // --- Scoring helpers ---
+  const selectAssignmentForScoring = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    const initial: Record<string, ScoreInput> = {};
+    rubric.forEach((c) => { initial[c.id] = { score: '', comment: '' }; });
+    setScoreInputs(initial);
+  };
+
+  const handleScoreInputChange = (criteriaId: string, value: string) => {
+    if (value !== '' && isNaN(Number(value))) return;
+    const criterion = rubric.find((c) => c.id === criteriaId);
+    if (criterion && value !== '') {
+      const numVal = Number(value);
+      if (numVal < 0 || numVal > criterion.max_score) {
+        toast.error(`Score must be between 0 and ${criterion.max_score}`);
+        return;
+      }
+    }
+    setScoreInputs((prev) => ({ ...prev, [criteriaId]: { ...prev[criteriaId], score: value } }));
+  };
+
+  const handleCommentInputChange = (criteriaId: string, value: string) => {
+    setScoreInputs((prev) => ({ ...prev, [criteriaId]: { ...prev[criteriaId], comment: value } }));
+  };
+
+  const submitScores = async () => {
+    if (!selectedAssignment) return;
+    const scoresToSubmit = Object.entries(scoreInputs)
+      .filter(([_, state]) => state.score !== '')
+      .map(([criteriaId, state]) => ({
+        criteria_id: criteriaId,
+        score: Number(state.score),
+        comment: state.comment || undefined,
+        assignment_id: selectedAssignment.id,
+        round: selectedAssignment.round ?? 1,
+      }));
+
+    if (scoresToSubmit.length === 0) {
+      toast.error('Please enter at least one score');
+      return;
+    }
+    if (scoresToSubmit.length < rubric.length) {
+      toast.warning(`${rubric.length - scoresToSubmit.length} criteria unscored. Submitting partial scores.`);
+    }
+
+    setIsSubmittingScores(true);
+    try {
+      await apiRequest(
+        `/api/v1/hackathons/${slug}/judging/submissions/${selectedAssignment.submission_id}/scores`,
+        { method: 'POST', body: JSON.stringify({ scores: scoresToSubmit }) }
+      );
+      toast.success(`Submitted ${scoresToSubmit.length} scores!`);
+      setAssignments((prev) =>
+        prev.map((a) => (a.id === selectedAssignment.id ? { ...a, status: 'scored' } : a))
+      );
+      setSelectedAssignment(null);
+      setScoreInputs({});
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit scores');
+    } finally {
+      setIsSubmittingScores(false);
+    }
+  };
+
   const inviteJudge = async () => {
     if (!inviteUserId.trim()) return;
     try {
-      const res = await apiRequest<{ data: { already_invited?: boolean; message?: string } }>(`/api/v1/hackathons/${slug}/judging/judges`, {
+      const res = await apiRequest<{ data: { already_invited?: boolean; message?: string; self_accepted?: boolean; invite_status?: string } }>(`/api/v1/hackathons/${slug}/judging/judges`, {
         method: 'POST',
         body: JSON.stringify({ email: inviteUserId }),
       });
       if (res.data?.already_invited) {
         toast.info(res.data.message ?? 'Judge already invited — invite email re-sent.');
+      } else if (res.data?.self_accepted) {
+        toast.success('You have been added as a judge!');
+        // Refresh auth so isJudge picks up immediately
+        await refreshAuth();
       } else {
         toast.success('Judge invited!');
       }
@@ -173,7 +278,12 @@ export function JudgingPage() {
         method: 'POST',
         body: JSON.stringify({}),
       });
-      toast.success(`Submissions assigned to judges (round-robin)!`);
+      const count = res.data?.assigned ?? 0;
+      if (count > 0) {
+        toast.success(`${count} submission${count === 1 ? '' : 's'} assigned to judges (round-robin)!`);
+      } else {
+        toast.warning('No eligible submissions found to assign. Make sure submissions are marked as final.');
+      }
       fetchData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to assign submissions';
@@ -183,11 +293,32 @@ export function JudgingPage() {
     }
   };
 
-  const tabs = [
+  const acceptJudgeInvite = async (judgeId: string) => {
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/judging/judges/${judgeId}/accept`, {
+        method: 'POST',
+      });
+      toast.success('Judge invite accepted!');
+      // Refresh auth in case the accepted judge is the current user
+      await refreshAuth();
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to accept invite');
+    }
+  };
+
+  const pendingAssignments = assignments.filter((a) => a.status === 'pending');
+  const scoredAssignments = assignments.filter((a) => a.status === 'scored');
+
+  const tabs: Array<{ key: typeof activeTab; label: string; icon: typeof Trophy; badge?: number }> = [
     { key: 'leaderboard', label: 'Leaderboard', icon: Trophy },
     { key: 'judges', label: 'Judges', icon: Users },
     { key: 'rubric', label: 'Rubric', icon: Star },
-  ] as const;
+  ];
+  // Add scoring tab for judges
+  if (isJudge) {
+    tabs.push({ key: 'scoring', label: 'Scoring', icon: Gavel, badge: pendingAssignments.length || undefined });
+  }
 
   return (
     <div>
@@ -262,6 +393,11 @@ export function JudgingPage() {
             >
               <Icon className="h-4 w-4" />
               {tab.label}
+              {tab.badge != null && tab.badge > 0 && (
+                <span className="ml-1 rounded-full bg-[#CCFF00]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#CCFF00]">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -362,6 +498,17 @@ export function JudgingPage() {
                     }`}>
                       {judge.status}
                     </span>
+                    {judge.status === 'pending' && (
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => acceptJudgeInvite(judge.id)}
+                        className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-400 transition hover:bg-emerald-500/20"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        Accept
+                      </motion.button>
+                    )}
                   </motion.div>
                 ))}
               </motion.div>
@@ -491,6 +638,223 @@ export function JudgingPage() {
                 </motion.div>
               )}
             </>
+          )}
+
+          {/* Scoring Tab (judges only) */}
+          {activeTab === 'scoring' && isJudge && (
+            <div className="space-y-6">
+              {!selectedAssignment ? (
+                <>
+                  {/* Pending assignments */}
+                  <div>
+                    <h2 className="text-lg font-bold text-white/80 mb-4 flex items-center gap-2">
+                      <ClipboardCheck className="h-5 w-5 text-[#CCFF00]" />
+                      Pending Assignments ({pendingAssignments.length})
+                    </h2>
+                    {pendingAssignments.length === 0 ? (
+                      <EmptyState
+                        icon={ClipboardCheck}
+                        title="No pending assignments"
+                        description="You'll see submissions here once an organizer assigns them to you."
+                      />
+                    ) : (
+                      <motion.div variants={container} initial="hidden" animate="show" className="space-y-3">
+                        {pendingAssignments.map((assignment) => (
+                          <motion.div
+                            key={assignment.id}
+                            variants={item}
+                            className="flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-5 transition hover:border-[#CCFF00]/20 hover:bg-white/4"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-white/80">{assignment.team_name}</p>
+                              <p className="text-xs text-white/30 mt-0.5">
+                                Tag: <span className="font-mono text-white/50">{assignment.tag_name || 'N/A'}</span>
+                                {assignment.commit_sha && (
+                                  <> &bull; Commit: <span className="font-mono text-white/50">{assignment.commit_sha.slice(0, 7)}</span></>
+                                )}
+                              </p>
+                            </div>
+                            <Badge className="bg-amber-500/20 text-amber-400 border-0">pending</Badge>
+                            <motion.button
+                              whileHover={{ scale: 1.03 }}
+                              whileTap={{ scale: 0.97 }}
+                              onClick={() => selectAssignmentForScoring(assignment)}
+                              className="flex items-center gap-2 rounded-full bg-[#CCFF00] px-4 py-2 text-sm font-bold text-black transition hover:bg-white"
+                            >
+                              Score <ArrowRight className="h-4 w-4" />
+                            </motion.button>
+                          </motion.div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {/* Scored assignments */}
+                  {scoredAssignments.length > 0 && (
+                    <div>
+                      <h2 className="text-lg font-bold text-white/80 mb-4 flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                        Completed ({scoredAssignments.length})
+                      </h2>
+                      <motion.div variants={container} initial="hidden" animate="show" className="space-y-3">
+                        {scoredAssignments.map((assignment) => (
+                          <motion.div
+                            key={assignment.id}
+                            variants={item}
+                            className="flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-4 transition"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-white/60">{assignment.team_name}</p>
+                              <p className="text-xs text-white/20 mt-0.5">
+                                Tag: <span className="font-mono">{assignment.tag_name || 'N/A'}</span>
+                              </p>
+                            </div>
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border-0">scored</Badge>
+                            <motion.button
+                              whileHover={{ scale: 1.03 }}
+                              whileTap={{ scale: 0.97 }}
+                              onClick={() => selectAssignmentForScoring(assignment)}
+                              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
+                            >
+                              Re-score
+                            </motion.button>
+                          </motion.div>
+                        ))}
+                      </motion.div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Inline scoring form for selected assignment */
+                <div className="space-y-6">
+                  <button
+                    onClick={() => { setSelectedAssignment(null); setScoreInputs({}); }}
+                    className="flex items-center text-sm text-white/40 hover:text-white transition"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Assignments
+                  </button>
+
+                  <div className="rounded-2xl border border-[#CCFF00]/20 bg-[#CCFF00]/4 p-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-lg font-black text-white">Scoring: {selectedAssignment.team_name}</p>
+                        <p className="text-xs text-white/40 mt-1">
+                          Tag: <span className="font-mono text-white/60">{selectedAssignment.tag_name || 'N/A'}</span>
+                          {selectedAssignment.commit_sha && (
+                            <> &bull; Commit: <span className="font-mono text-white/60">{selectedAssignment.commit_sha.slice(0, 7)}</span></>
+                          )}
+                        </p>
+                      </div>
+                      <Badge className="bg-[#CCFF00]/20 text-[#CCFF00] border-0">Judge Mode</Badge>
+                    </div>
+                  </div>
+
+                  {rubric.length === 0 ? (
+                    <EmptyState
+                      icon={AlertCircle}
+                      title="No rubric criteria"
+                      description="No rubric criteria have been defined yet. Add criteria in the Rubric tab."
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      <div className="lg:col-span-2 space-y-4">
+                        {rubric.sort((a, b) => a.sort_order - b.sort_order).map((criterion) => (
+                          <div key={criterion.id} className="rounded-2xl border border-white/ bg-white/2 p-6 space-y-4">
+                            <div className="flex justify-between items-start gap-4">
+                              <div>
+                                <h3 className="text-sm font-bold text-white/80">{criterion.name}</h3>
+                                <p className="text-xs text-white/30 mt-1">{criterion.description}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-white/6 px-2.5 py-0.5 text-[10px] font-bold text-white/40">
+                                Max: {criterion.max_score}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                              <div className="md:col-span-1">
+                                <label className="text-[10px] font-medium text-white/25 mb-1.5 block">
+                                  Score (0-{criterion.max_score})
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max={criterion.max_score}
+                                  value={scoreInputs[criterion.id]?.score || ''}
+                                  onChange={(e) => handleScoreInputChange(criterion.id, e.target.value)}
+                                  className="border-white/8 bg-white/3 text-white text-center font-bold text-lg h-12"
+                                />
+                              </div>
+                              <div className="md:col-span-3">
+                                <label className="text-[10px] font-medium text-white/25 mb-1.5 block">
+                                  Comments (Optional)
+                                </label>
+                                <textarea
+                                  value={scoreInputs[criterion.id]?.comment || ''}
+                                  onChange={(e) => handleCommentInputChange(criterion.id, e.target.value)}
+                                  className="flex min-h-[48px] w-full rounded-xl border border-white/8 bg-white/3 px-3 py-2 text-sm text-white placeholder:text-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CCFF00]/30 resize-none"
+                                  placeholder="Add feedback..."
+                                  rows={2}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="flex justify-end pt-4">
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={submitScores}
+                            disabled={isSubmittingScores || rubric.length === 0}
+                            className="flex items-center gap-2 rounded-full bg-[#CCFF00] px-8 py-3 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
+                          >
+                            {isSubmittingScores ? (
+                              <><Loader2 className="h-4 w-4 animate-spin" /> Submitting...</>
+                            ) : (
+                              <><Send className="h-4 w-4" /> Submit Scores</>
+                            )}
+                          </motion.button>
+                        </div>
+                      </div>
+
+                      {/* Scoring sidebar / guide */}
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-white/ bg-white/2 p-5 sticky top-6">
+                          <h4 className="text-sm font-bold text-white/60 mb-4">Scoring Guide</h4>
+                          <div className="space-y-3 text-xs text-white/30">
+                            <div className="flex gap-3">
+                              <AlertCircle className="h-4 w-4 text-[#CCFF00] shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-white/50 font-medium mb-0.5">Independent Scoring</p>
+                                <p>Each criterion is scored independently. All criteria should be scored.</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-3">
+                              <CheckCircle2 className="h-4 w-4 text-[#CCFF00] shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-white/50 font-medium mb-0.5">Updatable</p>
+                                <p>Scores can be updated by re-scoring the same submission.</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-4 pt-4 border-t border-white/8">
+                            <h5 className="text-xs font-bold text-white/40 mb-2">Rubric Summary</h5>
+                            <ul className="space-y-1.5">
+                              {rubric.map((c) => (
+                                <li key={c.id} className="flex justify-between text-xs text-white/30">
+                                  <span className="truncate mr-2">{c.name}</span>
+                                  <span className="text-[#CCFF00] font-bold">{c.weight}x</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </>
       )}

@@ -19,6 +19,7 @@ interface QueueEnv {
   EMAIL_FROM: string;
   FRONTEND_URL: string;
   PLATFORM_URL: string;
+  JUDGE_URL: string;
 }
 
 export async function queueHandler(
