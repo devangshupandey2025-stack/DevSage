@@ -12,8 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { apiRequest, ApiError } from '@/lib/api';
-import TermsOfServicePage from './terms-of-service';
+import { signIn } from '@/lib/auth-client';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -40,18 +39,15 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await apiRequest<{ id: string; email: string; name: string }>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
+      const { error: authError } = await signIn.email({ email, password });
+      if (authError) {
+        setError(authError.message || 'Invalid email or password.');
+        return;
+      }
       const redirectTo = searchParams.get('redirect') || '/dashboard';
       window.location.href = redirectTo;
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Something went wrong. Please try again.');
-      }
+    } catch {
+      setError('Something went wrong. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
