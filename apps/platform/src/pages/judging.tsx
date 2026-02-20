@@ -36,7 +36,7 @@ interface Judge {
   user_id: string;
   display_name: string;
   email: string;
-  avatar_url: string | null;
+  image: string | null;
   status: string;
 }
 
@@ -344,8 +344,8 @@ export function JudgingPage() {
                     variants={item}
                     className="flex items-center gap-4 rounded-2xl border border-white/ bg-white/2 p-4 transition hover:border-white/12 hover:bg-white/4"
                   >
-                    {judge.avatar_url ? (
-                      <img src={judge.avatar_url} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                    {judge.image ? (
+                      <img src={judge.image} alt="" className="h-10 w-10 rounded-xl object-cover" />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-sm font-bold text-violet-400">
                         {judge.display_name?.charAt(0)?.toUpperCase() ?? '?'}

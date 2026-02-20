@@ -36,7 +36,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Alpha Team' }),
     });
 
@@ -116,7 +116,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/join`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ invite_code: 'JOIN1234' }),
     });
 
@@ -137,7 +137,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/join`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ invite_code: 'OTHER123' }),
     });
 
@@ -156,7 +156,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'New Name' }),
     });
 
@@ -175,7 +175,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Hacked Name' }),
     });
 
@@ -196,7 +196,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/members/${SEED.participant.id}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.lead.id) },
+      headers: { Authorization: await authCookie(SEED.lead.id) },
     });
 
     expect(res.status).toBe(200);
@@ -221,7 +221,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/leave`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(200);
@@ -241,7 +241,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/transfer`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ new_leader_id: SEED.participant.id }),
     });
 
@@ -272,7 +272,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/dissolve`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id) },
+      headers: { Authorization: await authCookie(SEED.lead.id) },
     });
 
     expect(res.status).toBe(200);
@@ -293,7 +293,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Late Team' }),
     });
 
@@ -312,7 +312,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/leave`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id) },
+      headers: { Authorization: await authCookie(SEED.lead.id) },
     });
 
     expect(res.status).toBe(409);
@@ -330,7 +330,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.lead.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Second Team' }),
     });
 
@@ -349,7 +349,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/${SEED.team}/dissolve`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(403);
@@ -365,7 +365,7 @@ describe('Teams API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/join`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ invite_code: 'INVALID0' }),
     });
 

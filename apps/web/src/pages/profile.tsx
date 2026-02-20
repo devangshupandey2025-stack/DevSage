@@ -128,9 +128,9 @@ export function ProfilePage() {
         <div className="rounded-2xl border border-white/10 bg-white/3 p-6 backdrop-blur-sm">
           <div className="flex items-center gap-5">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-[#CCFF00]/30">
-              {user.avatar_url ? (
+              {user.image ? (
                 <img
-                  src={user.avatar_url}
+                  src={user.image}
                   alt={user.name}
                   className="h-full w-full object-cover"
                 />

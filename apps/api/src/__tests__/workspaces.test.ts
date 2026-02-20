@@ -19,7 +19,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.srijan.id),
+        Authorization: await authCookie(SEED.srijan.id),
       },
       body: JSON.stringify({ name: 'My Workspace', slug: 'my-ws', type: 'organization' }),
     });
@@ -57,7 +57,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.srijan.id),
+        Authorization: await authCookie(SEED.srijan.id),
       },
       body: JSON.stringify({ name: 'Dupe', slug: 'taken-slug', type: 'organization' }),
     });
@@ -75,7 +75,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.srijan.id),
+        Authorization: await authCookie(SEED.srijan.id),
       },
       body: JSON.stringify({ name: 'Missing Slug' }),
     });
@@ -99,7 +99,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     await insertWorkspaceMember('ws-2', SEED.organizer.id, 'owner');
 
     const res = await SELF.fetch('http://localhost/api/v1/workspaces', {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -117,7 +117,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     await insertWorkspaceMember('ws-detail', SEED.srijan.id, 'owner');
 
     const res = await SELF.fetch('http://localhost/api/v1/workspaces/ws-detail', {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -130,7 +130,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     await insertUser(SEED.srijan.id, SEED.srijan.email, SEED.srijan.name);
 
     const res = await SELF.fetch('http://localhost/api/v1/workspaces/non-existent-id', {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(404);
@@ -150,7 +150,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.srijan.id),
+        Authorization: await authCookie(SEED.srijan.id, { workspaceRoles: { 'ws-upd': 'owner' } }),
       },
       body: JSON.stringify({ name: 'New Name', description: 'Updated desc' }),
     });
@@ -172,7 +172,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.participant.id),
+        Authorization: await authCookie(SEED.participant.id, { workspaceRoles: { 'ws-noauth': 'workspace_member' } }),
       },
       body: JSON.stringify({ name: 'Hijacked' }),
     });
@@ -193,7 +193,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     await insertWorkspaceMember('ws-mem', SEED.organizer.id, 'workspace_member');
 
     const res = await SELF.fetch('http://localhost/api/v1/workspaces/ws-mem/members', {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -214,7 +214,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     const res = await SELF.fetch(
       `http://localhost/api/v1/workspaces/ws-rm/members/${SEED.participant.id}`, {
         method: 'DELETE',
-        headers: { Cookie: await authCookie(SEED.srijan.id) },
+        headers: { Authorization: await authCookie(SEED.srijan.id, { workspaceRoles: { 'ws-rm': 'owner' } }) },
       }
     );
 
@@ -240,7 +240,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     const res = await SELF.fetch(
       `http://localhost/api/v1/workspaces/ws-rm2/members/${SEED.srijan.id}`, {
         method: 'DELETE',
-        headers: { Cookie: await authCookie(SEED.participant.id) },
+        headers: { Authorization: await authCookie(SEED.participant.id, { workspaceRoles: { 'ws-rm2': 'workspace_member' } }) },
       }
     );
 
@@ -258,7 +258,7 @@ describe('workspace routes — /api/v1/workspaces', () => {
     const res = await SELF.fetch(
       `http://localhost/api/v1/workspaces/ws-self/members/${SEED.srijan.id}`, {
         method: 'DELETE',
-        headers: { Cookie: await authCookie(SEED.srijan.id) },
+        headers: { Authorization: await authCookie(SEED.srijan.id, { workspaceRoles: { 'ws-self': 'owner' } }) },
       }
     );
 

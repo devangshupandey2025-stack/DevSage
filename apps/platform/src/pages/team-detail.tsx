@@ -74,8 +74,8 @@ export function TeamDetailPage() {
             <div className="space-y-3">
               {team.members.map((member) => (
                 <div key={member.id} className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 p-3">
-                  {member.avatar_url ? (
-                    <img src={member.avatar_url} alt="" className="h-9 w-9 rounded-full" />
+                  {member.image ? (
+                    <img src={member.image} alt="" className="h-9 w-9 rounded-full" />
                   ) : (
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#CCFF00] text-sm font-bold text-black">
                       {member.display_name.charAt(0).toUpperCase()}

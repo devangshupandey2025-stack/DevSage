@@ -85,9 +85,9 @@ export function TeamRepoCard({
                 className="flex items-center gap-3 rounded-lg bg-white/3 border border-white/6 px-3 py-2.5"
               >
                 {/* Avatar */}
-                {member.avatar_url ? (
+                {member.image ? (
                   <img
-                    src={member.avatar_url}
+                    src={member.image}
                     alt={member.display_name}
                     className="h-7 w-7 rounded-full ring-1 ring-white/10"
                   />

@@ -9,7 +9,7 @@ interface User {
   id: string;
   email: string;
   name: string;
-  avatar_url: string | null;
+  image: string | null;
   created_at: string;
   last_login_at: string | null;
 }
@@ -77,8 +77,8 @@ export function UsersPage() {
                     <tr key={u.id} className="border-b border-white/10 hover:bg-white/5">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          {u.avatar_url ? (
-                            <img src={u.avatar_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                          {u.image ? (
+                            <img src={u.image} alt="" className="h-8 w-8 rounded-full object-cover" />
                           ) : (
                             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#CCFF00] text-xs font-bold text-black">
                               {u.name?.charAt(0)?.toUpperCase() ?? '?'}

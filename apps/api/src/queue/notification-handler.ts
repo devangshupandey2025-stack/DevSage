@@ -56,7 +56,7 @@ export async function handleNotificationMessage(
     // In-app notification
     const notifId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, action_url, created_at)
+      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, link, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(

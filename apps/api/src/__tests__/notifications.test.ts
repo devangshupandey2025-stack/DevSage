@@ -26,7 +26,7 @@ describe('notification routes — /api/v1/notifications', () => {
     });
 
     const res = await SELF.fetch(baseUrl, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -48,7 +48,7 @@ describe('notification routes — /api/v1/notifications', () => {
     });
 
     const res = await SELF.fetch(`${baseUrl}?hackathon_id=${hackId}`, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -81,7 +81,7 @@ describe('notification routes — /api/v1/notifications', () => {
     });
 
     const res = await SELF.fetch(`${baseUrl}/unread-count`, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -100,7 +100,7 @@ describe('notification routes — /api/v1/notifications', () => {
 
     const res = await SELF.fetch(`${baseUrl}/n-mark/read`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -128,7 +128,7 @@ describe('notification routes — /api/v1/notifications', () => {
 
     const res = await SELF.fetch(`${baseUrl}/read-all`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     expect(res.status).toBe(200);
@@ -138,7 +138,7 @@ describe('notification routes — /api/v1/notifications', () => {
 
     // Verify unread count is 0
     const countRes = await SELF.fetch(`${baseUrl}/unread-count`, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
     const countBody = (await countRes.json()) as ApiResponse<{ count: number }>;
     expect(countBody.data.count).toBe(0);
@@ -157,7 +157,7 @@ describe('notification routes — /api/v1/notifications', () => {
 
     // Check initial count
     let countRes = await SELF.fetch(`${baseUrl}/unread-count`, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
     let countBody = (await countRes.json()) as ApiResponse<{ count: number }>;
     expect(countBody.data.count).toBe(2);
@@ -165,12 +165,12 @@ describe('notification routes — /api/v1/notifications', () => {
     // Mark one as read
     await SELF.fetch(`${baseUrl}/n-cnt1/read`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
 
     // Check updated count
     countRes = await SELF.fetch(`${baseUrl}/unread-count`, {
-      headers: { Cookie: await authCookie(SEED.srijan.id) },
+      headers: { Authorization: await authCookie(SEED.srijan.id) },
     });
     countBody = (await countRes.json()) as ApiResponse<{ count: number }>;
     expect(countBody.data.count).toBe(1);
@@ -186,7 +186,7 @@ describe('notification routes — /api/v1/notifications', () => {
     });
 
     const res = await SELF.fetch(baseUrl, {
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(200);

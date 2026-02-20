@@ -61,7 +61,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Code Quality', weight: 2.0, max_score: 10 }),
     });
 
@@ -78,7 +78,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.participant.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Forbidden', weight: 1.0 }),
     });
 
@@ -95,7 +95,7 @@ describe('Judging API', () => {
     await insertRubricCriterion({ id: 'crit-2', hackathonId: SEED.hackathon, name: 'Design' });
 
     const res = await SELF.fetch(`http://localhost${base}/rubric`, {
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -111,7 +111,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric/${CRITERION_ID}`, {
       method: 'PATCH',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Updated Name', max_score: 20 }),
     });
 
@@ -129,7 +129,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric/${CRITERION_ID}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -147,7 +147,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/judges`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: SEED.judge.id }),
     });
 
@@ -166,7 +166,7 @@ describe('Judging API', () => {
     });
 
     const res = await SELF.fetch(`http://localhost${base}/judges`, {
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -186,7 +186,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/judges/${JUDGE_ID}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -216,7 +216,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/assign`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
 
@@ -246,7 +246,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/submissions/${SUBMISSION_ID}/scores`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.judge.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.judge.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         scores: [{
           criteria_id: CRITERION_ID,
@@ -296,7 +296,7 @@ describe('Judging API', () => {
     ).bind(crypto.randomUUID(), SUBMISSION_ID, JUDGE_ID, CRITERION_ID, ASSIGNMENT_ID, 9, 'Excellent', 1, now).run();
 
     const res = await SELF.fetch(`http://localhost${base}/submissions/${SUBMISSION_ID}/scores`, {
-      headers: { Cookie: await authCookie(SEED.judge.id) },
+      headers: { Authorization: await authCookie(SEED.judge.id) },
     });
 
     expect(res.status).toBe(200);
@@ -348,7 +348,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.coOrganizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.coOrganizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Creativity', weight: 1.5 }),
     });
 
@@ -364,7 +364,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/rubric`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ weight: 1.0 }),
     });
 
@@ -387,7 +387,7 @@ describe('Judging API', () => {
     });
 
     const res = await SELF.fetch(`http://localhost${base}/judges/${JUDGE_ID}/assignments`, {
-      headers: { Cookie: await authCookie(SEED.judge.id) },
+      headers: { Authorization: await authCookie(SEED.judge.id) },
     });
 
     expect(res.status).toBe(200);
@@ -423,7 +423,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/results/publish`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({ round_id: SEED.round }),
     });
 
@@ -439,7 +439,7 @@ describe('Judging API', () => {
 
     const res = await SELF.fetch(`http://localhost${base}/results/publish`, {
       method: 'POST',
-      headers: { Cookie: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
+      headers: { Authorization: await authCookie(SEED.organizer.id), 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
 

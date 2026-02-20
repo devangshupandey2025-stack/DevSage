@@ -28,8 +28,8 @@ workspaces.post('/', authMiddleware, async (c) => {
 
   // Add creator as owner
   await c.env.DB.prepare(
-    'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), id, user.id, 'owner', now, now).run();
+    'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), id, user.id, 'owner', now).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
@@ -69,11 +69,9 @@ workspaces.patch('/:workspaceId', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
@@ -101,9 +99,9 @@ workspaces.get('/:workspaceId/members', authMiddleware, async (c) => {
   const workspaceId = c.req.param('workspaceId');
   const members = await c.env.DB.prepare(`
     SELECT wm.id, wm.user_id, wm.role, wm.created_at,
-           u.name, u.email, u.avatar_url
+           u.name, u.email, u.image
     FROM workspace_members wm
-    JOIN users u ON wm.user_id = u.id
+    JOIN user u ON wm.user_id = u.id
     WHERE wm.workspace_id = ?
     ORDER BY wm.created_at ASC
   `).bind(workspaceId).all();
@@ -115,11 +113,9 @@ workspaces.post('/:workspaceId/invites', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
@@ -144,11 +140,9 @@ workspaces.delete('/:workspaceId/members/:userId', authMiddleware, async (c) => 
   const workspaceId = c.req.param('workspaceId');
   const targetId = c.req.param('userId');
 
-  const membership = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-  ).bind(workspaceId, user.id).first<{ role: string }>();
+  const workspaceRole = user.workspaceRoles[workspaceId];
 
-  if (!membership || membership.role !== 'owner') {
+  if (!workspaceRole || workspaceRole !== 'owner') {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only owner can remove members');
   }
 

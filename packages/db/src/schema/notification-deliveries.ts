@@ -1,12 +1,12 @@
 import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users.js';
+import { user } from './auth-user.js';
 
 export const notificationDeliveries = sqliteTable('notification_deliveries', {
   id: text('id').primaryKey(),
   notification_type: text('notification_type').notNull(),
   channel: text('channel').notNull(),
-  recipient_id: text('recipient_id').references(() => users.id, { onDelete: 'set null' }),
+  recipient_id: text('recipient_id').references(() => user.id, { onDelete: 'set null' }),
   recipient_email: text('recipient_email'),
   status: text('status').notNull().default('sent'),
   error_message: text('error_message'),

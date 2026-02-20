@@ -1,9 +1,8 @@
 /**
  * Shared test helpers for v3 schema tests.
- * Uses email/password auth (no OAuth).
+ * Uses Bearer token auth via JWT verification.
  */
 import { env as rawEnv } from 'cloudflare:test';
-import { signJWT } from '../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const env = rawEnv as any;
@@ -11,6 +10,32 @@ export { env };
 
 export const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
 const now = new Date().toISOString();
+
+// ── Inline JWT signing (Web Crypto API) ──────────────────────
+function base64urlEncode(data: Uint8Array): string {
+  let binary = '';
+  for (const byte of data) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signJWT(payload: Record<string, unknown>, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const header = base64urlEncode(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const nowSec = Math.floor(Date.now() / 1000);
+  const fullPayload = { ...payload, iat: nowSec, exp: nowSec + 900 };
+  const body = base64urlEncode(encoder.encode(JSON.stringify(fullPayload)));
+  const signingInput = `${header}.${body}`;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(signingInput)));
+  return `${signingInput}.${base64urlEncode(sig)}`;
+}
 
 // ── Seed account IDs ──────────────────────────────────────────
 export const SEED = {
@@ -29,40 +54,85 @@ export const SEED = {
 } as const;
 
 // ── Auth helpers ──────────────────────────────────────────────
-export async function authCookie(userId: string): Promise<string> {
-  const token = await signJWT({ sub: userId, fam: crypto.randomUUID() }, JWT_SECRET);
-  return `access_token=${token}`;
+/**
+ * Returns a Bearer token string for use in Authorization headers.
+ * The JWT payload matches the new UserContext shape expected by the API middleware.
+ * Pass optional overrides to set platformAdmin, hackathonRoles, or workspaceRoles.
+ */
+export async function authCookie(
+  userId: string,
+  overrides?: {
+    platformAdmin?: boolean;
+    hackathonRoles?: Record<string, string[]>;
+    workspaceRoles?: Record<string, string>;
+  },
+): Promise<string> {
+  // Look up seed user info for richer JWT payload
+  const seedUsers = [SEED.srijan, SEED.admin, SEED.organizer, SEED.coOrganizer, SEED.judge, SEED.lead, SEED.participant];
+  const seedUser = seedUsers.find((u) => u.id === userId);
+
+  const token = await signJWT(
+    {
+      sub: userId,
+      email: seedUser?.email ?? `${userId}@test.local`,
+      name: seedUser?.name ?? 'Test User',
+      image: null,
+      platformAdmin: overrides?.platformAdmin ?? false,
+      hackathonRoles: overrides?.hackathonRoles ?? {},
+      workspaceRoles: overrides?.workspaceRoles ?? {},
+    },
+    JWT_SECRET,
+  );
+  return `Bearer ${token}`;
 }
 
 // ── Schema bootstrapping ──────────────────────────────────────
 // Creates all v3 tables needed for tests (subset — only what routes actually query)
 export async function ensureSchema() {
   const statements = [
-    // users
-    `CREATE TABLE IF NOT EXISTS users (
+    // user (Better Auth)
+    `CREATE TABLE IF NOT EXISTS user (
       id text PRIMARY KEY NOT NULL,
-      email text NOT NULL,
       name text NOT NULL,
-      password_hash text NOT NULL DEFAULT '',
-      avatar_url text,
-      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      last_login_at text
+      email text NOT NULL,
+      email_verified integer NOT NULL DEFAULT 0,
+      image text,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS user_email_unique ON user (email)`,
 
-    // refresh_tokens
-    `CREATE TABLE IF NOT EXISTS refresh_tokens (
+    // account (Better Auth)
+    `CREATE TABLE IF NOT EXISTS account (
       id text PRIMARY KEY NOT NULL,
+      account_id text NOT NULL,
+      provider_id text NOT NULL,
       user_id text NOT NULL,
-      family_id text NOT NULL,
-      token_hash text NOT NULL,
-      revoked_at text,
-      expires_at text NOT NULL,
-      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      access_token text,
+      refresh_token text,
+      id_token text,
+      access_token_expires_at integer,
+      refresh_token_expires_at integer,
+      scope text,
+      password text,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS refresh_tokens_token_hash_unique ON refresh_tokens (token_hash)`,
-    `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens (family_id)`,
+
+    // session (Better Auth)
+    `CREATE TABLE IF NOT EXISTS session (
+      id text PRIMARY KEY NOT NULL,
+      expires_at integer NOT NULL,
+      token text NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      ip_address text,
+      user_agent text,
+      user_id text NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES user(id)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS session_token_unique ON session (token)`,
 
     // platform_admins
     `CREATE TABLE IF NOT EXISTS platform_admins (
@@ -71,7 +141,7 @@ export async function ensureSchema() {
       role text DEFAULT 'platform_admin' NOT NULL,
       created_by text,
       created_at text NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS platform_admins_user_id_unique ON platform_admins (user_id)`,
 
@@ -85,7 +155,7 @@ export async function ensureSchema() {
       created_by text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       updated_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (created_by) REFERENCES users(id)
+      FOREIGN KEY (created_by) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS workspaces_slug_unique ON workspaces (slug)`,
 
@@ -98,7 +168,7 @@ export async function ensureSchema() {
       invited_by text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS workspace_members_ws_user_idx ON workspace_members (workspace_id, user_id)`,
 
@@ -150,7 +220,7 @@ export async function ensureSchema() {
       created_at text NOT NULL,
       updated_at text NOT NULL,
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
-      FOREIGN KEY (created_by) REFERENCES users(id)
+      FOREIGN KEY (created_by) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS hackathons_slug_unique ON hackathons (slug)`,
 
@@ -165,6 +235,7 @@ export async function ensureSchema() {
       submission_deadline text,
       started_at text,
       completed_at text,
+      is_initialized integer DEFAULT 0 NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL,
       FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE
@@ -179,7 +250,7 @@ export async function ensureSchema() {
       invited_by text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS organizer_roles_hackathon_id_user_id_unique ON organizer_roles (hackathon_id, user_id)`,
 
@@ -206,7 +277,7 @@ export async function ensureSchema() {
       role text DEFAULT 'member' NOT NULL,
       joined_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS team_members_team_id_user_id_unique ON team_members (team_id, user_id)`,
 
@@ -248,7 +319,7 @@ export async function ensureSchema() {
       invited_at text NOT NULL,
       responded_at text,
       FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_id_user_id_unique ON judges (hackathon_id, user_id)`,
 
@@ -370,12 +441,11 @@ export async function ensureSchema() {
       hackathon_id text,
       type text NOT NULL,
       title text NOT NULL,
-      body text NOT NULL,
-      icon text DEFAULT 'info' NOT NULL,
+      body text,
       link text,
       read_at text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
 
     // notification_idempotency
@@ -459,7 +529,7 @@ export async function ensureSchema() {
       status text NOT NULL DEFAULT 'pending',
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       confirmed_at text,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
     )`,
 
     // hackathon_tracks
@@ -520,7 +590,7 @@ export async function resetDb() {
     'team_repos', 'pending_installations', 'team_invites', 'team_messages',
     'team_members', 'teams', 'organizer_roles', 'hackathon_rounds',
     'hackathons', 'hackathon_templates', 'workspace_invites',
-    'workspace_members', 'workspaces', 'refresh_tokens', 'platform_admins', 'users',
+    'workspace_members', 'workspaces', 'platform_admins', 'session', 'account', 'user',
   ];
   for (const table of tables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
@@ -530,9 +600,10 @@ export async function resetDb() {
 // ── Insert helpers ────────────────────────────────────────────
 
 export async function insertUser(id: string, email: string, name: string = `User ${email}`) {
+  const ts = Math.floor(Date.now() / 1000);
   await env.DB.prepare(
-    'INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(id, email, name, 'hash-not-used-in-tests', now).run();
+    'INSERT INTO user (id, email, name, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)'
+  ).bind(id, email, name, ts, ts).run();
 }
 
 export async function insertWorkspace(id: string, slug: string, createdBy: string, name: string = 'Test Workspace') {

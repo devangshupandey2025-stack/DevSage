@@ -10,13 +10,9 @@ export const requirePlatformAdmin: MiddlewareHandler<AppEnv> = async (c, next) =
     );
   }
 
-  const admin = await c.env.DB.prepare(
-    'SELECT id FROM platform_admins WHERE user_id = ?'
-  ).bind(user.id).first();
-
-  if (!admin) {
+  if (!user.platformAdmin) {
     return c.json(
-      { ok: false, error: { code: 'FORBIDDEN', message: 'Platform admin access required' } },
+      { ok: false, error: { code: 'FORBIDDEN', message: 'Platform admin required' } },
       403
     );
   }

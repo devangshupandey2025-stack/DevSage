@@ -51,7 +51,7 @@ describe('invite routes', () => {
 
       const res = await SELF.fetch('http://localhost/api/v1/invites/team/valid-token-abc', {
         method: 'POST',
-        headers: { Cookie: await authCookie(SEED.participant.id) },
+        headers: { Authorization: await authCookie(SEED.participant.id) },
       });
 
       expect(res.status).toBe(200);
@@ -72,7 +72,7 @@ describe('invite routes', () => {
 
       const res = await SELF.fetch('http://localhost/api/v1/invites/team/nonexistent-token', {
         method: 'POST',
-        headers: { Cookie: await authCookie(SEED.participant.id) },
+        headers: { Authorization: await authCookie(SEED.participant.id) },
       });
 
       expect(res.status).toBe(404);
@@ -90,7 +90,7 @@ describe('invite routes', () => {
 
       const res = await SELF.fetch('http://localhost/api/v1/invites/team/dup-token', {
         method: 'POST',
-        headers: { Cookie: await authCookie(SEED.participant.id) },
+        headers: { Authorization: await authCookie(SEED.participant.id) },
       });
 
       expect(res.status).toBe(409);
@@ -123,7 +123,7 @@ describe('invite routes', () => {
 
       const res = await SELF.fetch('http://localhost/api/v1/invites/judge/judge-inv-1', {
         method: 'POST',
-        headers: { Cookie: await authCookie(SEED.judge.id) },
+        headers: { Authorization: await authCookie(SEED.judge.id) },
       });
 
       expect(res.status).toBe(200);
@@ -146,7 +146,7 @@ describe('invite routes', () => {
 
       const res = await SELF.fetch('http://localhost/api/v1/invites/judge/judge-inv-2', {
         method: 'POST',
-        headers: { Cookie: await authCookie(SEED.judge.id) },
+        headers: { Authorization: await authCookie(SEED.judge.id) },
       });
 
       expect(res.status).toBe(409);

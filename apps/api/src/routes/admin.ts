@@ -13,9 +13,9 @@ admin.get('/users', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
   const offset = parseInt(c.req.query('offset') ?? '0');
   const [rows, count] = await Promise.all([
-    c.env.DB.prepare('SELECT id, email, name, avatar_url, created_at, last_login_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    c.env.DB.prepare('SELECT id, email, name, image, created_at FROM user ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind(limit, offset).all(),
-    c.env.DB.prepare('SELECT COUNT(*) as total FROM users').first<{ total: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) as total FROM user').first<{ total: number }>(),
   ]);
   return paginatedResponse(c, rows.results || [], count?.total ?? 0, limit, offset);
 });
@@ -61,7 +61,7 @@ admin.delete('/admins/:userId', async (c) => {
 admin.get('/admins', async (c) => {
   const admins = await c.env.DB.prepare(`
     SELECT pa.id, pa.user_id, pa.created_at, u.name, u.email
-    FROM platform_admins pa JOIN users u ON pa.user_id = u.id
+    FROM platform_admins pa JOIN user u ON pa.user_id = u.id
     ORDER BY pa.created_at ASC
   `).all();
   return successResponse(c, admins.results || []);
@@ -76,7 +76,7 @@ admin.post('/audit/backfill', async (c) => {
 // System stats
 admin.get('/stats', async (c) => {
   const [users, hackathons, teams, submissions] = await Promise.all([
-    c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first<{ count: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) as count FROM user').first<{ count: number }>(),
     c.env.DB.prepare('SELECT COUNT(*) as count FROM hackathons').first<{ count: number }>(),
     c.env.DB.prepare('SELECT COUNT(*) as count FROM teams').first<{ count: number }>(),
     c.env.DB.prepare('SELECT COUNT(*) as count FROM submissions').first<{ count: number }>(),

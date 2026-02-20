@@ -60,10 +60,10 @@ invites.get('/judge/:id/details', async (c) => {
   const invite = await c.env.DB.prepare(
     `SELECT j.id, j.invite_status as status,
             h.title as hackathon_name, h.slug as hackathon_slug,
-            u.display_name as inviter_name
+            u.name as inviter_name
      FROM judges j
      JOIN hackathons h ON j.hackathon_id = h.id
-     LEFT JOIN users u ON j.invited_by = u.id
+     LEFT JOIN user u ON j.invited_by = u.id
      WHERE j.id = ?`
   ).bind(judgeId).first();
 

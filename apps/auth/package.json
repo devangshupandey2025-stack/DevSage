@@ -1,0 +1,28 @@
+{
+  "name": "@devsage/auth",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "deploy:secrets": "wrangler secret bulk .env.production",
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "better-auth": "^1.2.0",
+    "@better-auth/passkey": "^1.2.0",
+    "drizzle-orm": "^0.45.0",
+    "@devsage/db": "workspace:*",
+    "@simplewebauthn/server": "^13.0.0"
+  },
+  "devDependencies": {
+    "@devsage/config": "workspace:*",
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@cloudflare/vitest-pool-workers": "^0.12.10",
+    "vitest": "^3.2.4",
+    "wrangler": "4.63.0"
+  }
+}

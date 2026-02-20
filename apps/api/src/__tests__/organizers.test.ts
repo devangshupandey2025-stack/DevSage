@@ -36,7 +36,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
     await insertOrganizerRole(SEED.hackathon, SEED.coOrganizer.id, 'co_organizer');
 
     const res = await SELF.fetch(baseUrl, {
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -53,7 +53,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
     await insertOrganizerRole(SEED.hackathon, SEED.coOrganizer.id, 'co_organizer');
 
     const res = await SELF.fetch(baseUrl, {
-      headers: { Cookie: await authCookie(SEED.coOrganizer.id) },
+      headers: { Authorization: await authCookie(SEED.coOrganizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -66,7 +66,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
     await seedHackathonWithOrganizer();
 
     const res = await SELF.fetch(baseUrl, {
-      headers: { Cookie: await authCookie(SEED.participant.id) },
+      headers: { Authorization: await authCookie(SEED.participant.id) },
     });
 
     expect(res.status).toBe(403);
@@ -83,7 +83,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.organizer.id),
+        Authorization: await authCookie(SEED.organizer.id),
       },
       body: JSON.stringify({ user_id: SEED.coOrganizer.id, role: 'co_organizer' }),
     });
@@ -108,7 +108,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.coOrganizer.id),
+        Authorization: await authCookie(SEED.coOrganizer.id),
       },
       body: JSON.stringify({ user_id: SEED.participant.id, role: 'co_organizer' }),
     });
@@ -126,7 +126,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Cookie: await authCookie(SEED.organizer.id),
+        Authorization: await authCookie(SEED.organizer.id),
       },
       body: JSON.stringify({ user_id: SEED.coOrganizer.id, role: 'co_organizer' }),
     });
@@ -148,7 +148,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
 
     const res = await SELF.fetch(`${baseUrl}/${roleId}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(200);
@@ -168,7 +168,7 @@ describe('organizer routes — /api/v1/hackathons/:slug/organizers', () => {
 
     const res = await SELF.fetch(`${baseUrl}/${crypto.randomUUID()}`, {
       method: 'DELETE',
-      headers: { Cookie: await authCookie(SEED.organizer.id) },
+      headers: { Authorization: await authCookie(SEED.organizer.id) },
     });
 
     expect(res.status).toBe(404);
