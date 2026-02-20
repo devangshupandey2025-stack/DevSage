@@ -1,12 +1,12 @@
 import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { hackathons } from './hackathons.js';
-import { users } from './users.js';
+import { user } from './auth-user.js';
 
 export const auditEvents = sqliteTable('audit_events', {
   id: text('id').primaryKey(),
   hackathon_id: text('hackathon_id').references(() => hackathons.id, { onDelete: 'set null' }),
-  actor_id: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  actor_id: text('actor_id').references(() => user.id, { onDelete: 'set null' }),
   actor_type: text('actor_type').notNull(),
   event_type: text('event_type').notNull(),
   entity_type: text('entity_type').notNull(),

@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { workspaces } from './workspaces.js';
-import { users } from './users.js';
+import { user } from './auth-user.js';
 
 export const hackathons = sqliteTable('hackathons', {
   id: text('id').primaryKey(),
@@ -31,7 +31,7 @@ export const hackathons = sqliteTable('hackathons', {
   tracks: text('tracks').notNull().default('[]'),
   prizes: text('prizes').notNull().default('[]'),
   settings: text('settings').notNull().default('{}'),
-  created_by: text('created_by').notNull().references(() => users.id),
+  created_by: text('created_by').notNull().references(() => user.id),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
 }, (table) => ({
