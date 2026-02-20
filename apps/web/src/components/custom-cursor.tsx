@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
-import featherImg from '@/photos/feather2.png';
+import { motion, useMotionValue, useSpring, AnimatePresence } from 'framer-motion';
+import featherImg from '@/photos/feather3.png';
 
 type CursorVariant = 'default' | 'pointer' | 'text';
 
@@ -36,22 +36,12 @@ export function CustomCursor() {
   const glowX = useSpring(rawX, { stiffness: 160, damping: 30, mass: 0.35 });
   const glowY = useSpring(rawY, { stiffness: 160, damping: 30, mass: 0.35 });
 
-  const trail1X = useSpring(dotX, { stiffness: 800, damping: 40, mass: 0.15 });
-  const trail1Y = useSpring(dotY, { stiffness: 800, damping: 40, mass: 0.15 });
-
-  const trail2X = useSpring(trail1X, { stiffness: 500, damping: 35, mass: 0.2 });
-  const trail2Y = useSpring(trail1Y, { stiffness: 500, damping: 35, mass: 0.2 });
-
-  const trail3X = useSpring(trail2X, { stiffness: 300, damping: 30, mass: 0.25 });
-  const trail3Y = useSpring(trail2Y, { stiffness: 300, damping: 30, mass: 0.25 });
-
-  const trail4X = useSpring(trail3X, { stiffness: 150, damping: 25, mass: 0.3 });
-  const trail4Y = useSpring(trail3Y, { stiffness: 150, damping: 25, mass: 0.3 });
-
   const [enabled, setEnabled] = useState(false);
   const [visible, setVisible] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [variant, setVariant] = useState<CursorVariant>('default');
+  const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
+  const rippleCount = useRef(0);
   const variantRef = useRef<CursorVariant>('default');
 
   const visibleRef = useRef(false);
@@ -107,7 +97,15 @@ export function CustomCursor() {
       scheduleFrame();
     };
 
-    const onPointerDown = () => setPressed(true);
+    const onPointerDown = (e: PointerEvent) => {
+      setPressed(true);
+      const id = rippleCount.current++;
+      setRipples((prev) => [...prev, { id, x: e.clientX, y: e.clientY }]);
+      // Remove ripple after animation completes
+      setTimeout(() => {
+        setRipples((prev) => prev.filter((r) => r.id !== id));
+      }, 1200);
+    };
     const onPointerUp = () => setPressed(false);
     const onPointerLeave = () => {
       if (!visibleRef.current) return;
@@ -156,13 +154,6 @@ export function CustomCursor() {
   const glowOpacity = visible ? (variant === 'pointer' ? 0.35 : 0.22) : 0;
   const glowScale = pressed ? 0.88 : 1;
 
-  const trails = [
-    { x: trail1X, y: trail1Y, size: 12, opacity: 0.7 },
-    { x: trail2X, y: trail2Y, size: 9, opacity: 0.5 },
-    { x: trail3X, y: trail3Y, size: 6, opacity: 0.3 },
-    { x: trail4X, y: trail4Y, size: 4, opacity: 0.15 },
-  ];
-
   const transformTemplate = ({ x, y, scale }: { x?: string; y?: string; scale?: number }) =>
     `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-50%, -50%) scale(${scale ?? 1})`;
 
@@ -189,27 +180,23 @@ export function CustomCursor() {
         />
       </motion.div>
 
-      {/* Golden Trails */}
-      {visible && trails.map((trail, i) => (
-        <motion.div
-          key={`trail-${i}`}
-          className="fixed top-0 left-0 pointer-events-none rounded-full"
-          style={{
-            x: trail.x,
-            y: trail.y,
-            width: trail.size,
-            height: trail.size,
-            zIndex: 9996 - i,
-            backgroundColor: 'rgba(255, 215, 0, 1)',
-            boxShadow: '0 0 12px 3px rgba(255, 215, 0, 0.6)'
-          }}
-          animate={{
-            opacity: trail.opacity,
-            scale: pressed ? 0.5 : 1
-          }}
-          transformTemplate={transformTemplate}
-        />
-      ))}
+      {/* Emerald Ripple Explosions on Click */}
+      <AnimatePresence>
+        {ripples.map((ripple) => (
+          <motion.div
+            key={ripple.id}
+            className="fixed top-0 left-0 pointer-events-none rounded-full flex items-center justify-center"
+            style={{ x: ripple.x, y: ripple.y, zIndex: 9995 }}
+            initial={{ width: 0, height: 0, opacity: 1 }}
+            animate={{ width: 150, height: 150, opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+            transformTemplate={transformTemplate}
+          >
+            <div className="w-full h-full rounded-full border-[3px] border-emerald-400 bg-emerald-500/20 shadow-[0_0_30px_rgba(52,211,153,0.8)_inset,0_0_30px_rgba(52,211,153,0.8)]" />
+          </motion.div>
+        ))}
+      </AnimatePresence>
 
       <motion.div
         className="fixed top-0 left-0 pointer-events-none"
