@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx wrangler secret:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(grep:*)",
+      "Bash(npx wrangler d1 execute:*)",
+      "Bash(timeout 30 npx wrangler tail:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
