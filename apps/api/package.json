@@ -3,9 +3,6 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "exports": {
-    ".": "./src/index.ts"
-  },
   "scripts": {
     "dev": "node ../../scripts/dev-reset-db.mjs && wrangler dev --local",
     "deploy": "wrangler deploy",
@@ -15,19 +12,18 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "hono": "^4.12.0",
-    "@hono/zod-openapi": "^1.2.0",
+    "hono": "^4.6.14",
+    "@hono/zod-validator": "^0.4.1",
     "@devsage/shared": "workspace:*",
     "@devsage/db": "workspace:*",
-    "better-auth": "^1.4.0",
-    "drizzle-orm": "^0.45.0",
-    "zod": "^4.3.0"
+    "drizzle-orm": "^0.36.4",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@devsage/config": "workspace:*",
-    "@cloudflare/workers-types": "^4.20260219.0",
+    "@cloudflare/workers-types": "^4.20241218.0",
     "@cloudflare/vitest-pool-workers": "^0.12.10",
     "vitest": "^3.2.4",
-    "wrangler": "^4.67.0"
+    "wrangler": "4.63.0"
   }
 }

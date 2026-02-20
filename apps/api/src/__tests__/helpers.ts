@@ -1,13 +1,15 @@
 /**
  * Shared test helpers for v3 schema tests.
- * Uses Better Auth sessions (no custom JWT).
+ * Uses email/password auth (no OAuth).
  */
 import { env as rawEnv } from 'cloudflare:test';
+import { signJWT } from '../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const env = rawEnv as any;
 export { env };
 
+export const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
 const now = new Date().toISOString();
 
 // ── Seed account IDs ──────────────────────────────────────────
@@ -27,93 +29,16 @@ export const SEED = {
 } as const;
 
 // ── Auth helpers ──────────────────────────────────────────────
-/**
- * Creates a Better Auth session row and returns the session cookie string.
- * The BA middleware checks for a `better-auth.session_token` cookie
- * that matches a row in the `session` table.
- */
 export async function authCookie(userId: string): Promise<string> {
-  const sessionId = crypto.randomUUID();
-  const token = crypto.randomUUID();
-  const nowTs = Math.floor(Date.now() / 1000);
-  const expiresAt = nowTs + 30 * 24 * 60 * 60; // 30 days
-
-  await env.DB.prepare(
-    `INSERT INTO session (id, expiresAt, token, userId, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(sessionId, expiresAt, token, userId, nowTs, nowTs).run();
-
-  return `better-auth.session_token=${token}`;
-}
-
-/**
- * Inserts a row into the Better Auth `user` table to match the legacy user.
- * Should be called alongside insertUser for tests that need BA session auth.
- */
-export async function insertBaUser(id: string, email: string, name: string) {
-  const nowTs = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(
-    `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
-     VALUES (?, ?, ?, 0, ?, ?)`
-  ).bind(id, name, email, nowTs, nowTs).run();
+  const token = await signJWT({ sub: userId, fam: crypto.randomUUID() }, JWT_SECRET);
+  return `access_token=${token}`;
 }
 
 // ── Schema bootstrapping ──────────────────────────────────────
 // Creates all v3 tables needed for tests (subset — only what routes actually query)
 export async function ensureSchema() {
   const statements = [
-    // Better Auth tables
-    `CREATE TABLE IF NOT EXISTS user (
-      id text PRIMARY KEY NOT NULL,
-      name text NOT NULL,
-      email text NOT NULL,
-      emailVerified integer NOT NULL DEFAULT 0,
-      image text,
-      createdAt integer NOT NULL,
-      updatedAt integer NOT NULL
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS user_email_unique ON user (email)`,
-
-    `CREATE TABLE IF NOT EXISTS session (
-      id text PRIMARY KEY NOT NULL,
-      expiresAt integer NOT NULL,
-      token text NOT NULL,
-      ipAddress text,
-      userAgent text,
-      userId text NOT NULL,
-      createdAt integer NOT NULL,
-      updatedAt integer NOT NULL,
-      FOREIGN KEY (userId) REFERENCES user(id)
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS session_token_unique ON session (token)`,
-
-    `CREATE TABLE IF NOT EXISTS account (
-      id text PRIMARY KEY NOT NULL,
-      accountId text NOT NULL,
-      providerId text NOT NULL,
-      userId text NOT NULL,
-      accessToken text,
-      refreshToken text,
-      idToken text,
-      accessTokenExpiresAt integer,
-      refreshTokenExpiresAt integer,
-      scope text,
-      password text,
-      createdAt integer NOT NULL,
-      updatedAt integer NOT NULL,
-      FOREIGN KEY (userId) REFERENCES user(id)
-    )`,
-
-    `CREATE TABLE IF NOT EXISTS verification (
-      id text PRIMARY KEY NOT NULL,
-      identifier text NOT NULL,
-      value text NOT NULL,
-      expiresAt integer NOT NULL,
-      createdAt integer NOT NULL,
-      updatedAt integer NOT NULL
-    )`,
-
-    // users (legacy)
+    // users
     `CREATE TABLE IF NOT EXISTS users (
       id text PRIMARY KEY NOT NULL,
       email text NOT NULL,
@@ -125,7 +50,7 @@ export async function ensureSchema() {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)`,
 
-    // refresh_tokens (legacy — kept for FK integrity)
+    // refresh_tokens
     `CREATE TABLE IF NOT EXISTS refresh_tokens (
       id text PRIMARY KEY NOT NULL,
       user_id text NOT NULL,
@@ -595,11 +520,7 @@ export async function resetDb() {
     'team_repos', 'pending_installations', 'team_invites', 'team_messages',
     'team_members', 'teams', 'organizer_roles', 'hackathon_rounds',
     'hackathons', 'hackathon_templates', 'workspace_invites',
-    'workspace_members', 'workspaces', 'refresh_tokens', 'platform_admins',
-    // Better Auth tables
-    'account', 'session', 'verification',
-    // Legacy + BA user tables (order matters for FKs)
-    'users', 'user',
+    'workspace_members', 'workspaces', 'refresh_tokens', 'platform_admins', 'users',
   ];
   for (const table of tables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
@@ -609,17 +530,9 @@ export async function resetDb() {
 // ── Insert helpers ────────────────────────────────────────────
 
 export async function insertUser(id: string, email: string, name: string = `User ${email}`) {
-  // Insert into legacy users table
   await env.DB.prepare(
     'INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
   ).bind(id, email, name, 'hash-not-used-in-tests', now).run();
-
-  // Also insert into BA user table so session auth works
-  const nowTs = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(
-    `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
-     VALUES (?, ?, ?, 0, ?, ?)`
-  ).bind(id, name, email, nowTs, nowTs).run();
 }
 
 export async function insertWorkspace(id: string, slug: string, createdBy: string, name: string = 'Test Workspace') {

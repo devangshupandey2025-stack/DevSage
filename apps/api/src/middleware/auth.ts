@@ -1,49 +1,40 @@
 import type { MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { AppEnv } from '../types/env.js';
+import { verifyJWT } from '../lib/jwt.js';
 
 /**
- * Global middleware: resolves Better Auth session from cookie.
- * Reads the `better-auth.session_token` cookie, looks up the session
- * in the BA `session` table, and populates `c.set('user', ...)` from
- * the legacy `users` table.
+ * Global middleware: extracts and validates JWT from HttpOnly cookie.
+ * Sets c.set('user', ...) on success, c.set('user', null) on failure.
  * Never rejects — downstream handlers check user themselves.
  */
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  try {
-    const token = getCookie(c, 'better-auth.session_token');
-    if (!token) {
-      c.set('user', null);
-      return next();
-    }
+  // Try Authorization header first, then fall back to cookie
+  let token = c.req.header('Authorization')?.replace('Bearer ', '') || getCookie(c, 'access_token');
 
-    // Look up BA session directly
-    const session = await c.env.DB.prepare(
-      'SELECT userId, expiresAt FROM session WHERE token = ?'
-    ).bind(token).first<{ userId: string; expiresAt: number }>();
-
-    if (!session || session.expiresAt < Math.floor(Date.now() / 1000)) {
-      c.set('user', null);
-      return next();
-    }
-
-    // Look up the legacy users row to populate the same UserContext shape
-    const user = await c.env.DB.prepare(
-      'SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?'
-    ).bind(session.userId).first<{
-      id: string; email: string; name: string; avatar_url: string | null; created_at: string;
-    }>();
-
-    if (!user) {
-      c.set('user', null);
-      return next();
-    }
-
-    c.set('user', { ...user, github_username: '' });
-  } catch {
+  if (!token) {
     c.set('user', null);
+    return next();
   }
 
+  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  if (!payload) {
+    c.set('user', null);
+    return next();
+  }
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?'
+  ).bind(payload.sub).first<{
+    id: string; email: string; name: string; avatar_url: string | null; github_username: string; created_at: string;
+  }>();
+
+  if (!user) {
+    c.set('user', null);
+    return next();
+  }
+
+  c.set('user', user);
   return next();
 };
 
@@ -52,33 +43,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
  * Returns 401 if no valid session.
  */
 export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
-  // Safety net: if optionalAuth hasn't run yet, resolve session inline
-  let user = c.get('user');
-  if (user === undefined) {
-    try {
-      const token = getCookie(c, 'better-auth.session_token');
-      if (token) {
-        const session = await c.env.DB.prepare(
-          'SELECT userId, expiresAt FROM session WHERE token = ?'
-        ).bind(token).first<{ userId: string; expiresAt: number }>();
-
-        if (session && session.expiresAt >= Math.floor(Date.now() / 1000)) {
-          const row = await c.env.DB.prepare(
-            'SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?'
-          ).bind(session.userId).first<{
-            id: string; email: string; name: string; avatar_url: string | null; created_at: string;
-          }>();
-          if (row) {
-            c.set('user', { ...row, github_username: '' });
-            user = c.get('user');
-          }
-        }
-      }
-    } catch {
-      // fall through to 401
-    }
-  }
-
+  const user = c.get('user');
   if (!user) {
     return c.json(
       { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } },

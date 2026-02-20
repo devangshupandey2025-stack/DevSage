@@ -3,19 +3,6 @@ GITHUB_WEBHOOK_SECRET=dev-webhook-secret-min-32-chars!!
 FRONTEND_URL=http://localhost:5173
 PLATFORM_URL=http://localhost:5174
 ADMIN_URL=http://localhost:5175
-
-# Better Auth
-BETTER_AUTH_SECRET=dev-better-auth-secret-min-32-chars!!
-BETTER_AUTH_URL=http://localhost:8787
-
-# OAuth — GitHub
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
-
-# OAuth — Google
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-
 # SMTP — custom SMTP server config
 # SMTP_URL=smtps://smtp.yourserver.com:465
 # SMTP_USERNAME=your-smtp-username

@@ -1,8 +1,15 @@
-import { createApp } from './app.js';
+import { Hono } from 'hono';
+import type { AppEnv } from './types/env.js';
+import { successResponse } from './lib/response.js';
+
+// Middleware
+import { corsMiddleware } from './middleware/cors.js';
+import { requestIdMiddleware } from './middleware/request-id.js';
+import { optionalAuth } from './middleware/auth.js';
+import { errorHandler } from './middleware/error-handler.js';
 
 // Routes
 import auth from './routes/auth.js';
-import authHandler from './routes/auth-handler.js';
 import hackathons from './routes/hackathons.js';
 import teams from './routes/teams.js';
 import teamRepos from './routes/team-repos.js';
@@ -17,38 +24,43 @@ import invites from './routes/invites.js';
 import audit from './routes/audit.js';
 import organizers from './routes/organizers.js';
 import announcements from './routes/announcements.js';
-import health from './routes/health.js';
-import hackathonShell from './routes/hackathon-shell.js';
 
 // Queue & Cron
 import { queueHandler } from './queue/index.js';
 import { cronHandler } from './cron/index.js';
 
-const app = createApp()
-  // Auth
-  .route('/auth', auth)
-  .route('/api/auth', authHandler)
-  // Core API
-  .route('/api/v1/hackathons', hackathons)
-  .route('/api/v1/hackathons/:slug/teams', teams)
-  .route('/api/v1/hackathons/:slug/teams', teamRepos)
-  .route('/api/v1/hackathons/:slug/submissions', submissions)
-  .route('/api/v1/hackathons/:slug/judging', judging)
-  .route('/api/v1/hackathons/:slug/rounds', rounds)
-  .route('/api/v1/hackathons/:slug/organizers', organizers)
-  .route('/api/v1/hackathons/:slug/audit', audit)
-  .route('/api/v1/hackathons/:slug/announcements', announcements)
-  .route('/api/v1/workspaces', workspaces)
-  .route('/api/v1/admin', admin)
-  .route('/api/v1/notifications', notifications)
-  .route('/api/v1/invites', invites)
-  .route('/api/v1', health)
-  .route('/api/v1', hackathonShell)
-  // Webhooks
-  .route('/webhooks', webhooks);
+const app = new Hono<AppEnv>();
 
-export type AppType = typeof app;
+// Root route for health check or info
+app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));
 
+// Global middleware chain
+app.use('*', corsMiddleware);
+app.use('*', requestIdMiddleware);
+app.use('*', optionalAuth);
+app.onError(errorHandler);
+
+// Health check
+app.get('/health', (c) => c.json({ ok: true, timestamp: new Date().toISOString() }));
+
+// Mount routes
+app.route('/auth', auth);
+app.route('/api/v1/hackathons', hackathons);
+app.route('/api/v1/hackathons/:slug/teams', teams);
+app.route('/api/v1/hackathons/:slug/teams', teamRepos);
+app.route('/api/v1/hackathons/:slug/submissions', submissions);
+app.route('/api/v1/hackathons/:slug/judging', judging);
+app.route('/api/v1/hackathons/:slug/rounds', rounds);
+app.route('/api/v1/hackathons/:slug/organizers', organizers);
+app.route('/api/v1/hackathons/:slug/audit', audit);
+app.route('/api/v1/hackathons/:slug/announcements', announcements);
+app.route('/api/v1/workspaces', workspaces);
+app.route('/api/v1/admin', admin);
+app.route('/api/v1/notifications', notifications);
+app.route('/api/v1/invites', invites);
+app.route('/webhooks', webhooks);
+
+// Export Worker handlers
 export default {
   fetch: app.fetch,
   queue: queueHandler,

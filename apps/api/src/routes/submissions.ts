@@ -435,7 +435,7 @@ submissions.post('/', authMiddleware, async (c) => {
     now, // received_at
     now, // submitted_at
     body.title, body.description || '',
-    body.repo_url, body.demo_url || '', body.video_url || '', '',
+    body.repo_url, body.demo_url || '', body.video_url || '', body.slide_url || '',
     body.analysis_json || null,
     body.ai_review_json || null,
     body.ai_score ?? null
