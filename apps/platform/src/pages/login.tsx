@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Sparkles, Shield, Loader2, Mail, Lock } from 'lucide-react';
+import { ArrowLeft, Sparkles, Shield, Loader2, Mail, Lock, Underline } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { apiRequest, ApiError } from '@/lib/api';
+import TermsOfServicePage from './terms-of-service';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -182,7 +183,7 @@ export function LoginPage() {
                 </Button>
 
                 <p className="text-center text-xs text-white/40">
-                  By continuing you agree to the DevSage Terms of Service.
+                  By continuing you agree to the DevSage <a onClick={()=>window.open('https://devsage.org/terms', '_blank')} className="underline">Terms of Service</a> and <a onClick={()=>window.open('https://devsage.org/privacy', '_blank')} className="underline"> Privacy Policy.</a>.
                 </p>
               </form>
             </CardContent>
