@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import authHandler from './routes/auth-handler.js';
+import auth from './routes/auth.js';
 import health from './routes/health.js';
 import hackathonShell from './routes/hackathon-shell.js';
 
@@ -9,6 +10,7 @@ import { cronHandler } from './cron/index.js';
 
 const app = createApp()
   .route('/api/auth', authHandler)
+  .route('/auth', auth)
   .route('/api/v1', health)
   .route('/api/v1', hackathonShell);
 

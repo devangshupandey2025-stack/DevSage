@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AuthAppEnv } from './types/env.js';
 import { AppError } from './lib/errors.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
+import { corsMiddleware } from './middleware/cors.js';
 
 export function createApp() {
   const app = new OpenAPIHono<AuthAppEnv>({
@@ -23,6 +24,7 @@ export function createApp() {
   });
 
   // Global middleware
+  app.use('*', corsMiddleware);
   app.use('*', requestIdMiddleware);
 
   // Global error handler
