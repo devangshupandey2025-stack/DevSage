@@ -138,7 +138,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: black;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -160,13 +160,13 @@
 }
 
 ::-webkit-scrollbar-corner {
-  background: transparent;
+  background: black;
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(204, 255, 0, 0.35) transparent;
+  scrollbar-color: rgba(204, 255, 0, 0.35) black;
 }
 
 /* ───────────────────────────────────────────

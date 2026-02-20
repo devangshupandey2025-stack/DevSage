@@ -9,6 +9,7 @@ import { TeamManagementPage } from '@/pages/team-management';
 import { LeaderboardPage } from '@/pages/leaderboard';
 import { NotFoundPage } from '@/pages/not-found';
 import { AcceptInvitePage } from '@/pages/accept-invite';
+import { Preloader } from '@/components/preloader';
 
 // Lazy-load route pages to reduce initial bundle size (code-splitting)
 const HomePage = lazy(() => import('@/pages/home').then(m => ({ default: m.HomePage })));
@@ -30,7 +31,7 @@ const router = createBrowserRouter([
   { path: '/', element: <LazyWrapper><HomePage /></LazyWrapper> },
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
-{ path: '/about', element: <AboutPage /> },
+  { path: '/about', element: <AboutPage /> },
   { path: '/hackathons', element: <LazyWrapper><BrowseHackathonsPage /></LazyWrapper> },
   { path: '/privacy', element: <LazyWrapper><PrivacyPolicyPage /></LazyWrapper> },
   { path: '/terms', element: <LazyWrapper><TermsOfServicePage /></LazyWrapper> },
@@ -59,5 +60,10 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <Preloader />
+      <RouterProvider router={router} />
+    </>
+  );
 }
