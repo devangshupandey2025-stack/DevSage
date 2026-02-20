@@ -1,12 +1,8 @@
 import { Hono } from 'hono';
-import { getCookie } from 'hono/cookie';
 import type { AppEnv } from '../types/env.js';
-import { signJWT, verifyJWT } from '../lib/jwt.js';
-import { createRefreshToken, rotateRefreshToken, revokeTokenFamily, revokeAllUserTokens, hashToken, generateFamilyId } from '../lib/refresh-token.js';
-import { setAccessTokenCookie, setRefreshTokenCookie, clearAuthCookies } from '../lib/cookies.js';
+import { createAuth } from '../auth.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
-import { hashPassword, verifyPassword } from '../lib/password.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { rateLimitMiddleware } from '../middleware/rate-limit.js';
 
@@ -14,194 +10,7 @@ const auth = new Hono<AppEnv>();
 
 auth.use('/*', rateLimitMiddleware('auth'));
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
-
-auth.post('/register', async (c) => {
-  const body = await c.req.json<{ email?: string; name?: string; password?: string }>();
-
-  const email = body.email?.trim().toLowerCase();
-  const name = body.name?.trim();
-  const password = body.password;
-
-  if (!email || !EMAIL_REGEX.test(email)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Valid email is required');
-  }
-  if (!name || name.length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name is required');
-  }
-  if (!password || password.length < MIN_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  }
-
-  const existing = await c.env.DB.prepare(
-    'SELECT id FROM users WHERE email = ?'
-  ).bind(email).first<{ id: string }>();
-
-  if (existing) {
-    return errorResponse(c, 409, 'CONFLICT', 'Email already registered');
-  }
-
-  const id = crypto.randomUUID();
-  const passwordHash = await hashPassword(password);
-
-  await c.env.DB.prepare(
-    'INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)'
-  ).bind(id, email, name, passwordHash).run();
-
-  const familyId = generateFamilyId();
-  const refreshToken = await createRefreshToken(c.env.DB, id, familyId);
-  const jwt = await signJWT({ sub: id, fam: familyId }, c.env.JWT_SECRET);
-
-  setAccessTokenCookie(c, jwt);
-  setRefreshTokenCookie(c, refreshToken);
-
-  c.executionCtx.waitUntil(
-    insertAuditEvent(c.env.DB, {
-      actor_id: id,
-      actor_type: 'user',
-      action: 'auth.signup',
-      entity_type: 'user',
-      entity_id: id,
-    })
-  );
-
-  return successResponse(c, { id, email, name, access_token: jwt }, { status: 201 });
-});
-
-auth.post('/login', async (c) => {
-  const body = await c.req.json<{ email?: string; password?: string }>();
-
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password;
-
-  if (!email || !password) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and password are required');
-  }
-
-  const user = await c.env.DB.prepare(
-    'SELECT id, email, name, password_hash, avatar_url FROM users WHERE email = ?'
-  ).bind(email).first<{ id: string; email: string; name: string; password_hash: string; avatar_url: string | null }>();
-
-  if (!user) {
-    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
-  }
-
-  const valid = await verifyPassword(password, user.password_hash);
-  if (!valid) {
-    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
-  }
-
-  const familyId = generateFamilyId();
-  const refreshToken = await createRefreshToken(c.env.DB, user.id, familyId);
-  const jwt = await signJWT({ sub: user.id, fam: familyId }, c.env.JWT_SECRET);
-
-  setAccessTokenCookie(c, jwt);
-  setRefreshTokenCookie(c, refreshToken);
-
-  await c.env.DB.prepare(
-    'UPDATE users SET last_login_at = ? WHERE id = ?'
-  ).bind(new Date().toISOString(), user.id).run();
-
-  c.executionCtx.waitUntil(
-    insertAuditEvent(c.env.DB, {
-      actor_id: user.id,
-      actor_type: 'user',
-      action: 'auth.login',
-      entity_type: 'user',
-      entity_id: user.id,
-    })
-  );
-
-  return successResponse(c, { id: user.id, email: user.email, name: user.name, access_token: jwt });
-});
-
-auth.post('/refresh', async (c) => {
-  const token = getCookie(c, 'refresh_token');
-  if (!token) {
-    return errorResponse(c, 401, 'AUTH_REQUIRED', 'No refresh token');
-  }
-
-  const accessToken = getCookie(c, 'access_token');
-  let userId: string | null = null;
-
-  if (accessToken) {
-    try {
-      const parts = accessToken.split('.');
-      if (parts.length === 3) {
-        const payloadStr = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-        const payload = JSON.parse(payloadStr);
-        userId = payload.sub;
-      }
-    } catch {
-      // Ignore decode errors
-    }
-  }
-
-  if (!userId) {
-    const tokenHash = await hashToken(token);
-    const record = await c.env.DB.prepare(
-      'SELECT user_id FROM refresh_tokens WHERE token_hash = ?'
-    ).bind(tokenHash).first<{ user_id: string }>();
-    if (!record) {
-      clearAuthCookies(c);
-      return errorResponse(c, 401, 'AUTH_REQUIRED', 'Invalid refresh token');
-    }
-    userId = record.user_id;
-  }
-
-  const result = await rotateRefreshToken(c.env.DB, token, userId);
-  if (!result) {
-    clearAuthCookies(c);
-    return errorResponse(c, 401, 'TOKEN_EXPIRED', 'Refresh token expired or revoked');
-  }
-
-  const user = await c.env.DB.prepare(
-    'SELECT id FROM users WHERE id = ?'
-  ).bind(userId).first<{ id: string }>();
-
-  if (!user) {
-    clearAuthCookies(c);
-    return errorResponse(c, 401, 'AUTH_REQUIRED', 'User not found');
-  }
-
-  const jwt = await signJWT({
-    sub: user.id,
-    fam: result.familyId,
-  }, c.env.JWT_SECRET);
-
-  setAccessTokenCookie(c, jwt);
-  setRefreshTokenCookie(c, result.token);
-
-  return successResponse(c, { refreshed: true });
-});
-
-auth.post('/logout', authMiddleware, async (c) => {
-  const user = c.get('user')!;
-  const accessToken = getCookie(c, 'access_token');
-
-  if (accessToken) {
-    const payload = await verifyJWT(accessToken, c.env.JWT_SECRET);
-    if (payload) {
-      await revokeTokenFamily(c.env.DB, payload.fam);
-    }
-  }
-
-  clearAuthCookies(c);
-
-  c.executionCtx.waitUntil(
-    insertAuditEvent(c.env.DB, {
-      actor_id: user.id,
-      actor_type: 'user',
-      action: 'auth.logout',
-      entity_type: 'user',
-      entity_id: user.id,
-    })
-  );
-
-  return successResponse(c, { logged_out: true });
-});
-
+// ── /me — role-enriched user info ──────────────────────────────
 auth.get('/me', authMiddleware, async (c) => {
   const user = c.get('user')!;
 
@@ -230,49 +39,40 @@ auth.get('/me', authMiddleware, async (c) => {
   });
 });
 
-// List sessions
-auth.get('/sessions', authMiddleware, async (c) => {
+// ── /logout — sign out via Better Auth + audit ────────────────
+auth.post('/logout', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const sessions = await c.env.DB.prepare(
-    `SELECT family_id, created_at, expires_at
-     FROM refresh_tokens
-     WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
-     GROUP BY family_id
-     ORDER BY created_at DESC`
-  ).bind(user.id, new Date().toISOString()).all<{
-    family_id: string; created_at: string; expires_at: string;
-  }>();
+  const ba = createAuth(c.env);
 
-  return successResponse(c, sessions.results || []);
-});
-
-// Revoke specific session
-auth.delete('/sessions/:familyId', authMiddleware, async (c) => {
-  const user = c.get('user')!;
-  const familyId = c.req.param('familyId');
-
-  // Verify this family belongs to the user
-  const exists = await c.env.DB.prepare(
-    'SELECT id FROM refresh_tokens WHERE family_id = ? AND user_id = ? LIMIT 1'
-  ).bind(familyId, user.id).first();
-
-  if (!exists) {
-    return errorResponse(c, 404, 'NOT_FOUND', 'Session not found');
+  try {
+    // Revoke the session server-side; BA's signOut returns { success: boolean }.
+    // We also call the handler directly to get Set-Cookie clearing headers.
+    const rawRes = await ba.handler(new Request(
+      `${c.env.BETTER_AUTH_URL}/api/auth/sign-out`,
+      { method: 'POST', headers: c.req.raw.headers }
+    ));
+    const setCookie = rawRes.headers.get('set-cookie');
+    if (setCookie) {
+      c.header('Set-Cookie', setCookie);
+    }
+  } catch {
+    // Even if BA signOut fails, we still want to log and return success
   }
 
-  await revokeTokenFamily(c.env.DB, familyId);
-  return successResponse(c, { revoked: true });
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'auth.logout',
+      entity_type: 'user',
+      entity_id: user.id,
+    })
+  );
+
+  return successResponse(c, { logged_out: true });
 });
 
-// Revoke all sessions
-auth.delete('/sessions', authMiddleware, async (c) => {
-  const user = c.get('user')!;
-  await revokeAllUserTokens(c.env.DB, user.id);
-  clearAuthCookies(c);
-  return successResponse(c, { revoked_all: true });
-});
-
-// Request account deletion
+// ── /delete-account — request account deletion ────────────────
 auth.post('/delete-account', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const confirmationToken = crypto.randomUUID();
@@ -282,12 +82,10 @@ auth.post('/delete-account', authMiddleware, async (c) => {
     'INSERT INTO deletion_requests (id, user_id, confirmation_token) VALUES (?, ?, ?)'
   ).bind(id, user.id, confirmationToken).run();
 
-  // In production: send confirmation email
-  // For now, return the token directly
   return successResponse(c, { confirmation_token: confirmationToken }, { status: 201 });
 });
 
-// Confirm account deletion
+// ── /delete-account/confirm — confirm deletion ────────────────
 auth.post('/delete-account/confirm', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json<{ confirmation_token: string }>();
@@ -309,11 +107,17 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
     'UPDATE deletion_requests SET status = ?, confirmed_at = ? WHERE id = ?'
   ).bind('confirmed', new Date().toISOString(), request.id).run();
 
-  // Revoke all tokens
-  await revokeAllUserTokens(c.env.DB, user.id);
-  clearAuthCookies(c);
+  // Sign out of Better Auth
+  try {
+    await createAuth(c.env).api.signOut({ headers: c.req.raw.headers });
+  } catch {
+    // best-effort
+  }
 
-  // Delete user (CASCADE handles related data)
+  // Delete from BA user table
+  await c.env.DB.prepare('DELETE FROM user WHERE id = ?').bind(user.id).run();
+
+  // Delete from legacy users table (CASCADE handles related data)
   await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
 
   c.executionCtx.waitUntil(

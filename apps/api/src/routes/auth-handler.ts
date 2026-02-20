@@ -1,17 +1,8 @@
 import { Hono } from 'hono';
+import type { AppEnv } from '../types/env.js';
 import { createAuth } from '../auth.js';
 
-const authRoutes = new Hono<{
-  Bindings: {
-    DB: D1Database;
-    BETTER_AUTH_SECRET: string;
-    BETTER_AUTH_URL: string;
-    GITHUB_CLIENT_ID: string;
-    GITHUB_CLIENT_SECRET: string;
-    GOOGLE_CLIENT_ID: string;
-    GOOGLE_CLIENT_SECRET: string;
-  };
-}>();
+const authRoutes = new Hono<AppEnv>();
 
 authRoutes.on(['GET', 'POST'], '/*', (c) => {
   const auth = createAuth(c.env);

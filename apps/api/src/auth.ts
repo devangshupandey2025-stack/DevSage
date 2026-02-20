@@ -18,6 +18,8 @@ export function createAuth(env: {
   GITHUB_CLIENT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  PLATFORM_URL: string;
+  ADMIN_URL: string;
 }) {
   const db = drizzle(env.DB, { schema });
 
@@ -33,6 +35,10 @@ export function createAuth(env: {
     }),
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
+    emailAndPassword: {
+      enabled: true,
+    },
+    trustedOrigins: [env.PLATFORM_URL, env.ADMIN_URL].filter(Boolean),
     socialProviders: {
       github: {
         clientId: env.GITHUB_CLIENT_ID,
@@ -41,6 +47,32 @@ export function createAuth(env: {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            // Mirror new Better Auth user into legacy `users` table.
+            // 20+ tables FK to users.id — keeping them in sync is required.
+            try {
+              await env.DB.prepare(
+                `INSERT OR IGNORE INTO users (id, email, name, password_hash, avatar_url, created_at)
+                 VALUES (?, ?, ?, '', ?, ?)`
+              ).bind(
+                user.id,
+                user.email,
+                user.name,
+                user.image ?? null,
+                new Date().toISOString(),
+              ).run();
+            } catch {
+              // Best-effort: if the legacy row already exists (e.g. migration),
+              // the INSERT OR IGNORE silently succeeds. Log unexpected errors.
+              console.error('Failed to mirror BA user to legacy users table:', user.id);
+            }
+          },
+        },
       },
     },
   });

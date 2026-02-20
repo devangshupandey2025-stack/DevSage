@@ -3,6 +3,7 @@ import type { AuthAppEnv } from './types/env.js';
 import { AppError } from './lib/errors.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { corsMiddleware } from './middleware/cors.js';
+import { optionalAuth } from './middleware/auth.js';
 
 export function createApp() {
   const app = new OpenAPIHono<AuthAppEnv>({
@@ -23,9 +24,10 @@ export function createApp() {
     },
   });
 
-  // Global middleware
+  // Global middleware: CORS → Request ID → Auth → routes
   app.use('*', corsMiddleware);
   app.use('*', requestIdMiddleware);
+  app.use('*', optionalAuth);
 
   // Global error handler
   app.onError((err, c) => {
