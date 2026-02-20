@@ -18,7 +18,7 @@ interface Admin {
   user_id: string;
   name: string;
   email: string | null;
-  avatar_url?: string | null;
+  image?: string | null;
   created_at: string;
 }
 
@@ -145,9 +145,9 @@ export function AdminsPage() {
                       >
                         <td className="p-4 align-middle">
                           <div className="flex items-center gap-3">
-                            {admin.avatar_url ? (
+                            {admin.image ? (
                               <img
-                                src={admin.avatar_url}
+                                src={admin.image}
                                 alt={admin.name}
                                 className="h-8 w-8 rounded-full object-cover"
                               />

@@ -147,9 +147,9 @@ export function DashboardLayout() {
               onClick={() => setProfileOpen((p) => !p)}
               className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-[#CCFF00]/40 hover:bg-white/10"
             >
-              {user?.avatar_url ? (
+              {user?.image ? (
                 <img
-                  src={user.avatar_url}
+                  src={user.image}
                   alt=""
                   className="h-7 w-7 rounded-full object-cover"
                 />

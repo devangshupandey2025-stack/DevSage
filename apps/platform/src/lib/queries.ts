@@ -47,7 +47,7 @@ interface TeamMember {
   team_id: string;
   role: string;
   display_name: string;
-  avatar_url: string | null;
+  image: string | null;
   joined_at: string;
 }
 
@@ -84,7 +84,7 @@ interface Judge {
   hackathon_id: string;
   status: string;
   display_name: string;
-  avatar_url: string | null;
+  image: string | null;
   invited_at: string;
   accepted_at: string | null;
 }
@@ -250,7 +250,7 @@ interface Organizer {
   created_at: string;
   name: string;
   email: string;
-  avatar_url: string | null;
+  image: string | null;
 }
 
 export const roundQueries = {

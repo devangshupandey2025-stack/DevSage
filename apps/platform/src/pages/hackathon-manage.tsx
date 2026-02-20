@@ -45,7 +45,7 @@ interface User {
   id: string;
   email: string | null;
   display_name: string;
-  avatar_url: string | null;
+  image: string | null;
 }
 
 interface Judge {
@@ -407,8 +407,8 @@ function JudgesTab({ hackathon }: { hackathon: Hackathon }) {
               <CardContent className="pt-6 flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center overflow-hidden">
-                    {judge.user.avatar_url ? (
-                      <img src={judge.user.avatar_url} alt={judge.user.display_name} className="h-full w-full object-cover" />
+                    {judge.user.image ? (
+                      <img src={judge.user.image} alt={judge.user.display_name} className="h-full w-full object-cover" />
                     ) : (
                       <span className="text-lg font-bold">{judge.user.display_name.charAt(0)}</span>
                     )}

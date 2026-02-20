@@ -56,7 +56,7 @@ export interface TeamMember {
   role: TeamMemberRole;
   joined_at: string;
   display_name: string;
-  avatar_url?: string | null;
+  image?: string | null;
   github_username?: string;
 }
 

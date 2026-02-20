@@ -20,7 +20,7 @@ interface WorkspaceMember {
   user_id: string;
   display_name: string;
   email: string | null;
-  avatar_url: string | null;
+  image: string | null;
   role: string;
   joined_at: string;
 }
@@ -123,8 +123,8 @@ export function WorkspaceDetailPage() {
             <div className="space-y-2">
               {members.map((member) => (
                 <div key={member.id} className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 p-3">
-                  {member.avatar_url ? (
-                    <img src={member.avatar_url} alt="" className="h-8 w-8 rounded-full" />
+                  {member.image ? (
+                    <img src={member.image} alt="" className="h-8 w-8 rounded-full" />
                   ) : (
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#CCFF00] text-xs font-bold text-black">
                       {member.display_name.charAt(0).toUpperCase()}
