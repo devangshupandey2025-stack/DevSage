@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useSpring } from 'framer-motion';
+import featherImg from '@/photos/feather2.png';
 
 type CursorVariant = 'default' | 'pointer' | 'text';
 
@@ -35,6 +36,18 @@ export function CustomCursor() {
   const glowX = useSpring(rawX, { stiffness: 160, damping: 30, mass: 0.35 });
   const glowY = useSpring(rawY, { stiffness: 160, damping: 30, mass: 0.35 });
 
+  const trail1X = useSpring(dotX, { stiffness: 800, damping: 40, mass: 0.15 });
+  const trail1Y = useSpring(dotY, { stiffness: 800, damping: 40, mass: 0.15 });
+
+  const trail2X = useSpring(trail1X, { stiffness: 500, damping: 35, mass: 0.2 });
+  const trail2Y = useSpring(trail1Y, { stiffness: 500, damping: 35, mass: 0.2 });
+
+  const trail3X = useSpring(trail2X, { stiffness: 300, damping: 30, mass: 0.25 });
+  const trail3Y = useSpring(trail2Y, { stiffness: 300, damping: 30, mass: 0.25 });
+
+  const trail4X = useSpring(trail3X, { stiffness: 150, damping: 25, mass: 0.3 });
+  const trail4Y = useSpring(trail3Y, { stiffness: 150, damping: 25, mass: 0.3 });
+
   const [enabled, setEnabled] = useState(false);
   const [visible, setVisible] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -48,21 +61,8 @@ export function CustomCursor() {
   const lastPosRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    const finePointerMq = window.matchMedia('(pointer: fine)');
-    const reduceMotionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
-
-    const update = () => {
-      setEnabled(finePointerMq.matches && !reduceMotionMq.matches);
-    };
-
-    update();
-
-    finePointerMq.addEventListener('change', update);
-    reduceMotionMq.addEventListener('change', update);
-    return () => {
-      finePointerMq.removeEventListener('change', update);
-      reduceMotionMq.removeEventListener('change', update);
-    };
+    // Force enabled to true
+    setEnabled(true);
   }, []);
 
   useEffect(() => {
@@ -148,22 +148,32 @@ export function CustomCursor() {
   const ringOpacity = visible ? 1 : 0;
   const ringScale = pressed ? 0.92 : 1;
 
-  const dotSize = variant === 'pointer' ? 8 : 6;
-  const dotOpacity = visible ? 1 : 0;
-  const dotScale = pressed ? 0.78 : variant === 'pointer' ? 1.25 : 1;
+  const iconSize = variant === 'pointer' ? 56 : 48;
+  const iconOpacity = visible ? 1 : 0;
+  const iconScale = pressed ? 0.8 : variant === 'pointer' ? 1.15 : 1;
 
   const glowSize = variant === 'pointer' ? 160 : 120;
   const glowOpacity = visible ? (variant === 'pointer' ? 0.35 : 0.22) : 0;
   const glowScale = pressed ? 0.88 : 1;
 
+  const trails = [
+    { x: trail1X, y: trail1Y, size: 12, opacity: 0.7 },
+    { x: trail2X, y: trail2Y, size: 9, opacity: 0.5 },
+    { x: trail3X, y: trail3Y, size: 6, opacity: 0.3 },
+    { x: trail4X, y: trail4Y, size: 4, opacity: 0.15 },
+  ];
+
   const transformTemplate = ({ x, y, scale }: { x?: string; y?: string; scale?: number }) =>
     `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-50%, -50%) scale(${scale ?? 1})`;
+
+  const imageTransformTemplate = ({ x, y, scale }: { x?: string; y?: string; scale?: number }) =>
+    `translate3d(${x ?? '0px'}, ${y ?? '0px'}, 0) translate(-8%, -15%) scale(${scale ?? 1}) rotate(90deg)`;
 
   return (
     <>
       <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-9997"
-        style={{ x: glowX, y: glowY, width: glowSize, height: glowSize }}
+        className="fixed top-0 left-0 pointer-events-none"
+        style={{ x: glowX, y: glowY, width: glowSize, height: glowSize, zIndex: 9997 }}
         animate={{ opacity: glowOpacity, scale: glowScale }}
         transition={{ type: 'spring', stiffness: 220, damping: 26 }}
         transformTemplate={transformTemplate}
@@ -172,42 +182,49 @@ export function CustomCursor() {
           className="h-full w-full rounded-full"
           style={{
             background:
-              'radial-gradient(circle, rgba(204,255,0,0.35) 0%, rgba(204,255,0,0.10) 35%, rgba(204,255,0,0.0) 70%)',
+              'radial-gradient(circle, rgba(255,215,0,0.35) 0%, rgba(255,215,0,0.10) 35%, rgba(255,215,0,0.0) 70%)',
             filter: 'blur(2px)',
             mixBlendMode: 'difference',
           }}
         />
       </motion.div>
 
-      <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-9998 rounded-full mix-blend-difference border"
-        style={{ x: ringX, y: ringY }}
-        animate={{
-          width: ringSize,
-          height: ringSize,
-          opacity: ringOpacity,
-          scale: ringScale,
-          borderColor:
-            variant === 'pointer' ? 'rgba(204, 255, 0, 0.55)' : 'rgba(255, 255, 255, 0.28)',
-          backgroundColor: variant === 'pointer' ? 'rgba(204, 255, 0, 0.10)' : 'rgba(204, 255, 0, 0)',
-        }}
-        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-        transformTemplate={transformTemplate}
-      />
+      {/* Golden Trails */}
+      {visible && trails.map((trail, i) => (
+        <motion.div
+          key={`trail-${i}`}
+          className="fixed top-0 left-0 pointer-events-none rounded-full"
+          style={{
+            x: trail.x,
+            y: trail.y,
+            width: trail.size,
+            height: trail.size,
+            zIndex: 9996 - i,
+            backgroundColor: 'rgba(255, 215, 0, 1)',
+            boxShadow: '0 0 12px 3px rgba(255, 215, 0, 0.6)'
+          }}
+          animate={{
+            opacity: trail.opacity,
+            scale: pressed ? 0.5 : 1
+          }}
+          transformTemplate={transformTemplate}
+        />
+      ))}
 
       <motion.div
-        className="fixed top-0 left-0 pointer-events-none z-9999 rounded-full mix-blend-difference"
-        style={{ x: dotX, y: dotY }}
+        className="fixed top-0 left-0 pointer-events-none"
+        style={{ x: dotX, y: dotY, zIndex: 9999 }}
         animate={{
-          width: dotSize,
-          height: dotSize,
-          opacity: dotOpacity,
-          scale: dotScale,
-          backgroundColor: variant === 'text' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(204, 255, 0, 1)',
+          width: iconSize,
+          height: iconSize,
+          opacity: iconOpacity,
+          scale: iconScale,
         }}
         transition={{ type: 'spring', stiffness: 900, damping: 40 }}
-        transformTemplate={transformTemplate}
-      />
+        transformTemplate={imageTransformTemplate}
+      >
+        <img src={featherImg} alt="cursor" className="w-full h-full object-contain pointer-events-none drop-shadow-lg" />
+      </motion.div>
     </>
   );
 }
