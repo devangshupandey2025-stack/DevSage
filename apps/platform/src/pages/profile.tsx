@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/auth-context';
 import { PageHeader } from '@/components/common';
-import { Mail, Calendar, Hash, Shield, LogOut } from 'lucide-react';
+import { Mail, Hash, Shield, LogOut } from 'lucide-react';
 
 const container = {
   hidden: { opacity: 0 },
@@ -26,9 +26,9 @@ export function ProfilePage() {
         {/* Profile card */}
         <motion.div variants={item} className="rounded-2xl border border-white/ bg-white/2 p-8">
           <div className="flex items-center gap-6">
-            {user.avatar_url ? (
+            {user.image ? (
               <img
-                src={user.avatar_url}
+                src={user.image}
                 alt={user.name}
                 className="h-20 w-20 rounded-2xl border-2 border-[#CCFF00]/15 object-cover"
               />
@@ -62,7 +62,6 @@ export function ProfilePage() {
             { icon: Shield, label: 'Name', value: user.name || '—' },
             { icon: Mail, label: 'Email', value: user.email || '—' },
             { icon: Hash, label: 'User ID', value: user.id, mono: true },
-            { icon: Calendar, label: 'Joined', value: new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) },
           ].map((field) => (
             <motion.div
               key={field.label}

@@ -1,31 +1,24 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { apiRequest } from '@/lib/api';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { authClient } from '../lib/auth-client';
+import { setTokenGetter } from '../lib/api';
 
 interface User {
   id: string;
   email: string;
   name: string;
-  avatar_url: string | null;
-  created_at: string;
-}
-
-interface AuthResponse {
-  ok: boolean;
-  data: {
-    user: User;
-    roles: string[];
-    isPlatformAdmin: boolean;
-    isOrganizer: boolean;
-  };
-  meta: unknown;
+  image: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
-  isAuthenticated: boolean;
+  token: string | null;
   isLoading: boolean;
-  isOrganizer: boolean;
+  isAuthenticated: boolean;
   isPlatformAdmin: boolean;
+  isOrganizer: boolean;
+  hackathonRoles: Record<string, string[]>;
+  workspaceRoles: Record<string, string>;
+  refreshToken: () => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
@@ -33,42 +26,90 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isOrganizer, setIsOrganizer] = useState(false);
-  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [hackathonRoles, setHackathonRoles] = useState<Record<string, string[]>>({});
+  const [workspaceRoles, setWorkspaceRoles] = useState<Record<string, string>>({});
+
+  const refreshToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
+      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      setToken(data.token);
+
+      // Decode JWT payload to extract roles (no verification needed on client)
+      const payload = JSON.parse(atob(data.token.split('.')[1]));
+      setIsPlatformAdmin(!!payload.platformAdmin);
+      setHackathonRoles(payload.hackathonRoles || {});
+      setWorkspaceRoles(payload.workspaceRoles || {});
+      setIsOrganizer(
+        Object.values(payload.hackathonRoles || {}).some((roles: any) =>
+          roles.includes('organizer') || roles.includes('co_organizer'),
+        ),
+      );
+
+      return data.token;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
-    async function checkAuth() {
+    async function init() {
       try {
-        const response = await apiRequest<AuthResponse>('/auth/me');
-        setUser(response.data.user);
-        setIsOrganizer(response.data.isOrganizer);
-        setIsPlatformAdmin(response.data.isPlatformAdmin);
-      } catch (_error) {
+        const session = await authClient.getSession();
+        if (session.data?.user) {
+          setUser({
+            id: session.data.user.id,
+            email: session.data.user.email,
+            name: session.data.user.name,
+            image: session.data.user.image || null,
+          });
+          await refreshToken();
+        }
+      } catch {
         setUser(null);
-        setIsOrganizer(false);
-        setIsPlatformAdmin(false);
       } finally {
         setIsLoading(false);
       }
     }
-    checkAuth();
+    init();
+  }, [refreshToken]);
+
+  useEffect(() => {
+    setTokenGetter(refreshToken);
+  }, [refreshToken]);
+
+  const logout = useCallback(async () => {
+    await authClient.signOut();
+    setUser(null);
+    setToken(null);
+    setIsPlatformAdmin(false);
+    setIsOrganizer(false);
+    setHackathonRoles({});
+    setWorkspaceRoles({});
+    window.location.href = '/login';
   }, []);
 
-  async function logout() {
-    try {
-      await apiRequest('/auth/logout', { method: 'POST' });
-      setUser(null);
-      setIsOrganizer(false);
-      setIsPlatformAdmin(false);
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('Logout failed', error);
-    }
-  }
-
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, isOrganizer, isPlatformAdmin, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        isAuthenticated: !!user,
+        isPlatformAdmin,
+        isOrganizer,
+        hackathonRoles,
+        workspaceRoles,
+        refreshToken,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

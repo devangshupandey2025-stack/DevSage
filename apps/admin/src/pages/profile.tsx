@@ -20,9 +20,9 @@ export function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center gap-4">
-            {user.avatar_url ? (
+            {user.image ? (
               <img
-                src={user.avatar_url}
+                src={user.image}
                 alt={user.name}
                 className="h-20 w-20 rounded-full object-cover border-2 border-[#CCFF00]/20"
               />
@@ -45,10 +45,6 @@ export function ProfilePage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-white/60">Auth Method</p>
               <p className="text-white">Email &amp; Password</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-white/60">Joined</p>
-              <p className="text-white">{new Date(user.created_at).toLocaleDateString()}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium text-white/60">User ID</p>
