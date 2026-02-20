@@ -1,9 +1,8 @@
 /**
  * Shared test helpers for v3 schema tests.
- * Uses email/password auth (no OAuth).
+ * Uses Bearer token auth via JWT verification.
  */
 import { env as rawEnv } from 'cloudflare:test';
-import { signJWT } from '../lib/jwt.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const env = rawEnv as any;
@@ -11,6 +10,32 @@ export { env };
 
 export const JWT_SECRET = 'dev-secret-key-min-32-chars-long!!';
 const now = new Date().toISOString();
+
+// ── Inline JWT signing (Web Crypto API) ──────────────────────
+function base64urlEncode(data: Uint8Array): string {
+  let binary = '';
+  for (const byte of data) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signJWT(payload: Record<string, unknown>, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const header = base64urlEncode(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const nowSec = Math.floor(Date.now() / 1000);
+  const fullPayload = { ...payload, iat: nowSec, exp: nowSec + 900 };
+  const body = base64urlEncode(encoder.encode(JSON.stringify(fullPayload)));
+  const signingInput = `${header}.${body}`;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(signingInput)));
+  return `${signingInput}.${base64urlEncode(sig)}`;
+}
 
 // ── Seed account IDs ──────────────────────────────────────────
 export const SEED = {
@@ -29,9 +54,28 @@ export const SEED = {
 } as const;
 
 // ── Auth helpers ──────────────────────────────────────────────
+/**
+ * Returns a Bearer token string for use in Authorization headers.
+ * The JWT payload matches the new UserContext shape expected by the API middleware.
+ */
 export async function authCookie(userId: string): Promise<string> {
-  const token = await signJWT({ sub: userId, fam: crypto.randomUUID() }, JWT_SECRET);
-  return `access_token=${token}`;
+  // Look up seed user info for richer JWT payload
+  const seedUsers = [SEED.srijan, SEED.admin, SEED.organizer, SEED.coOrganizer, SEED.judge, SEED.lead, SEED.participant];
+  const seedUser = seedUsers.find((u) => u.id === userId);
+
+  const token = await signJWT(
+    {
+      sub: userId,
+      email: seedUser?.email ?? `${userId}@test.local`,
+      name: seedUser?.name ?? 'Test User',
+      image: null,
+      platformAdmin: false,
+      hackathonRoles: {},
+      workspaceRoles: {},
+    },
+    JWT_SECRET,
+  );
+  return `Bearer ${token}`;
 }
 
 // ── Schema bootstrapping ──────────────────────────────────────

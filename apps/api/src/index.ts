@@ -9,7 +9,6 @@ import { optionalAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 // Routes
-import auth from './routes/auth.js';
 import hackathons from './routes/hackathons.js';
 import teams from './routes/teams.js';
 import teamRepos from './routes/team-repos.js';
@@ -44,7 +43,6 @@ app.onError(errorHandler);
 app.get('/health', (c) => c.json({ ok: true, timestamp: new Date().toISOString() }));
 
 // Mount routes
-app.route('/auth', auth);
 app.route('/api/v1/hackathons', hackathons);
 app.route('/api/v1/hackathons/:slug/teams', teams);
 app.route('/api/v1/hackathons/:slug/teams', teamRepos);
