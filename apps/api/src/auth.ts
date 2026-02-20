@@ -18,6 +18,7 @@ export function createAuth(env: {
   GITHUB_CLIENT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  FRONTEND_URL: string;
   PLATFORM_URL: string;
   ADMIN_URL: string;
 }) {
@@ -38,7 +39,7 @@ export function createAuth(env: {
     emailAndPassword: {
       enabled: true,
     },
-    trustedOrigins: [env.PLATFORM_URL, env.ADMIN_URL].filter(Boolean),
+    trustedOrigins: [env.FRONTEND_URL, env.PLATFORM_URL, env.ADMIN_URL].filter(Boolean),
     socialProviders: {
       github: {
         clientId: env.GITHUB_CLIENT_ID,
