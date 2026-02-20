@@ -18,7 +18,9 @@ import { handleNotificationMessage } from '../queue/notification-handler.js';
 // Minimal env that satisfies NotificationEnv
 const notifEnv = {
   DB: undefined as unknown as D1Database,
-  RESEND_API_KEY: 'test-key',
+  SMTP_URL: 'smtps://smtp.test.local:465',
+  SMTP_USERNAME: 'test',
+  SMTP_PASSWORD: 'test',
   EMAIL_FROM: 'noreply@devsage.org',
   FRONTEND_URL: 'https://devsage.org',
   PLATFORM_URL: 'https://platform.devsage.org',

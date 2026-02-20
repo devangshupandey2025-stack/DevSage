@@ -3,8 +3,8 @@ GITHUB_WEBHOOK_SECRET=dev-webhook-secret-min-32-chars!!
 FRONTEND_URL=http://localhost:5173
 PLATFORM_URL=http://localhost:5174
 ADMIN_URL=http://localhost:5175
-# SMTP — set SMTP_URL for email sending in dev (optional)
-# Format: smtps://<user>:<pass>@<host>:465
-# SMTP_URL=
+# SMTP — custom SMTP server config
+# SMTP_URL=smtps://smtp.yourserver.com:465
+# SMTP_USERNAME=your-smtp-username
+# SMTP_PASSWORD=your-smtp-password
 # SMTP_EMAIL_ADDR=noreply@devsage.org
-# RESEND_API_KEY=

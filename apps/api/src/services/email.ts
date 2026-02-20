@@ -1,11 +1,15 @@
 /**
- * Unified email sending: SMTP (preferred) → Resend API (fallback).
+ * Email sending via custom SMTP server.
  * Fail-open pattern: returns false on error, never throws.
+ *
+ * Required secrets:
+ *   SMTP_URL        — smtps://smtp.example.com:465 or smtp://smtp.example.com:587
+ *   SMTP_USERNAME   — SMTP auth username
+ *   SMTP_PASSWORD   — SMTP auth password
+ *   SMTP_EMAIL_ADDR — From address (fallback: EMAIL_FROM var from wrangler.jsonc)
  */
 
-import { sendSmtp, parseSmtpUrl } from './smtp.js';
-
-const RESEND_TIMEOUT = 10_000;
+import { sendSmtp, parseSmtpUrl, type SmtpConfig } from './smtp.js';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -14,7 +18,6 @@ export interface EmailEnv {
   SMTP_USERNAME?: string;
   SMTP_PASSWORD?: string;
   SMTP_EMAIL_ADDR?: string;
-  RESEND_API_KEY?: string;
   EMAIL_FROM: string;
 }
 
@@ -27,8 +30,11 @@ export interface EmailOptions {
 // ── Public API ─────────────────────────────────────────────────────
 
 /**
- * Send an email using SMTP if `SMTP_URL` is configured, otherwise Resend API.
- * If both fail or neither is configured, returns false.
+ * Send an email via SMTP.
+ *
+ * Builds config from SMTP_URL (host/port) + SMTP_USERNAME + SMTP_PASSWORD.
+ * If SMTP_URL has credentials embedded, SMTP_USERNAME/SMTP_PASSWORD override them.
+ * Tries the configured port first, then falls back to the alternate port (587↔465).
  */
 export async function sendEmail(
   env: EmailEnv,
@@ -39,114 +45,53 @@ export async function sendEmail(
 
   console.warn(`[email] Attempting to send "${options.subject}" to ${to.join(', ')}`);
 
-  // Try SMTP (combined URL) — primary port, then fallback to alternate port
-  if (env.SMTP_URL) {
-    const config = parseSmtpUrl(env.SMTP_URL);
-    console.warn(`[email] SMTP config: host=${config.host} port=${config.port} user=${config.username}`);
-
-    // Try the configured port first
-    try {
-      const sent = await sendSmtp(config, from, to, options.subject, options.html);
-      if (sent) {
-        console.warn(`[email] SMTP sent successfully on port ${config.port}`);
-        return true;
-      }
-      console.warn(`[email] SMTP port ${config.port} returned false`);
-    } catch (err) {
-      console.warn(`[email] SMTP port ${config.port} error: ${err instanceof Error ? err.message : err}`);
-    }
-
-    // Fallback: try the other port (587↔465)
-    const fallbackPort = config.port === 587 ? 465 : 587;
-    console.warn(`[email] Trying fallback port ${fallbackPort}`);
-    try {
-      const fallbackConfig = { ...config, port: fallbackPort };
-      const sent = await sendSmtp(fallbackConfig, from, to, options.subject, options.html);
-      if (sent) {
-        console.warn(`[email] SMTP sent successfully on fallback port ${fallbackPort}`);
-        return true;
-      }
-      console.warn(`[email] SMTP fallback port ${fallbackPort} returned false`);
-    } catch (err) {
-      console.warn(`[email] SMTP fallback port ${fallbackPort} error: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  // Fallback: individual SMTP secrets (SMTP_USERNAME + SMTP_PASSWORD)
-  if (!env.SMTP_URL && env.SMTP_USERNAME && env.SMTP_PASSWORD) {
-    const domain = from.split('@')[1] || 'devsage.org';
-    const smtpHost = `mail.${domain}`;
-    console.warn(`[email] Trying individual SMTP secrets: ${smtpHost}`);
-
-    // Try 587 STARTTLS first, then 465 direct TLS
-    for (const port of [587, 465]) {
-      try {
-        const config = { host: smtpHost, port, username: env.SMTP_USERNAME, password: env.SMTP_PASSWORD };
-        const sent = await sendSmtp(config, from, to, options.subject, options.html);
-        if (sent) {
-          console.warn(`[email] SMTP (individual) sent on port ${port}`);
-          return true;
-        }
-      } catch (err) {
-        console.warn(`[email] SMTP (individual) port ${port} error: ${err instanceof Error ? err.message : err}`);
-      }
-    }
-  }
-
-  // Fallback to Resend
-  if (env.RESEND_API_KEY) {
-    console.warn('[email] Trying Resend API fallback');
-    return sendViaResend(
-      env.RESEND_API_KEY,
-      env.EMAIL_FROM,
-      to,
-      options.subject,
-      options.html,
-    );
-  }
-
-  console.warn(
-    '[email] No email transport succeeded — set SMTP_URL or RESEND_API_KEY secret',
-  );
-  return false;
-}
-
-// ── Resend (fallback) ──────────────────────────────────────────────
-
-async function sendViaResend(
-  apiKey: string,
-  from: string,
-  to: string[],
-  subject: string,
-  html: string,
-): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), RESEND_TIMEOUT);
-
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ from, to, subject, html }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        console.warn(`Resend error: ${res.status} ${await res.text()}`);
-        return false;
-      }
-      return true;
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (err) {
-    console.warn(
-      `Resend failed: ${err instanceof Error ? err.message : err}`,
-    );
+  if (!env.SMTP_URL) {
+    console.warn('[email] SMTP_URL not configured — cannot send email');
     return false;
   }
+
+  if (!env.SMTP_USERNAME || !env.SMTP_PASSWORD) {
+    console.warn('[email] SMTP_USERNAME or SMTP_PASSWORD not set — cannot send email');
+    return false;
+  }
+
+  // Parse host/port from URL, use separate username/password
+  const parsed = parseSmtpUrl(env.SMTP_URL);
+  const config: SmtpConfig = {
+    host: parsed.host,
+    port: parsed.port,
+    username: env.SMTP_USERNAME,
+    password: env.SMTP_PASSWORD,
+  };
+
+  console.warn(`[email] SMTP config: host=${config.host} port=${config.port} user=${config.username}`);
+
+  // Try the configured port first
+  try {
+    const sent = await sendSmtp(config, from, to, options.subject, options.html);
+    if (sent) {
+      console.warn(`[email] SMTP sent successfully on port ${config.port}`);
+      return true;
+    }
+    console.warn(`[email] SMTP port ${config.port} returned false`);
+  } catch (err) {
+    console.warn(`[email] SMTP port ${config.port} error: ${err instanceof Error ? err.message : err}`);
+  }
+
+  // Fallback: try the other port (587↔465)
+  const fallbackPort = config.port === 587 ? 465 : 587;
+  console.warn(`[email] Trying fallback port ${fallbackPort}`);
+  try {
+    const sent = await sendSmtp({ ...config, port: fallbackPort }, from, to, options.subject, options.html);
+    if (sent) {
+      console.warn(`[email] SMTP sent successfully on fallback port ${fallbackPort}`);
+      return true;
+    }
+    console.warn(`[email] SMTP fallback port ${fallbackPort} returned false`);
+  } catch (err) {
+    console.warn(`[email] SMTP fallback port ${fallbackPort} error: ${err instanceof Error ? err.message : err}`);
+  }
+
+  console.warn('[email] All SMTP attempts failed');
+  return false;
 }

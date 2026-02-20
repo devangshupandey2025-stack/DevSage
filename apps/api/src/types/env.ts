@@ -14,10 +14,9 @@ export interface AppEnv {
     // Secrets
     JWT_SECRET: string;
     GITHUB_WEBHOOK_SECRET: string;
-    RESEND_API_KEY: string;
-    SMTP_URL?: string;
-    SMTP_USERNAME?: string;
-    SMTP_PASSWORD?: string;
+    SMTP_URL: string;
+    SMTP_USERNAME: string;
+    SMTP_PASSWORD: string;
     SMTP_EMAIL_ADDR?: string;
     GEMINI_API_KEY?: string;
     GITHUB_CLIENT_ID?: string;
