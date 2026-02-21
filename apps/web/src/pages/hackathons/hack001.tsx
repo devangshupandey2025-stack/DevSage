@@ -25,7 +25,7 @@ export default function Hack001Page({ hackathon }: { hackathon: any }) {
 
         {/* Back Button */}
         <Link
-          to="/dashboard"
+          to="/hackathons"
           className="inline-flex items-center gap-2 mb-10 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-105"
           style={{
             background: `${accent}22`,

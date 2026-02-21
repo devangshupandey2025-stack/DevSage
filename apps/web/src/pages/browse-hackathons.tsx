@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { apiRequest } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -88,36 +87,34 @@ export function BrowseHackathonsPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {filtered.map((h) => (
-              <Link key={h.id} to={`/hackathons/${h.slug}`}>
-                <Card className="h-full border-white/10 bg-white/5 transition hover:border-[#CCFF00]/20 hover:bg-white/[0.07]">
-                  <CardContent className="flex h-full flex-col justify-between pt-6">
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <h2 className="text-lg font-semibold text-white">{h.name}</h2>
-                        <Badge className={statusColors[h.status] ?? 'bg-white/10 text-white/60'}>
-                          {h.status}
-                        </Badge>
-                      </div>
-                      {h.tagline && (
-                        <p className="mt-2 text-sm text-white/50">{h.tagline}</p>
-                      )}
+              <Card key={h.id} className="h-full border-white/10 bg-white/5">
+                <CardContent className="flex h-full flex-col justify-between pt-6">
+                  <div>
+                    <div className="flex items-start justify-between">
+                      <h2 className="text-lg font-semibold text-white">{h.name}</h2>
+                      <Badge className={statusColors[h.status] ?? 'bg-white/10 text-white/60'}>
+                        {h.status}
+                      </Badge>
                     </div>
-                    <div className="mt-4 flex items-center gap-4 text-xs text-white/40">
-                      {h.starts_at && (
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {new Date(h.starts_at).toLocaleDateString()}
-                        </span>
-                      )}
-                      {h.registration_open && (
-                        <Badge className="bg-[#CCFF00]/10 text-[#CCFF00] text-xs">
-                          Registration Open
-                        </Badge>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                    {h.tagline && (
+                      <p className="mt-2 text-sm text-white/50">{h.tagline}</p>
+                    )}
+                  </div>
+                  <div className="mt-4 flex items-center gap-4 text-xs text-white/40">
+                    {h.starts_at && (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {new Date(h.starts_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {h.registration_open && (
+                      <Badge className="bg-[#CCFF00]/10 text-[#CCFF00] text-xs">
+                        Registration Open
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}

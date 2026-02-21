@@ -11,43 +11,13 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = apiOrigin ? `${apiOrigin}${path}` : path;
 
-  const isAuthCheck = endpoint === '/auth/me' || endpoint === 'auth/me';
-  const isAuthRefresh = endpoint === '/auth/refresh' || endpoint === 'auth/refresh';
-
-  let response = await fetch(url, {
+  const response = await fetch(url, {
     ...options,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
   });
-
-  // Silent token refresh on 401
-  if (response.status === 401 && !isAuthCheck && !isAuthRefresh) {
-    const refreshUrl = apiOrigin ? `${apiOrigin}/auth/refresh` : '/auth/refresh';
-    const refreshRes = await fetch(refreshUrl, {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    if (refreshRes.ok) {
-      response = await fetch(url, {
-        ...options,
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
-    } else {
-      const currentPath = window.location.pathname;
-      if (currentPath !== '/login' && currentPath !== '/') {
-        window.location.href = '/login';
-      }
-      throw new ApiError(401, 'Unauthorized');
-    }
-  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

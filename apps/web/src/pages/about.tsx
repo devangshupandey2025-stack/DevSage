@@ -95,9 +95,9 @@ export function AboutPage() {
         <p className="mb-8 text-muted-foreground">
           Join the community and start building your next big project today.
         </p>
-        <Link to="/dashboard">
+        <Link to="/hackathons">
           <Button size="lg" className="px-8">
-            Go to Dashboard
+            Browse Hackathons
           </Button>
         </Link>
       </div>
