@@ -30,10 +30,9 @@ src/
 │   ├── dashboard-layout.tsx
 │   └── protected-route.tsx  # Auth + organizer role check
 ├── contexts/
-│   └── auth-context.tsx  # useAuth() — better-auth session + role-enriched JWT
+│   └── auth-context.tsx  # useAuth() — API cookie auth via /auth/me
 ├── lib/
-│   ├── api.ts            # apiRequest<T>() — Bearer token from auth, 401 auto-refresh
-│   ├── auth-client.ts    # better-auth/react client (signIn, signUp, signOut, useSession)
+│   ├── api.ts            # apiRequest<T>() — credentials: include, 401->/auth/refresh retry
 │   ├── queries.ts        # React Query factories + TypeScript types for all entities
 │   └── utils.ts          # cn() utility
 └── pages/                # 21 page components (direct imports, no lazy loading)
@@ -41,19 +40,16 @@ src/
 
 ## Key Patterns
 
-### Auth (better-auth + Bearer Token)
-- `lib/auth-client.ts` creates a `better-auth/react` client pointing at `VITE_AUTH_URL` (default `http://localhost:8788`)
-- Plugins: `twoFactorClient`, `passkeyClient`, `magicLinkClient`
-- Exports: `signIn`, `signUp`, `signOut`, `useSession`
-- `AuthProvider` gets session via `authClient.getSession()`, then calls `GET {AUTH_URL}/token` to get a role-enriched JWT
-- JWT payload decoded client-side to extract `isPlatformAdmin`, `isOrganizer`, `hackathonRoles`, `workspaceRoles`
-- `setTokenGetter(refreshToken)` wires the token getter into `apiRequest()` for automatic Bearer header injection
+### Auth (API Cookie Sessions)
+- Login calls API `/auth/login` and receives HttpOnly cookies.
+- `AuthProvider` loads `GET /auth/me`, and logout uses `POST /auth/logout`.
+- Role/access state is server-derived; no client token getter or JWT decoding.
 
 ### API Client (`lib/api.ts`)
-- `apiRequest<T>()` calls `_getToken()` before each request to get/refresh the Bearer token
-- On 401: calls `_getToken()` again (refreshes from auth worker), retries
+- `apiRequest<T>()` sends `credentials: 'include'` with each request
+- On 401: calls `POST /auth/refresh`, then retries
 - Uses `VITE_API_URL` or `VITE_API_ORIGIN` for API base URL
-- No cookies — pure Bearer token auth
+- Cookie-based auth only
 
 ### Routing
 React Router v7, no lazy loading. Routes nest under `ProtectedRoute` → `AppLayout`. Most are hackathon-scoped: `/hackathons/:slug/*`.
@@ -82,5 +78,4 @@ Proxies `/api/v1`, `/auth` → `http://localhost:8787`.
 `@/` maps to `./src/`.
 
 ## Environment Variables
-- `VITE_AUTH_URL` — Auth worker URL (default `http://localhost:8788`)
 - `VITE_API_URL` / `VITE_API_ORIGIN` — API worker URL

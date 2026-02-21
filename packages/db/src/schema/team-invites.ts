@@ -1,7 +1,7 @@
 import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { teams } from './teams.js';
-import { user } from './auth-user.js';
+import { users } from './users.js';
 
 export const teamInvites = sqliteTable('team_invites', {
   id: text('id').primaryKey(),
@@ -9,7 +9,7 @@ export const teamInvites = sqliteTable('team_invites', {
   email: text('email').notNull(),
   invite_token: text('invite_token').notNull().unique(),
   status: text('status').notNull().default('pending'),
-  invited_by: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+  invited_by: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
   created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
   expires_at: text('expires_at').notNull(),
 }, (table) => ({

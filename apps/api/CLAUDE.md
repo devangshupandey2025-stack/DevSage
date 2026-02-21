@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Package: @devsage/api
 
-Cloudflare Worker serving the DevSage business API — Hono routes, Durable Objects, Queue consumers, and Cron handlers. Stateless auth: verifies Bearer JWTs issued by the auth worker. All D1 writes are mediated through the Worker (never directly from DOs).
+Cloudflare Worker serving the DevSage business API — Hono routes, auth routes, Durable Objects, Queue consumers, and Cron handlers. Auth is API-hosted and cookie-based (`/auth/*`) with JWT access tokens + rotating refresh tokens. All D1 writes are mediated through the Worker (never directly from DOs).
 
 ## Commands
 
@@ -24,7 +24,7 @@ src/
 ├── index.ts              # Hono app — mounts routes, exports fetch/queue/scheduled + DO re-export
 ├── types/env.ts          # AppEnv — Bindings (DB, KV, DO, Queues) + Variables (user, role, hackathon)
 ├── middleware/            # Global + per-route middleware
-├── routes/               # 14 Hono route files (no auth routes — handled by apps/auth)
+├── routes/               # Hono route files including /auth endpoints
 ├── lib/                  # Shared utilities (response helpers, audit, etag, webhook-normalize, etc.)
 ├── services/             # External integrations (GitHub, SMTP, email, judging)
 ├── queue/                # Queue dispatcher + handlers (push, tag, installation, notification)
@@ -35,11 +35,11 @@ src/
 
 ## Key Patterns
 
-### Auth (Stateless JWT Verification)
-No auth routes in this worker. The `optionalAuth` middleware extracts `Authorization: Bearer <token>`, verifies the HS256 signature via `crypto.subtle`, and populates `c.set('user', ...)` with `UserContext` (id, email, name, image, platformAdmin, hackathonRoles, workspaceRoles). Roles are embedded in the JWT by the auth worker — no per-request DB lookup needed.
+### Auth (API-Hosted Cookie Sessions)
+`routes/auth.ts` handles register/login/oauth/refresh/logout/me flows. `optionalAuth` reads the `access_token` cookie, verifies HS256 signature via `crypto.subtle`, and populates `c.set('user', ...)` after DB-backed role hydration.
 
 ### Middleware Chain (applied in order)
-CORS → Request ID → optionalAuth (JWT from header) → errorHandler → per-route: `requireRole(minRole)` or `requirePlatformAdmin`
+CORS → Request ID → optionalAuth (JWT from cookie) → errorHandler → per-route: `requireRole(minRole)` or `requirePlatformAdmin`
 
 ### Route Mounting
 All hackathon routes use slug-based addressing: `/api/v1/hackathons/:slug/...`. Webhooks at `/webhooks`. Mount new routes in `src/index.ts` via `app.route()`.
@@ -78,7 +78,6 @@ All bindings in `wrangler.jsonc` (never `.toml`). Never run wrangler from repo r
 - **DO**: `HACKATHON_SM` (HackathonStateMachine class)
 - **Queues**: `WEBHOOK_QUEUE`, `NOTIFICATION_QUEUE` (max batch: 10, max retries: 3)
 - **Cron**: `0 * * * *`
-- **AUTH_URL**: Points to auth worker for session validation
 - Update `types/env.ts` whenever bindings change
 
 ## Testing

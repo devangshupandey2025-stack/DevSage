@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
@@ -7,6 +7,16 @@ import { hackathonContext } from '../middleware/hackathon.js';
 import { generateInviteCode } from '../lib/utils.js';
 
 const teams = new Hono<AppEnv>();
+
+async function isHackathonOrganizer(c: Context<AppEnv>, hackathonId: string, userId: string): Promise<boolean> {
+  const organizerRole = await c.env.DB.prepare(
+    `SELECT id
+     FROM organizer_roles
+     WHERE hackathon_id = ? AND user_id = ? AND role IN ('organizer', 'co_organizer')
+     LIMIT 1`,
+  ).bind(hackathonId, userId).first<{ id: string }>();
+  return !!organizerRole;
+}
 
 // All routes need hackathon context
 teams.use('/*', hackathonContext);
@@ -29,9 +39,9 @@ teams.get('/me', authMiddleware, async (c) => {
 
   const members = await c.env.DB.prepare(`
     SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
-           u.name, u.email, u.image
+           u.name, u.email, u.avatar_url as image
     FROM team_members tm
-    JOIN user u ON tm.user_id = u.id
+    JOIN users u ON tm.user_id = u.id
     WHERE tm.team_id = ?
     ORDER BY tm.joined_at ASC
   `).bind(membership.id).all();
@@ -149,9 +159,9 @@ teams.get('/:teamId/members', async (c) => {
 
   const members = await c.env.DB.prepare(`
     SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
-           u.name, u.email, u.image
+           u.name, u.email, u.avatar_url as image
     FROM team_members tm
-    JOIN user u ON tm.user_id = u.id
+    JOIN users u ON tm.user_id = u.id
     WHERE tm.team_id = ?
     ORDER BY tm.joined_at ASC
   `).bind(teamId).all();
@@ -246,10 +256,7 @@ teams.patch('/:teamId', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    // Check if organizer via JWT hackathon roles
-    const slug = c.get('hackathon')?.slug;
-    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
-    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
+    const isOrg = await isHackathonOrganizer(c, hackathon.id, user.id);
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can update team');
     }
@@ -291,10 +298,7 @@ teams.delete('/:teamId/members/:userId', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    // Check if organizer via JWT hackathon roles
-    const slug = c.get('hackathon')?.slug;
-    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
-    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
+    const isOrg = await isHackathonOrganizer(c, hackathon.id, user.id);
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can remove members');
     }
@@ -423,10 +427,7 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
   ).bind(teamId, user.id, 'leader').first();
 
   if (!isLead) {
-    // Check if organizer via JWT hackathon roles
-    const slug = c.get('hackathon')?.slug;
-    const roles = slug ? (user.hackathonRoles[slug] || []) : [];
-    const isOrg = roles.includes('organizer') || roles.includes('co_organizer');
+    const isOrg = await isHackathonOrganizer(c, hackathon.id, user.id);
     if (!isOrg) {
       return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead or organizers can dissolve team');
     }

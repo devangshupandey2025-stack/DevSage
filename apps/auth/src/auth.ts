@@ -22,10 +22,67 @@ export function createAuth(env: AuthEnv['Bindings']) {
         verification: schema.verification,
         twoFactor: schema.twoFactor,
         passkey: schema.passkey,
+        jwks: schema.jwks,
       },
     }),
     emailAndPassword: {
       enabled: true,
+      password: {
+        // Use PBKDF2 via Web Crypto API — hardware-accelerated on Cloudflare Workers.
+        // Default scrypt (N:16384, r:16) exceeds Workers CPU time limits.
+        hash: async (password: string): Promise<string> => {
+          const salt = crypto.getRandomValues(new Uint8Array(16));
+          const encoder = new TextEncoder();
+          const keyMaterial = await crypto.subtle.importKey(
+            'raw',
+            encoder.encode(password),
+            'PBKDF2',
+            false,
+            ['deriveBits'],
+          );
+          const derived = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+            keyMaterial,
+            256,
+          );
+          const saltHex = [...salt].map((b) => b.toString(16).padStart(2, '0')).join('');
+          const hashHex = [...new Uint8Array(derived)]
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+          return `pbkdf2:100000:${saltHex}:${hashHex}`;
+        },
+        verify: async ({
+          hash,
+          password,
+        }: {
+          hash: string;
+          password: string;
+        }): Promise<boolean> => {
+          if (!hash.startsWith('pbkdf2:')) return false;
+          const [, iterStr, saltHex, keyHex] = hash.split(':');
+          const iterations = parseInt(iterStr, 10);
+          const salt = new Uint8Array(
+            saltHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)),
+          );
+          const encoder = new TextEncoder();
+          const keyMaterial = await crypto.subtle.importKey(
+            'raw',
+            encoder.encode(password),
+            'PBKDF2',
+            false,
+            ['deriveBits'],
+          );
+          const derived = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+            keyMaterial,
+            256,
+          );
+          const derivedHex = [...new Uint8Array(derived)]
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+          return derivedHex === keyHex;
+        },
+      },
     },
     socialProviders: {
       github: {

@@ -1,12 +1,19 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { authClient } from '../lib/auth-client';
-import { setTokenGetter } from '../lib/api';
+import { apiRequest } from '../lib/api';
 
 interface User {
   id: string;
   email: string;
   name: string;
   image: string | null;
+}
+
+interface AuthMeData {
+  user: User;
+  isPlatformAdmin: boolean;
+  isOrganizer: boolean;
+  hackathonRoles: Record<string, string[]>;
+  workspaceRoles: Record<string, string>;
 }
 
 interface AuthContextType {
@@ -26,7 +33,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [token] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [isOrganizer, setIsOrganizer] = useState(false);
@@ -35,64 +42,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshToken = useCallback(async (): Promise<string | null> => {
     try {
-      const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
-      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      setToken(data.token);
-
-      // Decode JWT payload to extract roles (no verification needed on client)
-      const payload = JSON.parse(atob(data.token.split('.')[1]));
-      setIsPlatformAdmin(!!payload.platformAdmin);
-      setHackathonRoles(payload.hackathonRoles || {});
-      setWorkspaceRoles(payload.workspaceRoles || {});
-      setIsOrganizer(
-        Object.values(payload.hackathonRoles || {}).some((roles: any) =>
-          roles.includes('organizer') || roles.includes('co_organizer'),
-        ),
-      );
-
-      return data.token;
+      const response = await apiRequest<{ ok: boolean; data: AuthMeData }>('/auth/me');
+      const data = response.data;
+      setUser(data.user);
+      setIsPlatformAdmin(data.isPlatformAdmin);
+      setIsOrganizer(data.isOrganizer);
+      setHackathonRoles(data.hackathonRoles || {});
+      setWorkspaceRoles(data.workspaceRoles || {});
+      return 'refreshed';
     } catch {
+      setUser(null);
+      setIsPlatformAdmin(false);
+      setIsOrganizer(false);
+      setHackathonRoles({});
+      setWorkspaceRoles({});
       return null;
     }
   }, []);
 
   useEffect(() => {
     async function init() {
-      try {
-        const session = await authClient.getSession();
-        if (session.data?.user) {
-          setUser({
-            id: session.data.user.id,
-            email: session.data.user.email,
-            name: session.data.user.name,
-            image: session.data.user.image || null,
-          });
-          await refreshToken();
-        }
-      } catch {
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
+      await refreshToken();
+      setIsLoading(false);
     }
-    init();
-  }, [refreshToken]);
-
-  useEffect(() => {
-    setTokenGetter(refreshToken);
+    void init();
   }, [refreshToken]);
 
   const logout = useCallback(async () => {
-    await authClient.signOut();
-    setUser(null);
-    setToken(null);
-    setIsPlatformAdmin(false);
-    setIsOrganizer(false);
-    setHackathonRoles({});
-    setWorkspaceRoles({});
-    window.location.href = '/login';
+    try {
+      await apiRequest('/auth/logout', { method: 'POST' });
+    } finally {
+      setUser(null);
+      setIsPlatformAdmin(false);
+      setIsOrganizer(false);
+      setHackathonRoles({});
+      setWorkspaceRoles({});
+      window.location.href = '/login';
+    }
   }, []);
 
   return (

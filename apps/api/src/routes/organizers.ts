@@ -13,8 +13,8 @@ organizers.use('/*', hackathonContext);
 organizers.get('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const orgs = await c.env.DB.prepare(`
-    SELECT o.id, o.user_id, o.role, o.created_at, u.name, u.email, u.image
-    FROM organizer_roles o JOIN user u ON o.user_id = u.id
+    SELECT o.id, o.user_id, o.role, o.created_at, u.name, u.email, u.avatar_url as image
+    FROM organizer_roles o JOIN users u ON o.user_id = u.id
     WHERE o.hackathon_id = ?
     ORDER BY o.created_at ASC
   `).bind(hackathon.id).all();

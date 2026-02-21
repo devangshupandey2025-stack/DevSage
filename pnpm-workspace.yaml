@@ -1,5 +1,9 @@
 packages:
-  - apps/*
+  - apps/api
+  - apps/admin
+  - apps/judge
+  - apps/platform
+  - apps/web
   - packages/*
 
 onlyBuiltDependencies:

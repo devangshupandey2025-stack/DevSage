@@ -90,7 +90,6 @@
     "ADMIN_URL": "https://shikdd.devsage.org",
     "JUDGE_URL": "https://judge.devsage.org",
     "API_URL": "https://api.devsage.org",
-    "AUTH_URL": "https://auth.devsage.org",
     "EMAIL_FROM": "noreply@devsage.org",
     "HACKATHON_ORIGIN_PATTERN": "https://*.hackathon.devsage.org",
     "PAGES_ORIGIN_PATTERN": "https://*.pages.dev",

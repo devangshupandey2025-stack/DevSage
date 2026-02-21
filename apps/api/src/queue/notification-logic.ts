@@ -17,7 +17,7 @@ export async function resolveNotificationRecipients(
       const userId = data?.user_id as string | undefined;
       if (!userId) return [];
       const user = await db
-        .prepare('SELECT id as user_id, email FROM user WHERE id = ?')
+        .prepare('SELECT id as user_id, email FROM users WHERE id = ?')
         .bind(userId)
         .first<Recipient>();
       return user ? [user] : [];
@@ -33,7 +33,7 @@ export async function resolveNotificationRecipients(
       const teamMembers = await db.prepare(`
         SELECT u.id as user_id, u.email
         FROM team_members tm
-        JOIN user u ON tm.user_id = u.id
+        JOIN users u ON tm.user_id = u.id
         WHERE tm.team_id = ?
       `).bind(teamId).all<Recipient>();
 
@@ -49,7 +49,7 @@ export async function resolveNotificationRecipients(
     case 'results.published': {
       // Notify all participants + judges + organizers
       const all = await db.prepare(`
-        SELECT DISTINCT u.id as user_id, u.email FROM user u WHERE u.id IN (
+        SELECT DISTINCT u.id as user_id, u.email FROM users u WHERE u.id IN (
           SELECT user_id FROM organizer_roles WHERE hackathon_id = ?
           UNION
           SELECT user_id FROM judges WHERE hackathon_id = ? AND user_id IS NOT NULL
@@ -65,7 +65,7 @@ export async function resolveNotificationRecipients(
       if (!teamId) return [];
       const members = await db.prepare(`
         SELECT u.id as user_id, u.email
-        FROM team_members tm JOIN user u ON tm.user_id = u.id
+        FROM team_members tm JOIN users u ON tm.user_id = u.id
         WHERE tm.team_id = ?
       `).bind(teamId).all<Recipient>();
       return members.results || [];
@@ -77,7 +77,7 @@ export async function resolveNotificationRecipients(
         SELECT DISTINCT u.id as user_id, u.email
         FROM team_members tm
         JOIN teams t ON tm.team_id = t.id
-        JOIN user u ON tm.user_id = u.id
+        JOIN users u ON tm.user_id = u.id
         WHERE t.hackathon_id = ? AND t.ready = 1
       `).bind(hackathonId).all<Recipient>();
       return members.results || [];
@@ -91,7 +91,7 @@ export async function resolveNotificationRecipients(
 async function getOrganizers(db: D1Database, hackathonId: string): Promise<Recipient[]> {
   const result = await db.prepare(`
     SELECT u.id as user_id, u.email
-    FROM organizer_roles o JOIN user u ON o.user_id = u.id
+    FROM organizer_roles o JOIN users u ON o.user_id = u.id
     WHERE o.hackathon_id = ?
   `).bind(hackathonId).all<Recipient>();
   return result.results || [];

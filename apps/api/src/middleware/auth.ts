@@ -1,50 +1,20 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../types/env.js';
+import { getAccessTokenCookie } from '../lib/cookies.js';
+import { verifyJWT } from '../lib/jwt.js';
 
-function base64urlDecode(str: string): Uint8Array {
-  const padded = str.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(padded);
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-}
-
-async function verifyJWT(
-  token: string,
-  secret: string,
-): Promise<Record<string, unknown> | null> {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const [header, body, sig] = parts;
-
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['verify'],
-  );
-
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    base64urlDecode(sig).buffer as ArrayBuffer,
-    encoder.encode(`${header}.${body}`),
-  );
-  if (!valid) return null;
-
-  const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(body)));
-  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-
-  return payload;
-}
+type RawRoleRow = { slug: string | null; role: string };
+type RawWorkspaceRow = { workspace_id: string; role: string };
 
 /**
- * Global middleware: extracts and validates JWT from Authorization header.
+ * Global middleware: extracts and validates JWT from access_token cookie.
  * Sets c.set('user', ...) on success, c.set('user', null) on failure.
  */
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const cookieToken = getAccessTokenCookie(c);
   const header = c.req.header('Authorization');
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const headerToken = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = cookieToken ?? headerToken;
 
   if (!token) {
     c.set('user', null);
@@ -52,20 +22,120 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   }
 
   const payload = await verifyJWT(token, c.env.JWT_SECRET);
-  if (!payload) {
+  if (!payload?.sub) {
     c.set('user', null);
     return next();
   }
 
+  const payloadWorkspaceRoles = payload.workspaceRoles ?? {};
+  const payloadHackathonRoles = payload.hackathonRoles ?? {};
+  const payloadPlatformAdmin = payload.platformAdmin === true;
+  const payloadEmail = payload.email ?? '';
+  const payloadName = payload.name ?? 'User';
+  const payloadImage = payload.image ?? null;
+
+  // Backward-compatible path for legacy Bearer token callers (tests + transitional clients).
+  if (!cookieToken) {
+    c.set('user', {
+      id: payload.sub,
+      email: payloadEmail,
+      name: payloadName,
+      image: payloadImage,
+      avatar_url: payloadImage,
+      created_at: null,
+      platformAdmin: payloadPlatformAdmin,
+      hackathonRoles: payloadHackathonRoles,
+      workspaceRoles: payloadWorkspaceRoles,
+    });
+    return next();
+  }
+
+  const user = await c.env.DB.prepare(
+    `SELECT id, email, name, display_name, avatar_url, created_at
+     FROM users
+     WHERE id = ?
+     LIMIT 1`,
+  ).bind(payload.sub).first<{
+    id: string;
+    email: string;
+    name: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
+    created_at: string | null;
+  }>();
+
+  if (!user) {
+    c.set('user', null);
+    return next();
+  }
+
+  const [platformAdminRow, workspaceRows, organizerRows, judgeRows, teamRows] = await Promise.all([
+    c.env.DB.prepare(
+      'SELECT id FROM platform_admins WHERE user_id = ? LIMIT 1',
+    ).bind(user.id).first<{ id: string }>(),
+    c.env.DB.prepare(
+      'SELECT workspace_id, role FROM workspace_members WHERE user_id = ?',
+    ).bind(user.id).all<RawWorkspaceRow>(),
+    c.env.DB.prepare(
+      `SELECT h.slug, o.role
+       FROM organizer_roles o
+       JOIN hackathons h ON h.id = o.hackathon_id
+       WHERE o.user_id = ?`,
+    ).bind(user.id).all<RawRoleRow>(),
+    c.env.DB.prepare(
+      `SELECT h.slug, 'judge' AS role
+       FROM judges j
+       JOIN hackathons h ON h.id = j.hackathon_id
+       WHERE j.user_id = ? AND j.invite_status = 'accepted'`,
+    ).bind(user.id).all<RawRoleRow>(),
+    c.env.DB.prepare(
+      `SELECT h.slug, tm.role
+       FROM team_members tm
+       JOIN teams t ON t.id = tm.team_id
+       JOIN hackathons h ON h.id = t.hackathon_id
+       WHERE tm.user_id = ?`,
+    ).bind(user.id).all<RawRoleRow>(),
+  ]);
+
+  const workspaceRoles: Record<string, string> = {};
+  for (const row of workspaceRows.results || []) {
+    workspaceRoles[row.workspace_id] = row.role;
+  }
+
+  const hackathonRoleSets = new Map<string, Set<string>>();
+  const allRoleRows = [
+    ...(organizerRows.results || []),
+    ...(judgeRows.results || []),
+    ...(teamRows.results || []),
+  ];
+
+  for (const row of allRoleRows) {
+    if (!row.slug) continue;
+    if (!hackathonRoleSets.has(row.slug)) {
+      hackathonRoleSets.set(row.slug, new Set());
+    }
+    hackathonRoleSets.get(row.slug)!.add(row.role);
+  }
+
+  const hackathonRoles: Record<string, string[]> = {};
+  for (const [slug, roles] of hackathonRoleSets.entries()) {
+    const existing = new Set(hackathonRoles[slug] || []);
+    for (const role of roles) existing.add(role);
+    hackathonRoles[slug] = [...existing];
+  }
+
   c.set('user', {
-    id: payload.sub as string,
-    email: payload.email as string,
-    name: payload.name as string,
-    image: (payload.image as string) || null,
-    platformAdmin: (payload.platformAdmin as boolean) || false,
-    hackathonRoles: (payload.hackathonRoles || {}) as Record<string, string[]>,
-    workspaceRoles: (payload.workspaceRoles || {}) as Record<string, string>,
+    id: user.id,
+    email: user.email,
+    name: user.name ?? user.display_name ?? user.email,
+    image: user.avatar_url,
+    avatar_url: user.avatar_url,
+    created_at: user.created_at,
+    platformAdmin: !!platformAdminRow,
+    hackathonRoles,
+    workspaceRoles,
   });
+
   return next();
 };
 

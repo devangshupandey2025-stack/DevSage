@@ -1,11 +1,11 @@
 import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { user } from './auth-user.js';
+import { users } from './users.js';
 import { hackathons } from './hackathons.js';
 
 export const inAppNotifications = sqliteTable('in_app_notifications', {
   id: text('id').primaryKey(),
-  user_id: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   hackathon_id: text('hackathon_id').references(() => hackathons.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
   title: text('title').notNull(),

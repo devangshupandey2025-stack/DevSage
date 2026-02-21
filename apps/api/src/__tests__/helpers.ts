@@ -102,6 +102,23 @@ export async function ensureSchema() {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS user_email_unique ON user (email)`,
 
+    // users (custom auth)
+    `CREATE TABLE IF NOT EXISTS users (
+      id text PRIMARY KEY NOT NULL,
+      email text NOT NULL,
+      name text,
+      display_name text,
+      password_hash text,
+      github_id integer,
+      github_username text,
+      google_id text,
+      avatar_url text,
+      created_at text NOT NULL,
+      updated_at text NOT NULL,
+      last_login_at text
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)`,
+
     // account (Better Auth)
     `CREATE TABLE IF NOT EXISTS account (
       id text PRIMARY KEY NOT NULL,
@@ -590,7 +607,7 @@ export async function resetDb() {
     'team_repos', 'pending_installations', 'team_invites', 'team_messages',
     'team_members', 'teams', 'organizer_roles', 'hackathon_rounds',
     'hackathons', 'hackathon_templates', 'workspace_invites',
-    'workspace_members', 'workspaces', 'platform_admins', 'session', 'account', 'user',
+    'workspace_members', 'workspaces', 'platform_admins', 'session', 'account', 'users', 'user',
   ];
   for (const table of tables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
@@ -604,6 +621,10 @@ export async function insertUser(id: string, email: string, name: string = `User
   await env.DB.prepare(
     'INSERT INTO user (id, email, name, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)'
   ).bind(id, email, name, ts, ts).run();
+  await env.DB.prepare(
+    `INSERT INTO users (id, email, name, display_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, email, name, name, now, now).run();
 }
 
 export async function insertWorkspace(id: string, slug: string, createdBy: string, name: string = 'Test Workspace') {

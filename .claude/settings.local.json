@@ -10,7 +10,9 @@
       "Bash(grep:*)",
       "Bash(npx wrangler d1 execute:*)",
       "Bash(timeout 30 npx wrangler tail:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(pnpm --filter @devsage/web exec tsc:*)",
+      "Bash(git status:*)"
     ]
   }
 }

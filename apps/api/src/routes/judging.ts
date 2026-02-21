@@ -97,7 +97,7 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
 
   // If email provided, look up the user
   if (body.email && !targetUserId) {
-    const found = await c.env.DB.prepare('SELECT id FROM user WHERE email = ?').bind(body.email.trim().toLowerCase()).first<{ id: string }>();
+    const found = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(body.email.trim().toLowerCase()).first<{ id: string }>();
     if (!found) return errorResponse(c, 404, 'USER_NOT_FOUND', 'No user found with that email. They must sign up first.');
     targetUserId = found.id;
   }
@@ -200,9 +200,9 @@ judging.get('/judges', async (c) => {
   const hackathon = c.get('hackathon')!;
   const judges = await c.env.DB.prepare(`
     SELECT j.id, j.invite_status as status, j.user_id, j.track_id, j.invited_at, j.responded_at,
-           u.name as display_name, u.email, u.image
+           u.name as display_name, u.email, u.avatar_url as image
     FROM judges j
-    LEFT JOIN user u ON j.user_id = u.id
+    LEFT JOIN users u ON j.user_id = u.id
     WHERE j.hackathon_id = ?
     ORDER BY j.invited_at ASC
   `).bind(hackathon.id).all();

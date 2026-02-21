@@ -1,10 +1,17 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const workspaces = new Hono<AppEnv>();
+
+async function getWorkspaceRole(c: Context<AppEnv>, workspaceId: string, userId: string): Promise<string | null> {
+  const membership = await c.env.DB.prepare(
+    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1',
+  ).bind(workspaceId, userId).first<{ role: string }>();
+  return membership?.role ?? null;
+}
 
 // Create workspace
 workspaces.post('/', authMiddleware, async (c) => {
@@ -69,7 +76,7 @@ workspaces.patch('/:workspaceId', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const workspaceRole = user.workspaceRoles[workspaceId];
+  const workspaceRole = await getWorkspaceRole(c, workspaceId, user.id);
 
   if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
@@ -99,9 +106,9 @@ workspaces.get('/:workspaceId/members', authMiddleware, async (c) => {
   const workspaceId = c.req.param('workspaceId');
   const members = await c.env.DB.prepare(`
     SELECT wm.id, wm.user_id, wm.role, wm.created_at,
-           u.name, u.email, u.image
+           u.name, u.email, u.avatar_url as image
     FROM workspace_members wm
-    JOIN user u ON wm.user_id = u.id
+    JOIN users u ON wm.user_id = u.id
     WHERE wm.workspace_id = ?
     ORDER BY wm.created_at ASC
   `).bind(workspaceId).all();
@@ -113,7 +120,7 @@ workspaces.post('/:workspaceId/invites', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  const workspaceRole = user.workspaceRoles[workspaceId];
+  const workspaceRole = await getWorkspaceRole(c, workspaceId, user.id);
 
   if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
@@ -140,7 +147,7 @@ workspaces.delete('/:workspaceId/members/:userId', authMiddleware, async (c) => 
   const workspaceId = c.req.param('workspaceId');
   const targetId = c.req.param('userId');
 
-  const workspaceRole = user.workspaceRoles[workspaceId];
+  const workspaceRole = await getWorkspaceRole(c, workspaceId, user.id);
 
   if (!workspaceRole || workspaceRole !== 'owner') {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only owner can remove members');

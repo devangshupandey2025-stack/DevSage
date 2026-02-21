@@ -48,9 +48,10 @@ hackathons.post('/', authMiddleware, async (c) => {
     template_id: (raw.template_id ?? raw.templateId) as string | undefined,
   };
 
-  // Verify user is workspace owner or admin via JWT claims
-  const workspaceRole = user.workspaceRoles[workspaceId];
-  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
+  const workspaceMember = await c.env.DB.prepare(
+    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1',
+  ).bind(workspaceId, user.id).first<{ role: string }>();
+  if (!workspaceMember || !['owner', 'admin'].includes(workspaceMember.role)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin of this workspace');
   }
 
@@ -135,9 +136,10 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c)
   const user = c.get('user')!;
   const workspaceId = c.req.param('workspaceId');
 
-  // Verify user is workspace owner or admin via JWT claims
-  const workspaceRole = user.workspaceRoles[workspaceId];
-  if (!workspaceRole || !['owner', 'admin'].includes(workspaceRole)) {
+  const workspaceMember = await c.env.DB.prepare(
+    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1',
+  ).bind(workspaceId, user.id).first<{ role: string }>();
+  if (!workspaceMember || !['owner', 'admin'].includes(workspaceMember.role)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin of this workspace');
   }
 

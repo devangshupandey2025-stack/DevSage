@@ -1,4 +1,4 @@
-﻿const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_ORIGIN || '';
+const API_ORIGIN_RAW = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_ORIGIN) as string | undefined;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -7,56 +7,46 @@ export class ApiError extends Error {
   }
 }
 
-// Token getter — set by AuthProvider
-let _getToken: (() => Promise<string | null>) | null = null;
-
-export function setTokenGetter(getter: () => Promise<string | null>) {
-  _getToken = getter;
-}
-
-export async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {},
-): Promise<T> {
+export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const apiOrigin = API_ORIGIN_RAW ? API_ORIGIN_RAW.replace(/\/$/, '') : undefined;
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = API_URL ? `${API_URL.replace(/\/$/, '')}${path}` : path;
+  const url = apiOrigin ? `${apiOrigin}${path}` : path;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
-  };
+  const isAuthCheck = endpoint === '/auth/me' || endpoint === 'auth/me';
+  const isAuthRefresh = endpoint === '/auth/refresh' || endpoint === 'auth/refresh';
 
-  // Get Bearer token from auth context
-  if (_getToken) {
-    const token = await _getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-  }
-
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...options,
-    headers,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
   });
 
-  if (response.status === 401) {
-    // Token expired — try refreshing
-    if (_getToken) {
-      const newToken = await _getToken();
-      if (newToken) {
-        headers['Authorization'] = `Bearer ${newToken}`;
-        const retry = await fetch(url, { ...options, headers });
-        if (retry.ok) {
-          if (retry.status === 204) return {} as T;
-          return retry.json();
-        }
+  if (response.status === 401 && !isAuthCheck && !isAuthRefresh) {
+    const refreshUrl = apiOrigin ? `${apiOrigin}/auth/refresh` : '/auth/refresh';
+    const refreshRes = await fetch(refreshUrl, {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (refreshRes.ok) {
+      response = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+    } else {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/') {
+        window.location.href = '/login';
       }
+      throw new ApiError(401, 'Unauthorized');
     }
-    const currentPath = window.location.pathname;
-    if (currentPath !== '/login' && currentPath !== '/') {
-      window.location.href = '/login';
-    }
-    throw new ApiError(401, 'Unauthorized');
   }
 
   if (!response.ok) {

@@ -14,11 +14,12 @@ export interface AppEnv {
     GEMINI_API_KEY?: string;
     GITHUB_CLIENT_ID?: string;
     GITHUB_CLIENT_SECRET?: string;
+    GOOGLE_CLIENT_ID?: string;
+    GOOGLE_CLIENT_SECRET?: string;
     NODE_ENV?: string;
     FRONTEND_URL: string;
     PLATFORM_URL: string;
     ADMIN_URL: string;
-    AUTH_URL: string;
     JUDGE_URL: string;
     API_URL: string;
     EMAIL_FROM: string;
@@ -38,6 +39,8 @@ export interface UserContext {
   email: string;
   name: string;
   image: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
   platformAdmin: boolean;
   hackathonRoles: Record<string, string[]>;
   workspaceRoles: Record<string, string>;

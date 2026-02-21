@@ -63,7 +63,7 @@ invites.get('/judge/:id/details', async (c) => {
             u.name as inviter_name
      FROM judges j
      JOIN hackathons h ON j.hackathon_id = h.id
-     LEFT JOIN user u ON j.invited_by = u.id
+     LEFT JOIN users u ON j.invited_by = u.id
      WHERE j.id = ?`
   ).bind(judgeId).first();
 

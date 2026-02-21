@@ -13,13 +13,12 @@ announcements.get('/', async (c) => {
   const hackathon = c.get('hackathon')!;
   try {
     const rows = await c.env.DB.prepare(
-      `SELECT a.*, u.name as author_name, u.image as author_avatar
+      `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
        FROM announcements a
-       LEFT JOIN user u ON a.author_id = u.id
+       LEFT JOIN users u ON a.author_id = u.id
        WHERE a.hackathon_id = ?
        ORDER BY a.pinned DESC, a.created_at DESC`
     ).bind(hackathon.id).all();
-    console.log('[announcements] List fetch:', { hackathonId: hackathon.id, count: rows.results?.length ?? 0 });
     return successResponse(c, rows.results || []);
   } catch (err) {
     console.error('[announcements] List error:', err);
@@ -32,8 +31,6 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
   const hackathon = c.get('hackathon')!;
   const user = c.get('user');
   const role = c.get('role');
-  
-  console.log('[announcements] Create attempt:', { userId: user?.id, role, hackathonId: hackathon.id });
   
   const body = await c.req.json<{
     title: string;
@@ -53,13 +50,12 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
   ).bind(id, hackathon.id, user?.id, body.title, body.content, body.pinned ? 1 : 0, now, now).run();
 
   const created = await c.env.DB.prepare(
-    `SELECT a.*, u.name as author_name, u.image as author_avatar
+    `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
      FROM announcements a
-     LEFT JOIN user u ON a.author_id = u.id
+     LEFT JOIN users u ON a.author_id = u.id
      WHERE a.id = ?`
   ).bind(id).first();
 
-  console.log('[announcements] Created announcement:', created);
   return successResponse(c, created, { status: 201 });
 });
 
@@ -99,9 +95,9 @@ announcements.patch('/:announcementId', authMiddleware, requireRole('co_organize
   await c.env.DB.prepare(`UPDATE announcements SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
   const updated = await c.env.DB.prepare(
-    `SELECT a.*, u.name as author_name, u.image as author_avatar
+    `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
      FROM announcements a
-     LEFT JOIN user u ON a.author_id = u.id
+     LEFT JOIN users u ON a.author_id = u.id
      WHERE a.id = ?`
   ).bind(announcementId).first();
 

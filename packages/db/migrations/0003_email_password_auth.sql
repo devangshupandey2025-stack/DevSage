@@ -96,14 +96,28 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE `users` (
 	`id` text PRIMARY KEY NOT NULL,
 	`email` text NOT NULL,
-	`name` text NOT NULL,
-	`password_hash` text NOT NULL,
+	`name` text,
+	`display_name` text,
+	`password_hash` text,
+	`github_id` integer,
+	`github_username` text,
+	`google_id` text,
 	`avatar_url` text,
+	`email_verified` integer NOT NULL DEFAULT 0,
+	`email_bounced` integer NOT NULL DEFAULT 0,
+	`suspended` integer NOT NULL DEFAULT 0,
+	`suspended_at` text,
+	`suspended_reason` text,
 	`created_at` text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	`updated_at` text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	`last_login_at` text
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `users_email_unique` ON `users` (`email`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `users_github_id_unique` ON `users` (`github_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `users_google_id_unique` ON `users` (`google_id`);
 --> statement-breakpoint
 
 -- 2. pending_installations (no FK deps)
@@ -135,8 +149,12 @@ CREATE TABLE `refresh_tokens` (
 	`user_id` text NOT NULL,
 	`family_id` text NOT NULL,
 	`token_hash` text NOT NULL,
+	`revoked` integer NOT NULL DEFAULT 0,
 	`revoked_at` text,
+	`replaced_by` text,
 	`expires_at` text NOT NULL,
+	`ip_address` text,
+	`user_agent` text,
 	`created_at` text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
 );
@@ -146,6 +164,8 @@ CREATE UNIQUE INDEX `refresh_tokens_token_hash_unique` ON `refresh_tokens` (`tok
 CREATE INDEX `idx_refresh_tokens_user` ON `refresh_tokens` (`user_id`);
 --> statement-breakpoint
 CREATE INDEX `idx_refresh_tokens_family` ON `refresh_tokens` (`family_id`);
+--> statement-breakpoint
+CREATE INDEX `idx_refresh_tokens_expires` ON `refresh_tokens` (`expires_at`);
 --> statement-breakpoint
 
 -- 5. platform_admins (FK: users)

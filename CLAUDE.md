@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DevSage is a GitHub-native hackathon management platform. Edge-native monorepo running on Cloudflare Workers (API + Auth) with three React SPAs (web, platform, admin). Turborepo + pnpm workspaces, TypeScript strict throughout.
+DevSage is a GitHub-native hackathon management platform. Edge-native monorepo running on Cloudflare Workers (API) with frontend SPAs (web, platform, admin, judge). Turborepo + pnpm workspaces, TypeScript strict throughout.
 
 ## Commands
 
@@ -43,7 +43,6 @@ pnpm secrets:staged          # Scan staged files (runs on pre-commit)
 
 ```
 apps/api/          → @devsage/api      — Cloudflare Worker: Hono API + Durable Objects + Queues + Cron
-apps/auth/         → @devsage/auth     — Cloudflare Worker: better-auth service (port 8788)
 apps/web/          → @devsage/web      — devsage.org (port 5173) — public website, participant-facing
 apps/platform/     → @devsage/platform — platform.devsage.org (port 5174) — organizer/judge dashboard
 apps/admin/        → @devsage/admin    — shikdd.devsage.org (port 5175) — platform admin panel
@@ -55,23 +54,23 @@ packages/shared/   → @devsage/shared   — Zod schemas, types, constants (only
 ### Dependency Rules
 
 - Frontend apps (`web`, `platform`, `admin`) import from `@devsage/shared` only — never from `db` or `api`
-- `@devsage/api` and `@devsage/auth` import from `@devsage/shared` and `@devsage/db`
+- `@devsage/api` imports from `@devsage/shared` and `@devsage/db`
 - No circular dependencies, no cross-app imports
 - Participant sites (`{slug}.devsage.org`) are separate repositories
 
-### Auth Architecture (apps/auth + apps/api)
+### Auth Architecture (apps/api)
 
-Two-worker auth pattern:
-- **Auth Worker** (`apps/auth`, port 8788, `auth.devsage.org`): Handles all authentication via `better-auth` — signup, login, OAuth (GitHub/Google), magic links, passkeys, 2FA. Manages sessions in D1. Exposes `GET /token` to issue role-enriched JWTs (15-min expiry)
-- **API Worker** (`apps/api`, port 8787, `api.devsage.org`): Stateless — receives `Authorization: Bearer <token>` header, verifies JWT signature, extracts user + roles from token payload. No auth routes, no session management
+Single-worker auth pattern:
+- **API Worker** (`apps/api`, port 8787, `api.devsage.org`) handles auth and business APIs.
+- Auth routes are served from `/auth/*` (email/password + OAuth + refresh/logout/me).
+- Session model is HttpOnly cookies (`access_token`, `refresh_token`) with refresh-token rotation.
+- User roles are resolved server-side from DB each request.
 
-Frontend auth flow (platform/admin):
-1. `better-auth/react` client handles login/signup against auth worker
-2. On session established, frontend calls `GET auth.devsage.org/token` to get a role-enriched JWT
-3. `apiRequest()` attaches JWT as `Authorization: Bearer` header on every API call
-4. On 401, token is refreshed automatically via `refreshToken()` callback
-
-Note: `apps/web` still uses cookie-based auth with `/auth/me` and `/auth/refresh` (migration pending)
+Frontend auth flow (web/platform/admin/judge):
+1. Login calls `POST /auth/login` (or OAuth start routes).
+2. API sets auth cookies.
+3. App bootstrap calls `GET /auth/me`.
+4. API requests use `credentials: 'include'`; on 401, clients call `POST /auth/refresh` then retry.
 
 ### API Architecture (apps/api)
 
@@ -92,8 +91,7 @@ Note: `apps/web` still uses cookie-based auth with `/auth/me` and `/auth/refresh
 - React 18 + Vite + Tailwind CSS v4 + shadcn/ui + React Router + TanStack Query
 - Path alias: `@/` → `./src/`
 - Vite dev proxy forwards `/api/v1` → `http://localhost:8787`
-- Platform/admin: `better-auth/react` client (`lib/auth-client.ts`) + Bearer token via `apiRequest()`
-- Web: cookie-based auth with `credentials: 'include'` (legacy, migration pending)
+- Platform/admin/judge/web: cookie-based auth with `credentials: 'include'` via API-hosted `/auth/*`
 
 ## Testing
 
@@ -106,9 +104,9 @@ Note: `apps/web` still uses cookie-based auth with `/auth/me` and `/auth/refresh
 
 - Node.js >= 20 (`.nvmrc`: 20)
 - pnpm workspaces (see `pnpm-workspace.yaml`)
-- API dev secrets go in `apps/api/.dev.vars`, auth secrets in `apps/auth/.dev.vars` (gitignored)
+- API dev secrets go in `apps/api/.dev.vars` (gitignored)
 - `pnpm dev` auto-resets local D1 database with seed accounts
-- Production: API at `api.devsage.org`, Auth at `auth.devsage.org`
+- Production: API at `api.devsage.org`
 
 ## Conventions
 
@@ -129,7 +127,7 @@ Note: `apps/web` still uses cookie-based auth with `/auth/me` and `/auth/refresh
 - `console.log` — use `console.warn`/`console.error`
 - Organizer features in `apps/web` — those belong in `apps/platform`
 - SQLite-backed DOs only (`new_sqlite_classes`) — no legacy KV-backed DOs
-- Auth routes in `apps/api` — all auth is handled by `apps/auth` via better-auth
+- Bearer-only auth assumptions in frontend/API middleware
 
 ## Git Hooks
 
@@ -142,11 +140,11 @@ Note: `apps/web` still uses cookie-based auth with `/auth/me` and `/auth/refresh
 | Task | Location |
 |------|----------|
 | Add API route | `apps/api/src/routes/`, mount in `src/index.ts` via `app.route()` |
-| Add auth feature | `apps/auth/src/auth.ts` (better-auth config) |
+| Add auth feature | `apps/api/src/routes/auth.ts` + `apps/api/src/lib/*auth*` |
 | Add Durable Object | `apps/api/src/durable-objects/`, re-export from `src/index.ts` |
 | Add queue handler | `apps/api/src/queue/`, wire in `queue/index.ts` dispatcher |
 | Add DB table | `packages/db/src/schema/`, re-export from `schema/index.ts`, run `drizzle-kit generate` |
 | Add Zod schema | `packages/shared/src/schemas/`, re-export from `src/index.ts` with `.js` extension |
-| Change Worker bindings | `apps/api/wrangler.jsonc` or `apps/auth/wrangler.jsonc` + update `types/env.ts` |
+| Change Worker bindings | `apps/api/wrangler.jsonc` + update `types/env.ts` |
 | Change tsconfig | `packages/config/` (base, react, worker variants) |
 | Change ESLint | `packages/config/eslint.config.mjs` (flat config, ESLint 9+) |

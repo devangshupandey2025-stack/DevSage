@@ -45,11 +45,10 @@ src/
 
 ## Key Patterns
 
-### Auth (Cookie-Based — Legacy)
-Unlike platform/admin which use better-auth client + Bearer tokens, web still uses cookie-based auth:
+### Auth (Cookie-Based)
+- Web follows the same API-hosted cookie auth model as platform/admin/judge:
 - `AuthProvider` calls `GET /auth/me` on mount with `credentials: 'include'`
 - `apiRequest()` sends cookies, on 401 tries `POST /auth/refresh`, retries original request
-- No `auth-client.ts` — migration to better-auth pending
 
 ### Routing
 React Router v7 with `createBrowserRouter`. All pages use `lazy()` + dynamic `import()` for code splitting. Protected routes wrap with `ProtectedRoute` → `DashboardLayout` → `Outlet`.

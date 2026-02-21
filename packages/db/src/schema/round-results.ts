@@ -2,7 +2,7 @@ import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-or
 import { hackathons } from './hackathons.js';
 import { hackathonRounds } from './hackathon-rounds.js';
 import { teams } from './teams.js';
-import { user } from './auth-user.js';
+import { users } from './users.js';
 
 export const roundResults = sqliteTable('round_results', {
   id: text('id').primaryKey(),
@@ -12,7 +12,7 @@ export const roundResults = sqliteTable('round_results', {
   status: text('status').notNull(),
   rank: integer('rank'),
   total_score: real('total_score'),
-  decided_by: text('decided_by').references(() => user.id),
+  decided_by: text('decided_by').references(() => users.id),
   created_at: text('created_at').notNull(),
 }, (table) => ({
   roundTeamUniq: uniqueIndex('round_results_round_team_idx').on(table.round_id, table.team_id),

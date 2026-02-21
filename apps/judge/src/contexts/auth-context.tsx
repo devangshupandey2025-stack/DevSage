@@ -1,12 +1,17 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { authClient } from '../lib/auth-client';
-import { setTokenGetter } from '../lib/api';
+import { apiRequest } from '../lib/api';
 
 interface User {
   id: string;
   email: string;
   name: string;
   image: string | null;
+}
+
+interface AuthMeData {
+  user: User;
+  isJudge: boolean;
+  hackathonRoles: Record<string, string[]>;
 }
 
 interface AuthContextType {
@@ -24,67 +29,44 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [token] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isJudge, setIsJudge] = useState(false);
   const [hackathonRoles, setHackathonRoles] = useState<Record<string, string[]>>({});
 
   const refreshToken = useCallback(async (): Promise<string | null> => {
     try {
-      const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8788';
-      const res = await fetch(`${authUrl}/token`, { credentials: 'include' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      setToken(data.token);
-
-      // Decode JWT payload to extract roles
-      const payload = JSON.parse(atob(data.token.split('.')[1]));
-      setHackathonRoles(payload.hackathonRoles || {});
-      setIsJudge(
-        Object.values(payload.hackathonRoles || {}).some((roles: any) =>
-          roles.includes('judge'),
-        ),
-      );
-
-      return data.token;
+      const response = await apiRequest<{ ok: boolean; data: AuthMeData }>('/auth/me');
+      const data = response.data;
+      setUser(data.user);
+      setIsJudge(data.isJudge);
+      setHackathonRoles(data.hackathonRoles || {});
+      return 'refreshed';
     } catch {
+      setUser(null);
+      setIsJudge(false);
+      setHackathonRoles({});
       return null;
     }
   }, []);
 
   useEffect(() => {
     async function init() {
-      try {
-        const session = await authClient.getSession();
-        if (session.data?.user) {
-          setUser({
-            id: session.data.user.id,
-            email: session.data.user.email,
-            name: session.data.user.name,
-            image: session.data.user.image || null,
-          });
-          await refreshToken();
-        }
-      } catch {
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
+      await refreshToken();
+      setIsLoading(false);
     }
-    init();
-  }, [refreshToken]);
-
-  useEffect(() => {
-    setTokenGetter(refreshToken);
+    void init();
   }, [refreshToken]);
 
   const logout = useCallback(async () => {
-    await authClient.signOut();
-    setUser(null);
-    setToken(null);
-    setIsJudge(false);
-    setHackathonRoles({});
-    window.location.href = '/login';
+    try {
+      await apiRequest('/auth/logout', { method: 'POST' });
+    } finally {
+      setUser(null);
+      setIsJudge(false);
+      setHackathonRoles({});
+      window.location.href = '/login';
+    }
   }, []);
 
   return (

@@ -1,10 +1,7 @@
-// Better Auth tables
-export { user } from './auth-user.js';
-export { session } from './auth-session.js';
-export { account } from './auth-account.js';
-export { verification } from './auth-verification.js';
-export { twoFactor } from './auth-two-factor.js';
-export { passkey } from './auth-passkey.js';
+// Auth tables
+export { users } from './users.js';
+export { refreshTokens } from './refresh-tokens.js';
+export { deletionRequests } from './deletion-requests.js';
 
 // Business tables
 export { platformAdmins } from './platform-admins.js';
