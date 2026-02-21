@@ -12,7 +12,10 @@
       "Bash(timeout 30 npx wrangler tail:*)",
       "Bash(ls:*)",
       "Bash(pnpm --filter @devsage/web exec tsc:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(pnpm --filter @devsage/db run generate:*)",
+      "Bash(kill %%)",
+      "Bash(pnpm --filter @devsage/api test:*)"
     ]
   }
 }

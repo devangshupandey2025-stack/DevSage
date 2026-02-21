@@ -23,11 +23,10 @@ export async function upsertGitHubUser(
   if (existing) {
     await env.DB.prepare(
       `UPDATE users
-       SET github_username = ?, display_name = ?, name = ?, email = ?, avatar_url = ?, last_login_at = ?, updated_at = ?
+       SET github_username = ?, name = ?, email = ?, avatar_url = ?, last_login_at = ?, updated_at = ?
        WHERE id = ?`,
     ).bind(
       profile.githubUsername,
-      profile.displayName,
       profile.displayName,
       profile.email,
       profile.avatarUrl,
@@ -46,13 +45,12 @@ export async function upsertGitHubUser(
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO users
-      (id, github_id, github_username, display_name, name, email, avatar_url, last_login_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, github_id, github_username, name, email, avatar_url, last_login_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id,
     profile.githubId,
     profile.githubUsername,
-    profile.displayName,
     profile.displayName,
     profile.email ?? `${profile.githubUsername}@users.noreply.github.com`,
     profile.avatarUrl,
@@ -89,11 +87,10 @@ export async function linkGoogleToUser(
   const now = new Date().toISOString();
   await env.DB.prepare(
     `UPDATE users
-     SET google_id = ?, display_name = ?, name = ?, avatar_url = ?, last_login_at = ?, updated_at = ?
+     SET google_id = ?, name = ?, avatar_url = ?, last_login_at = ?, updated_at = ?
      WHERE id = ?`,
   ).bind(
     profile.googleId,
-    profile.displayName,
     profile.displayName,
     profile.avatarUrl ?? existing.avatar_url,
     now,

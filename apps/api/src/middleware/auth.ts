@@ -51,7 +51,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   }
 
   const user = await c.env.DB.prepare(
-    `SELECT id, email, name, display_name, avatar_url, created_at
+    `SELECT id, email, name, avatar_url, created_at
      FROM users
      WHERE id = ?
      LIMIT 1`,
@@ -59,7 +59,6 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     id: string;
     email: string;
     name: string | null;
-    display_name: string | null;
     avatar_url: string | null;
     created_at: string | null;
   }>();
@@ -127,7 +126,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('user', {
     id: user.id,
     email: user.email,
-    name: user.name ?? user.display_name ?? user.email,
+    name: user.name ?? user.email,
     image: user.avatar_url,
     avatar_url: user.avatar_url,
     created_at: user.created_at,

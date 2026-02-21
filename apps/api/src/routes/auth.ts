@@ -161,9 +161,9 @@ auth.post('/register', async (c) => {
   const passwordHash = await hashPassword(password);
 
   await c.env.DB.prepare(
-    `INSERT INTO users (id, email, name, display_name, password_hash, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(id, email, name, name, passwordHash, now, now).run();
+    `INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(id, email, name, passwordHash, now, now).run();
 
   await issueSessionCookies(c, { id, github_id: null, github_username: null });
 
@@ -190,7 +190,7 @@ auth.post('/login', async (c) => {
   }
 
   const user = await c.env.DB.prepare(
-    `SELECT id, email, name, display_name, password_hash, avatar_url, github_id, github_username
+    `SELECT id, email, name, password_hash, avatar_url, github_id, github_username
      FROM users
      WHERE email = ?
      LIMIT 1`,
@@ -198,7 +198,6 @@ auth.post('/login', async (c) => {
     id: string;
     email: string;
     name: string | null;
-    display_name: string | null;
     password_hash: string | null;
     avatar_url: string | null;
     github_id: number | null;
@@ -244,7 +243,7 @@ auth.post('/login', async (c) => {
   return successResponse(c, {
     id: user.id,
     email: user.email,
-    name: user.name ?? user.display_name ?? user.email,
+    name: user.name ?? user.email,
     avatar_url: user.avatar_url,
   });
 });

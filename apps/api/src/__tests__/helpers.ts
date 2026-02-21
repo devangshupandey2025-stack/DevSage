@@ -107,7 +107,6 @@ export async function ensureSchema() {
       id text PRIMARY KEY NOT NULL,
       email text NOT NULL,
       name text,
-      display_name text,
       password_hash text,
       github_id integer,
       github_username text,
@@ -622,9 +621,9 @@ export async function insertUser(id: string, email: string, name: string = `User
     'INSERT INTO user (id, email, name, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)'
   ).bind(id, email, name, ts, ts).run();
   await env.DB.prepare(
-    `INSERT INTO users (id, email, name, display_name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(id, email, name, name, now, now).run();
+    `INSERT INTO users (id, email, name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).bind(id, email, name, now, now).run();
 }
 
 export async function insertWorkspace(id: string, slug: string, createdBy: string, name: string = 'Test Workspace') {
