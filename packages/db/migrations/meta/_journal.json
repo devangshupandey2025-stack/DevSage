@@ -5,15 +5,50 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1771718400000,
-      "tag": "0000_schema",
+      "when": 1770739337950,
+      "tag": "0000_whole_paibok",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1771718400100,
-      "tag": "0001_seed",
+      "when": 1770969072178,
+      "tag": "0001_harsh_franklin_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771157717305,
+      "tag": "0002_v3_clean_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1771157717400,
+      "tag": "0003_email_password_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1771157717500,
+      "tag": "0004_seed_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1771157717600,
+      "tag": "0005_announcements",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1771157717700,
+      "tag": "0006_round_initialization",
       "breakpoints": true
     }
   ]
