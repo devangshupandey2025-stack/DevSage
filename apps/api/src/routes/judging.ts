@@ -87,40 +87,50 @@ judging.delete('/rubric/:criterionId', authMiddleware, requireRole('co_organizer
 
 // === Judge Management (organizer+) ===
 
-// Invite judge
+function generateInviteToken(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
   const body = await c.req.json<{ email?: string; user_id?: string; track_id?: string | null }>();
 
-  let targetUserId = body.user_id;
-
-  // If email provided, look up the user
-  if (body.email && !targetUserId) {
-    const found = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(body.email.trim().toLowerCase()).first<{ id: string }>();
-    if (!found) return errorResponse(c, 404, 'USER_NOT_FOUND', 'No user found with that email. They must sign up first.');
-    targetUserId = found.id;
+  if (!body.email && !body.user_id) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'email or user_id is required');
   }
 
-  if (!targetUserId) return errorResponse(c, 400, 'VALIDATION_ERROR', 'email or user_id is required');
+  const email = body.email?.trim().toLowerCase();
+  let targetUserId: string | null = body.user_id ?? null;
+
+  // If email provided, look up the user (but don't require them to exist)
+  if (email && !targetUserId) {
+    const found = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: string }>();
+    if (found) {
+      targetUserId = found.id;
+    }
+  }
 
   // Auto-accept if the organizer is inviting themselves as judge
   const isSelfInvite = targetUserId === user.id;
   const initialStatus = isSelfInvite ? 'accepted' : 'pending';
 
   const id = crypto.randomUUID();
+  const inviteToken = generateInviteToken();
   const now = new Date().toISOString();
 
   try {
     await c.env.DB.prepare(
-      `INSERT INTO judges (id, hackathon_id, user_id, invite_status, track_id, invited_by, invited_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, hackathon.id, targetUserId, initialStatus, body.track_id ?? null, user.id, now, isSelfInvite ? now : null).run();
+      `INSERT INTO judges (id, hackathon_id, user_id, email, invite_status, invite_token, track_id, invited_by, invited_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, hackathon.id, targetUserId, email ?? '', initialStatus, inviteToken, body.track_id ?? null, user.id, now, isSelfInvite ? now : null).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
       // Judge already exists — re-send the invite email and return the existing record
       const existing = await c.env.DB.prepare(
-        'SELECT id, invite_status FROM judges WHERE hackathon_id = ? AND user_id = ?'
-      ).bind(hackathon.id, targetUserId).first<{ id: string; invite_status: string }>();
+        'SELECT id, user_id, invite_token, invite_status FROM judges WHERE hackathon_id = ? AND (user_id = ? OR email = ?)'
+      ).bind(hackathon.id, targetUserId ?? '', email ?? '').first<{ id: string; user_id: string | null; invite_token: string; invite_status: string }>();
 
       if (existing) {
         // Re-send invite notification so they get the email again
@@ -128,12 +138,12 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
           c.env.NOTIFICATION_QUEUE.send({
             type: 'judge.invited',
             hackathon_id: hackathon.id,
-            data: { judge_id: existing.id, user_id: targetUserId },
+            data: { judge_id: existing.id, user_id: existing.user_id, invite_token: existing.invite_token, email },
           })
         );
         return successResponse(c, {
           id: existing.id,
-          user_id: targetUserId,
+          user_id: existing.user_id,
           already_invited: true,
           invite_status: existing.invite_status,
           message: `Judge already invited (status: ${existing.invite_status}). Invite email re-sent.`,
@@ -150,7 +160,7 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
       c.env.NOTIFICATION_QUEUE.send({
         type: 'judge.invited',
         hackathon_id: hackathon.id,
-        data: { judge_id: id, user_id: targetUserId },
+        data: { judge_id: id, user_id: targetUserId, invite_token: inviteToken, email },
       })
     );
   }
@@ -159,11 +169,11 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
     insertAuditEvent(c.env.DB, {
       hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
       action: isSelfInvite ? 'judge.self_invited' : 'judge.invited', entity_type: 'judge', entity_id: id,
-      details: { user_id: targetUserId },
+      details: { user_id: targetUserId, email },
     })
   );
 
-  return successResponse(c, { id, user_id: targetUserId, invite_status: initialStatus, self_accepted: isSelfInvite }, { status: 201 });
+  return successResponse(c, { id, user_id: targetUserId, email, invite_token: inviteToken, invite_status: initialStatus, self_accepted: isSelfInvite }, { status: 201 });
 });
 
 // Bulk invite judges

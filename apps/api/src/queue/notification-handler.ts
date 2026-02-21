@@ -136,8 +136,8 @@ async function generateNotificationContent(
         : null;
 
       const hackathonName = hackathon?.title ?? 'a hackathon';
-      const judgeId = data?.judge_id as string | undefined;
-      const inviteLink = `${env.JUDGE_URL}/invite/judge/${judgeId}`;
+      const inviteToken = data?.invite_token as string | undefined;
+      const inviteLink = inviteToken ? `${env.JUDGE_URL}/invite/judge/${inviteToken}` : `${env.JUDGE_URL}/login`;
 
       return {
         title: `You're invited to judge ${hackathonName}`,

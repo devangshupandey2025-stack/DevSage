@@ -3,6 +3,16 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { hashPassword } from '../lib/password.js';
+import {
+  createRefreshToken,
+  generateFamilyId,
+} from '../lib/refresh-token.js';
+import { signJWT } from '../lib/jwt.js';
+import {
+  setAccessTokenCookie,
+  setRefreshTokenCookie,
+} from '../lib/cookies.js';
 
 const invites = new Hono<AppEnv>();
 
@@ -108,6 +118,152 @@ invites.post('/judge/:id/decline', async (c) => {
   const invite = await c.env.DB.prepare(
     'SELECT id, invite_status FROM judges WHERE id = ?'
   ).bind(judgeId).first<{ id: string; invite_status: string }>();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');
+
+  await c.env.DB.prepare(
+    'UPDATE judges SET invite_status = ? WHERE id = ?'
+  ).bind('declined', invite.id).run();
+
+  return successResponse(c, { declined: true });
+});
+
+invites.get('/judge/token/:token', async (c) => {
+  const token = c.req.param('token');
+
+  const invite = await c.env.DB.prepare(
+    `SELECT j.id, j.invite_status, j.email, j.user_id,
+            h.id as hackathon_id, h.title as hackathon_name, h.slug as hackathon_slug,
+            u.name as inviter_name
+     FROM judges j
+     JOIN hackathons h ON j.hackathon_id = h.id
+     LEFT JOIN users u ON j.invited_by = u.id
+     WHERE j.invite_token = ?`
+  ).bind(token).first<{
+    id: string;
+    invite_status: string;
+    email: string;
+    user_id: string | null;
+    hackathon_id: string;
+    hackathon_name: string;
+    hackathon_slug: string;
+    inviter_name: string | null;
+  }>();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Invite already responded');
+
+  const userExists = invite.user_id !== null;
+
+  return successResponse(c, {
+    id: invite.id,
+    hackathon_id: invite.hackathon_id,
+    hackathon_name: invite.hackathon_name,
+    hackathon_slug: invite.hackathon_slug,
+    inviter_name: invite.inviter_name,
+    email: invite.email,
+    user_exists: userExists,
+    status: invite.invite_status,
+  });
+});
+
+invites.post('/judge/token/:token/accept', async (c) => {
+  const token = c.req.param('token');
+  const body = await c.req.json<{
+    name?: string;
+    password?: string;
+  }>();
+
+  const invite = await c.env.DB.prepare(
+    `SELECT j.id, j.invite_status, j.email, j.user_id, j.hackathon_id
+     FROM judges j
+     WHERE j.invite_token = ?`
+  ).bind(token).first<{
+    id: string;
+    invite_status: string;
+    email: string;
+    user_id: string | null;
+    hackathon_id: string;
+  }>();
+
+  if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
+  if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Invite already responded');
+
+  let userId = invite.user_id;
+  const now = new Date().toISOString();
+
+  if (!userId) {
+    if (!body.name || !body.password) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name and password required for new account');
+    }
+
+    if (body.password.length < 8) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'Password must be at least 8 characters');
+    }
+
+    userId = crypto.randomUUID();
+    const passwordHash = await hashPassword(body.password);
+
+    await c.env.DB.prepare(
+      `INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(userId, invite.email, body.name, passwordHash, now, now).run();
+
+    c.executionCtx.waitUntil(
+      insertAuditEvent(c.env.DB, {
+        hackathon_id: invite.hackathon_id,
+        actor_id: userId,
+        actor_type: 'user',
+        action: 'auth.signup',
+        entity_type: 'user',
+        entity_id: userId,
+      })
+    );
+  }
+
+  await c.env.DB.prepare(
+    'UPDATE judges SET user_id = ?, invite_status = ?, responded_at = ? WHERE id = ?'
+  ).bind(userId, 'accepted', now, invite.id).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: invite.hackathon_id,
+      actor_id: userId,
+      actor_type: 'user',
+      action: 'judge.invite_accepted',
+      entity_type: 'judge',
+      entity_id: invite.id,
+    })
+  );
+
+  const familyId = generateFamilyId();
+  const refreshToken = await createRefreshToken(c.env.DB, userId, familyId);
+  const jwt = await signJWT(
+    {
+      sub: userId,
+      ghid: null,
+      ghu: null,
+      fam: familyId,
+    },
+    c.env.JWT_SECRET,
+  );
+  setAccessTokenCookie(c, jwt);
+  setRefreshTokenCookie(c, refreshToken);
+
+  return successResponse(c, {
+    accepted: true,
+    hackathon_id: invite.hackathon_id,
+    user_created: invite.user_id === null,
+  });
+});
+
+invites.post('/judge/token/:token/decline', async (c) => {
+  const token = c.req.param('token');
+
+  const invite = await c.env.DB.prepare(
+    'SELECT id, invite_status FROM judges WHERE invite_token = ?'
+  ).bind(token).first<{ id: string; invite_status: string }>();
 
   if (!invite) return errorResponse(c, 404, 'NOT_FOUND', 'Invite not found');
   if (invite.invite_status !== 'pending') return errorResponse(c, 409, 'INVITE_USED', 'Already responded');

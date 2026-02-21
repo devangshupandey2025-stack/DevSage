@@ -328,16 +328,19 @@ export async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS judges (
       id text PRIMARY KEY NOT NULL,
       hackathon_id text NOT NULL,
-      user_id text NOT NULL,
+      user_id text REFERENCES user(id) ON DELETE SET NULL,
+      email text NOT NULL,
       invite_status text DEFAULT 'pending' NOT NULL,
+      invite_token text NOT NULL UNIQUE,
       track_id text,
-      invited_by text NOT NULL,
-      invited_at text NOT NULL,
+      invited_by text REFERENCES user(id) ON DELETE SET NULL,
+      invited_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       responded_at text,
-      FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES user(id)
+      accepted_at text,
+      FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS judges_hackathon_id_user_id_unique ON judges (hackathon_id, user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_judges_user ON judges (user_id)`,
 
     // rubric_criteria
     `CREATE TABLE IF NOT EXISTS rubric_criteria (
@@ -713,14 +716,18 @@ export async function insertTeamMember(teamId: string, userId: string, role: str
 export async function insertJudge(params: {
   id: string;
   hackathonId: string;
-  userId: string;
+  userId: string | null;
+  email?: string;
   inviteStatus?: string;
   invitedBy: string;
+  inviteToken?: string;
 }) {
+  const token = params.inviteToken ?? crypto.randomUUID().replace(/-/g, '');
+  const email = params.email ?? 'judge@test.com';
   await env.DB.prepare(
-    `INSERT INTO judges (id, hackathon_id, user_id, invite_status, invited_by, invited_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(params.id, params.hackathonId, params.userId, params.inviteStatus ?? 'pending', params.invitedBy, now).run();
+    `INSERT INTO judges (id, hackathon_id, user_id, email, invite_status, invite_token, invited_by, invited_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(params.id, params.hackathonId, params.userId, email, params.inviteStatus ?? 'pending', token, params.invitedBy, now).run();
 }
 
 export async function insertSubmission(params: {
