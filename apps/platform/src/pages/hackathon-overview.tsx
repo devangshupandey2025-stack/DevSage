@@ -193,7 +193,7 @@ export function HackathonOverviewPage() {
               title="Copy registration link"
             >
               <Copy className="h-3 w-3" />
-              Copy Link
+              Participants Registration - Copy Link
             </button>
           </div>
           <div>
