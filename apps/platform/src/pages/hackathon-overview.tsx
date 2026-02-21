@@ -18,6 +18,7 @@ import {
   Activity,
   Settings2,
   Sparkles,
+  Copy,
 } from 'lucide-react';
 
 interface Hackathon {
@@ -123,7 +124,7 @@ export function HackathonOverviewPage() {
 
   if (loading) {
     return (
-        <div className="space-y-8 p-1">
+      <div className="space-y-8 p-1">
         <div className="flex justify-between items-start">
           <div className="space-y-3">
             <Skeleton className="h-6 w-24 bg-white/4 rounded-full" />
@@ -166,9 +167,9 @@ export function HackathonOverviewPage() {
   const currentIdx = phases.indexOf(hackathon.status);
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }} 
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       className="relative space-y-8"
     >
       {/* Background Ambient Light */}
@@ -183,6 +184,17 @@ export function HackathonOverviewPage() {
             <span className="text-[11px] font-mono text-white/40 uppercase tracking-wider">
               {hackathon.slug}
             </span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`https://devsage.org/hackathons/${hackathon.slug}`);
+                toast.success('Registration link copied to clipboard');
+              }}
+              className="ml-2 flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 px-2.5 py-1 text-[10px] flex-shrink-0 font-bold text-white/60 hover:text-white transition-all"
+              title="Copy registration link"
+            >
+              <Copy className="h-3 w-3" />
+              Copy Link
+            </button>
           </div>
           <div>
             <h1 className="text-4xl font-bold text-white tracking-tight">
@@ -213,9 +225,9 @@ export function HackathonOverviewPage() {
       </div>
 
       {/* Lifecycle Progress Track */}
-      <motion.div 
-        variants={container} 
-        initial="hidden" 
+      <motion.div
+        variants={container}
+        initial="hidden"
         animate="show"
         className="relative p-1 rounded-xl bg-[#0A0A0A] border border-white/5 overflow-hidden"
       >
@@ -224,19 +236,19 @@ export function HackathonOverviewPage() {
           {phases.map((phase, i) => {
             const isCompleted = i < currentIdx;
             const isCurrent = i === currentIdx;
-            
+
             return (
-              <motion.div 
-                key={phase} 
+              <motion.div
+                key={phase}
                 variants={item}
                 className="relative flex flex-col items-center justify-center flex-1 h-full"
               >
                 {/* Track Background Segment */}
                 <div className="absolute inset-0 border-r border-dashed border-white/5 last:border-0" />
-                
+
                 {/* Active Indicator */}
                 {isCurrent && (
-                  <motion.div 
+                  <motion.div
                     layoutId="activePhase"
                     className="absolute inset-x-1 inset-y-1 rounded-lg bg-[#CCFF00]/[0.07] border border-[#CCFF00]/20"
                     transition={{ type: "spring", stiffness: 350, damping: 30 }}
@@ -244,13 +256,12 @@ export function HackathonOverviewPage() {
                 )}
 
                 <div className="relative z-10 flex items-center gap-2">
-                   <span className={`text-[11px] font-bold uppercase tracking-wider transition-colors duration-300 ${
-                     isCompleted ? 'text-[#CCFF00]' : isCurrent ? 'text-white' : 'text-white/25'
-                   }`}>
+                  <span className={`text-[11px] font-bold uppercase tracking-wider transition-colors duration-300 ${isCompleted ? 'text-[#CCFF00]' : isCurrent ? 'text-white' : 'text-white/25'
+                    }`}>
                     {phase}
                   </span>
                   {isCompleted && (
-                     <motion.div
+                    <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#CCFF00]"
@@ -327,7 +338,7 @@ export function HackathonOverviewPage() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* Quick Access */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
@@ -345,7 +356,7 @@ export function HackathonOverviewPage() {
                   className="group relative flex flex-col justify-between h-40 rounded-2xl border border-white/5 bg-white/2 p-5 transition-all duration-300 hover:bg-white/4 hover:border-white/12 overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-linear-to-br from-white/3 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  
+
                   <div className="relative flex justify-between items-start z-10">
                     <div className={`p-2.5 rounded-xl ${link.bg} border border-white/5`}>
                       <Icon className={`w-4 h-4 ${link.color}`} />
@@ -376,8 +387,8 @@ export function HackathonOverviewPage() {
 
         {/* Sidebar: Timeline & Config */}
         <div className="space-y-6">
-           {/* Timeline */}
-           <div className="rounded-2xl border border-white/5 bg-white/2 p-6">
+          {/* Timeline */}
+          <div className="rounded-2xl border border-white/5 bg-white/2 p-6">
             <h3 className="text-xs font-bold text-white/50 mb-6 flex items-center gap-2 uppercase tracking-widest">
               <Calendar className="h-3.5 w-3.5 text-[#CCFF00]/50" />
               Schedule
@@ -391,19 +402,19 @@ export function HackathonOverviewPage() {
                 const isPast = new Date(event.date!) < new Date();
                 const isLast = idx === arr.length - 1;
                 const EventIcon = event.icon;
-                
+
                 return (
                   <div key={idx} className="relative pl-8 pb-6 last:pb-0">
                     {/* Vertical Line */}
                     {!isLast && (
-                       <div className="absolute left-2.75 top-6 bottom-0 w-px bg-linear-to-b from-white/10 to-transparent" />
+                      <div className="absolute left-2.75 top-6 bottom-0 w-px bg-linear-to-b from-white/10 to-transparent" />
                     )}
 
                     {/* Dot */}
                     <div className={`absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full border ${isPast ? 'bg-[#CCFF00]/10 border-[#CCFF00]/30' : 'bg-white/3 border-white/10'}`}>
                       <EventIcon className={`w-3 h-3 ${isPast ? 'text-[#CCFF00]' : 'text-white/40'}`} />
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-[11px] font-bold uppercase tracking-wider text-white/30 mb-0.5">
