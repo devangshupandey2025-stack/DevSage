@@ -15,10 +15,8 @@ import {
   Activity,
   Award,
   Sparkles,
-  Copy,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import logo from '@/photos/logo.png';
 
@@ -122,23 +120,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <ChevronLeft className="h-3 w-3" />
               <span className="truncate">Back to Dashboard</span>
             </Link>
-            <div className="mt-2 px-3">
+            <div className="mt-2 px-3 pb-3">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#CCFF00]/60">
                 Hackathon
               </p>
-              <p className="mt-0.5 truncate text-sm font-semibold text-white/80 mb-2">
+              <p className="mt-0.5 truncate text-sm font-semibold text-white/80">
                 {slug}
               </p>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(`https://devsage.org/hackathons/${slug}`);
-                  toast.success('Registration link copied');
-                }}
-                className="flex items-center justify-center w-full gap-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 px-3 py-1.5 text-[11px] font-bold text-white/60 hover:text-white transition-all shadow-sm"
-              >
-                <Copy className="h-3 w-3" />
-                Copy Link
-              </button>
             </div>
           </motion.div>
         )}
