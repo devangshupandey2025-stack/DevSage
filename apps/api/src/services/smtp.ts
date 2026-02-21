@@ -180,9 +180,10 @@ export async function sendSmtp(
 
   console.warn(`[smtp] Connecting to ${host}:${port} (${directTls ? 'direct TLS' : 'STARTTLS'}) as ${username}`);
 
+  // For direct TLS (465), use 'on'. For STARTTLS (587), start plaintext ('off') and upgrade manually.
   let socket = connect(
     { hostname: host, port },
-    { secureTransport: directTls ? 'on' : 'starttls' },
+    { secureTransport: directTls ? 'on' : 'off' },
   );
 
   let conn = new SmtpConnection(socket.readable, socket.writable);
