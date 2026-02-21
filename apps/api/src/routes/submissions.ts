@@ -425,20 +425,13 @@ submissions.post('/', authMiddleware, async (c) => {
   } catch { repoFullName = body.repo_url; }
 
   await c.env.DB.prepare(
-    `INSERT INTO submissions (id, hackathon_id, team_id, round_id, tag_name, commit_sha, provider, repo_full_name, status, received_at, submitted_at, is_final, title, description, repo_url, demo_url, video_url, slide_url, analysis_json, ai_review_json, ai_score)
-     VALUES (?, ?, ?, ?, ?, ?, 'github', ?, 'received', ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO submissions (id, hackathon_id, team_id, round_id, tag_name, commit_sha, status, submitted_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending_validation', ?)`
   ).bind(
-    id, hackathon.id, membership.team_id, targetRoundId || 'none',
-    body.title, // tag_name — reuse title
-    'manual',   // commit_sha — placeholder for manual submissions
-    repoFullName,
-    now, // received_at
-    now, // submitted_at
-    body.title, body.description || '',
-    body.repo_url, body.demo_url || '', body.video_url || '', body.slide_url || '',
-    body.analysis_json || null,
-    body.ai_review_json || null,
-    body.ai_score ?? null
+    id, hackathon.id, membership.team_id, targetRoundId || null,
+    body.title,
+    'manual',
+    now
   ).run();
 
   c.executionCtx.waitUntil(
