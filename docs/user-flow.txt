@@ -1,0 +1,199 @@
+# DevSage — User Flows (Updated)
+
+> Includes the new **Hackathon Creation Request** workflow where organizers submit requests and admins approve/build them, with package-tracking-style status visibility. Also reflects the updated **URL scheme**: club hackathons deploy to `{slug}.{workspace-slug}.devsage.org`, individual hackathons to `{slug}.hackathon.devsage.org`.
+
+---
+
+## 1. Platform Admin (`shikdd.devsage.org`)
+
+### Login & Dashboard
+1. Login via Google OAuth → verified as platform admin
+2. Dashboard → system-wide stats: total users, hackathons, workspaces, submissions, **pending requests count**
+
+### Hackathon Creation Requests (NEW)
+3. Navigate to **"Creation Requests"** section → sees a queue of incoming requests sorted by newest first
+4. Each request card shows: requesting workspace name, proposed hackathon title, requested dates, submitted timestamp, current status
+5. Click into a request → full detail view with everything the organizer submitted (name, description, dates, team limits, number of events, any special notes)
+6. **Review & Decide:**
+   - **Approve** → status moves to `approved`, organizer gets notified
+   - **Reject** → admin provides a reason, status moves to `rejected`, organizer gets notified with the reason
+   - **Request Changes** → status moves to `changes_requested`, admin writes what needs to change, organizer gets notified and can resubmit
+7. **Post-Approval Tracking Updates** — admin updates the request status through the build pipeline, each update visible to the organizer in real-time:
+   - `submitted` → Request received, sitting in the queue
+   - `under_review` → Admin has opened and is reviewing the request
+   - `approved` → Request approved, green-lit to proceed
+   - `rejected` → Request denied (with reason)
+   - `changes_requested` → Admin wants modifications before approving
+   - `building` → Admin/platform is setting up the hackathon (creating workspace resources, configuring the branded frontend, etc.)
+   - `ready` → Hackathon is built and handed off to the organizer in `draft` state
+8. When admin marks a request as `ready`, the actual hackathon gets created in `draft` state under the organizer's workspace, and the organizer is notified that their hackathon is ready to configure
+
+### Existing Admin Functions
+9. Manage workspaces → browse all workspaces, drill into any workspace
+10. Manage users → paginated list of all users
+11. Manage platform admins → add/remove admins (can't remove self)
+12. Manage invites → send organizer invites to onboard new clubs
+13. Hackathon oversight → read-only god-view of any hackathon for support/compliance
+14. Trigger audit hash backfill if needed
+
+---
+
+## 2. Club / Individual Organizer (`platform.devsage.org`)
+
+### Onboarding
+1. Receives platform invite → signs up via Google OAuth → lands on platform dashboard
+2. Creates workspace (club's home base, e.g., `ieee-vit`) or joins existing one
+3. Invites co-organizers to the workspace
+
+### Requesting a New Hackathon (NEW — replaces direct creation)
+4. Clicks **"Request New Hackathon"** button on their dashboard
+5. Fills out the creation request form:
+   - Hackathon title
+   - Description / theme
+   - Start date & time
+   - End date & time
+   - Expected number of participants
+   - Number of rounds/events planned
+   - Team size limits (min/max)
+   - Any special requirements or notes (free-text)
+6. Submits the request → confirmation screen, request enters `submitted` state
+
+### Tracking the Request (NEW — Amazon-style roadmap)
+7. On their dashboard, a **"My Requests"** section shows all their creation requests
+8. Each request has a **visual status tracker** — a horizontal stepper/roadmap showing:
+   ```
+   Submitted → Under Review → Approved → Building → Ready
+   ```
+   - Completed steps are highlighted (green/accent)
+   - Current step has a pulse/active indicator
+   - Future steps are greyed out
+   - If `rejected` or `changes_requested`, the tracker shows a branch/alert at the relevant step with the admin's message
+9. Organizer can click into any request to see:
+   - Full details they submitted
+   - Current status with timestamp of each status change
+   - Admin notes/messages (rejection reason, change requests, etc.)
+   - A timeline/activity log of all status transitions
+10. If `changes_requested` → organizer can **edit and resubmit** the request, which moves it back to `submitted`
+
+### Post-Approval: Configuring the Hackathon
+11. Once the request status reaches `ready`, the hackathon appears on their dashboard in `draft` state — from here, the flow is the same as before:
+12. Configure rounds → define round structure (Round 1, Finals, etc.)
+13. Define rubric → add scoring criteria with names, weights, max scores
+14. Invite judges → send judge invites via email
+15. Activate hackathon → `draft → active` → registration opens, branded frontend goes live at `{slug}.{workspace-slug}.devsage.org` (e.g., `code-sprint.ieee-vit.devsage.org`)
+16. Monitor → watch teams forming, repos linked, push activity, submissions rolling in
+17. Post announcements → broadcast updates to participants
+18. Transition to judging → `active → judging` → submissions lock
+19. Assign judges to submissions
+20. Publish results → leaderboard computed → `judging → completed` → notifications fire
+21. Archive → `completed → archived` → hackathon preserved, audit trail sealed
+
+---
+
+## 3. Judge (`platform.devsage.org`)
+
+> No changes from the creation request feature — judges interact only after a hackathon is active.
+
+1. Receives invite email with unique judge invite token
+2. Clicks link → accepts invite → signs up/logs in via Google OAuth → judge record linked to the hackathon, status flips to `accepted`
+3. Dashboard → sees their assigned hackathons and judging window timing
+4. Views assignments → once organizer assigns them submissions, sees the list of teams/submissions to score
+5. Scores submissions → for each assigned submission, scores against every rubric criterion (e.g., Innovation: 8/10, Execution: 7/10, Design: 9/10) — weights applied automatically
+6. Confirms and submits scores → audit event logged, leaderboard cache invalidated
+7. Views published leaderboard once organizer publishes results
+
+---
+
+## 4. Participant (`devsage.org` + `{slug}.{workspace}.devsage.org` or `{slug}.hackathon.devsage.org`)
+
+> No changes from the creation request feature — participants interact only after a hackathon is active.
+
+1. Discovers hackathon on the branded frontend:
+   - **Club hackathons:** `{slug}.{workspace-slug}.devsage.org` (e.g., `code-sprint.ieee-vit.devsage.org`)
+   - **Individual hackathons:** `{slug}.hackathon.devsage.org` (e.g., `weekend-jam.hackathon.devsage.org`)
+   
+   Sees title, tagline, rules, dates, tracks, prizes.
+2. Registers via **GitHub OAuth** → account created
+3. Creates team (becomes leader) or accepts a team invite token → joins as member
+4. Team leader links GitHub repo → `POST /teams/:id/repo` → webhooks connected
+5. Codes and pushes → every push fires a webhook → `push-handler` logs commits, detects force-pushes
+6. Submits via git tag → `git tag submission_v1 && git push --tags` → webhook → `tag-create-handler` → Durable Object locks submission (exactly-once) → previous submissions marked non-final → new submission stored as `is_final = true` with commit SHA, tag, timestamp, late flag
+7. Resubmits → push another tag (`submission_v2`) → same flow, previous becomes non-final
+8. Receives notifications → submission confirmations, deadline reminders, announcements (in-app + email)
+9. Views leaderboard → once results published, sees final rankings with scores
+10. Done → audit trail proves submission integrity
+
+---
+
+## Creation Request Status Lifecycle
+
+```
+                          ┌──── rejected (with reason)
+                          │
+submitted → under_review ─┤
+                          │
+                          ├──── changes_requested ──→ (organizer edits) ──→ submitted
+                          │
+                          └──── approved → building → ready
+                                                       │
+                                                       ▼
+                                              Hackathon created
+                                              in draft state
+```
+
+### Status Definitions
+
+| Status | Set By | Meaning |
+|--------|--------|---------|
+| `submitted` | System | Request created and queued for admin review |
+| `under_review` | Admin | Admin has opened the request and is evaluating it |
+| `approved` | Admin | Request approved, cleared to proceed |
+| `rejected` | Admin | Request denied — admin provides a reason |
+| `changes_requested` | Admin | Admin wants modifications before approving |
+| `building` | Admin | Platform is setting up the hackathon resources |
+| `ready` | Admin/System | Hackathon created in `draft`, handed off to organizer |
+
+### Notifications Triggered
+
+| Transition | Notified | Channel |
+|------------|----------|---------|
+| → `submitted` | All platform admins | In-app + email |
+| → `under_review` | Requesting organizer | In-app |
+| → `approved` | Requesting organizer + workspace members | In-app + email |
+| → `rejected` | Requesting organizer | In-app + email |
+| → `changes_requested` | Requesting organizer | In-app + email |
+| → `building` | Requesting organizer | In-app |
+| → `ready` | Requesting organizer + workspace members | In-app + email |
+
+---
+
+## Deployment & URL Scheme
+
+### Platform URLs
+
+Every app is deployed as a **Cloudflare Worker** with both a `workers.dev` URL and a custom domain:
+
+| App | workers.dev | Custom Domain |
+|-----|-------------|---------------|
+| API | `api.devsage-org.workers.dev` | `api.devsage.org` |
+| Web (Participants) | `web.devsage-org.workers.dev` | `devsage.org` |
+| Platform (Organizers) | `platform.devsage-org.workers.dev` | `platform.devsage.org` |
+| Admin (SHIKDD) | `admin.devsage-org.workers.dev` | `shikdd.devsage.org` |
+
+Preview URLs follow the pattern `*-{app}.devsage-org.workers.dev` (e.g., `abc123-platform.devsage-org.workers.dev`).
+
+> **Note for AI agents:** When working with the codebase, you will see `workers.dev` URLs in Cloudflare dashboards, wrangler output, and deployment logs. The `workers.dev` URL is the default deployment target; custom domains are configured separately via Cloudflare DNS. Both point to the same Worker. CORS config must allow both.
+
+### Hackathon Frontend URLs
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| **Club / Workspace hackathon** | `{hackathon-slug}.{workspace-slug}.devsage.org` | `code-sprint.ieee-vit.devsage.org` |
+| **Individual hackathon** (no workspace) | `{hackathon-slug}.hackathon.devsage.org` | `weekend-jam.hackathon.devsage.org` |
+| **Custom domain** (CNAME) | Organizer's own domain | `hack.ieeevit.org` |
+
+### How It Works
+- When a hackathon is created under a workspace, the frontend is deployed to `{slug}.{workspace-slug}.devsage.org`. This gives clubs a branded namespace — all of IEEE-VIT's hackathons live under `*.ieee-vit.devsage.org`.
+- Individual organizers who aren't part of a club get the generic `{slug}.hackathon.devsage.org` pattern (same as current behavior).
+- Organizers can optionally CNAME their own domain to point at the deployed frontend for full white-labeling.
+- Each hackathon frontend also has a `workers.dev` URL for internal testing and previews.

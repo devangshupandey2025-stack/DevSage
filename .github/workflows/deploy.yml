@@ -1,0 +1,159 @@
+name: Deploy Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Which app to deploy (api, web, platform, admin, judge, all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - api
+          - web
+          - platform
+          - admin
+          - judge
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.changes.outputs.api }}
+      web: ${{ steps.changes.outputs.web }}
+      platform: ${{ steps.changes.outputs.platform }}
+      admin: ${{ steps.changes.outputs.admin }}
+      judge: ${{ steps.changes.outputs.judge }}
+      packages: ${{ steps.changes.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+            web:
+              - 'apps/web/**'
+            platform:
+              - 'apps/platform/**'
+            admin:
+              - 'apps/admin/**'
+            judge:
+              - 'apps/judge/**'
+            packages:
+              - 'packages/**'
+
+  deploy-api:
+    needs: detect-changes
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.app == 'all' || github.event.inputs.app == 'api') ||
+      needs.detect-changes.outputs.api == 'true' || needs.detect-changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @devsage/api run build
+      - run: pnpm --filter @devsage/api run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-web:
+    needs: detect-changes
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.app == 'all' || github.event.inputs.app == 'web') ||
+      needs.detect-changes.outputs.web == 'true' || needs.detect-changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @devsage/web run build
+      - run: pnpm --filter @devsage/web run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-platform:
+    needs: detect-changes
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.app == 'all' || github.event.inputs.app == 'platform') ||
+      needs.detect-changes.outputs.platform == 'true' || needs.detect-changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @devsage/platform run build
+      - run: pnpm --filter @devsage/platform run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-admin:
+    needs: detect-changes
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.app == 'all' || github.event.inputs.app == 'admin') ||
+      needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @devsage/admin run build
+      - run: pnpm --filter @devsage/admin run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-judge:
+    needs: detect-changes
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.app == 'all' || github.event.inputs.app == 'judge') ||
+      needs.detect-changes.outputs.judge == 'true' || needs.detect-changes.outputs.packages == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @devsage/judge run build
+      - run: pnpm --filter @devsage/judge run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

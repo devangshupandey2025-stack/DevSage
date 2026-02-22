@@ -24,6 +24,7 @@ import {
   Package,
   XCircle,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
 
 type HackathonStatus = 'draft' | 'active' | 'judging' | 'completed' | 'archived';
@@ -71,6 +72,7 @@ interface HackathonRequest {
   team_max_size: number | null;
   additional_details: string | null;
   status: RequestStatus;
+  status_history: string | null;
   admin_notes: string | null;
   created_at: string;
   updated_at: string;
@@ -219,6 +221,20 @@ export function DashboardPage() {
   });
   const [myRequests, setMyRequests] = useState<HackathonRequest[]>([]);
   const [fetchingRequests, setFetchingRequests] = useState(true);
+  const [resubmitDialogOpen, setResubmitDialogOpen] = useState(false);
+  const [resubmittingRequest, setResubmittingRequest] = useState(false);
+  const [resubmitRequestId, setResubmitRequestId] = useState<string | null>(null);
+  const [resubmitFormData, setResubmitFormData] = useState({
+    title: '',
+    description: '',
+    startsAt: '',
+    endsAt: '',
+    numEvents: '',
+    expectedParticipants: '',
+    teamMinSize: '',
+    teamMaxSize: '',
+    additionalDetails: '',
+  });
 
   useEffect(() => {
     fetchHackathons();
@@ -308,6 +324,51 @@ export function DashboardPage() {
       toast.error('Failed to submit request');
     } finally {
       setSubmittingRequest(false);
+    }
+  };
+
+  const openResubmitDialog = (req: HackathonRequest) => {
+    setResubmitRequestId(req.id);
+    setResubmitFormData({
+      title: req.title,
+      description: req.description || '',
+      startsAt: req.starts_at ? req.starts_at.slice(0, 16) : '',
+      endsAt: req.ends_at ? req.ends_at.slice(0, 16) : '',
+      numEvents: req.num_events?.toString() || '',
+      expectedParticipants: req.expected_participants?.toString() || '',
+      teamMinSize: req.team_min_size?.toString() || '',
+      teamMaxSize: req.team_max_size?.toString() || '',
+      additionalDetails: req.additional_details || '',
+    });
+    setResubmitDialogOpen(true);
+  };
+
+  const handleResubmit = async () => {
+    if (!resubmitRequestId) return;
+    setResubmittingRequest(true);
+    try {
+      await apiRequest(`/api/v1/hackathon-requests/${resubmitRequestId}/resubmit`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          title: resubmitFormData.title || undefined,
+          description: resubmitFormData.description || undefined,
+          starts_at: resubmitFormData.startsAt ? new Date(resubmitFormData.startsAt).toISOString() : undefined,
+          ends_at: resubmitFormData.endsAt ? new Date(resubmitFormData.endsAt).toISOString() : undefined,
+          num_events: parseInt(resubmitFormData.numEvents, 10) || undefined,
+          expected_participants: parseInt(resubmitFormData.expectedParticipants, 10) || undefined,
+          team_min_size: parseInt(resubmitFormData.teamMinSize, 10) || undefined,
+          team_max_size: parseInt(resubmitFormData.teamMaxSize, 10) || undefined,
+          additional_details: resubmitFormData.additionalDetails || undefined,
+        }),
+      });
+      toast.success('Request resubmitted successfully!');
+      setResubmitDialogOpen(false);
+      setResubmitRequestId(null);
+      fetchRequests();
+    } catch (_error) {
+      toast.error('Failed to resubmit request');
+    } finally {
+      setResubmittingRequest(false);
     }
   };
 
@@ -812,13 +873,20 @@ export function DashboardPage() {
                             <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-orange-500/40 bg-orange-500/15">
                               <Clock className="h-4 w-4 text-orange-400" />
                             </div>
-                            <div>
+                            <div className="flex-1">
                               <p className="text-sm font-semibold text-orange-400">Changes requested by admin</p>
                               {req.admin_notes && (
                                 <p className="mt-0.5 text-xs text-orange-400/60">{req.admin_notes}</p>
                               )}
                               <p className="mt-1 text-xs text-white/40">Edit and resubmit your request to continue.</p>
                             </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openResubmitDialog(req); }}
+                              className="flex items-center gap-1.5 rounded-lg bg-orange-500/15 px-3 py-1.5 text-xs font-semibold text-orange-400 transition hover:bg-orange-500/25"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Edit & Resubmit
+                            </button>
                           </div>
                         </div>
                       ) : (
@@ -859,6 +927,36 @@ export function DashboardPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Activity Timeline */}
+                      {req.status_history && (() => {
+                        const history: { status: string; timestamp: string; note: string }[] = (() => {
+                          try { return JSON.parse(req.status_history); } catch { return []; }
+                        })();
+                        if (history.length <= 1) return null;
+                        return (
+                          <details className="mt-3 group">
+                            <summary className="cursor-pointer text-[11px] font-medium text-white/35 hover:text-white/50 transition">
+                              Activity timeline ({history.length} updates)
+                            </summary>
+                            <div className="mt-2 ml-1 border-l border-white/10 pl-3 space-y-2">
+                              {history.slice().reverse().map((entry, i) => (
+                                <div key={i} className="relative">
+                                  <div className="absolute -left-[15px] top-1.5 h-1.5 w-1.5 rounded-full bg-white/25" />
+                                  <p className="text-[11px] text-white/50">
+                                    <span className="font-semibold text-white/65">{entry.status.replace(/_/g, ' ')}</span>
+                                    <span className="mx-1.5 text-white/20">·</span>
+                                    {new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                  </p>
+                                  {entry.note && entry.note !== `Status updated to ${entry.status}` && (
+                                    <p className="text-[10px] text-white/30 mt-0.5">{entry.note}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -1328,6 +1426,92 @@ export function DashboardPage() {
               >
                 <Send className="h-4 w-4" />
                 {submittingRequest ? 'Submitting…' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resubmit Request Dialog */}
+      {resubmitDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={() => setResubmitDialogOpen(false)} />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-orange-500/20 bg-[#0a0a0a] p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Edit & Resubmit</h3>
+                <p className="mt-1 text-xs text-orange-400/80">Update your request based on admin feedback, then resubmit.</p>
+              </div>
+              <button
+                onClick={() => setResubmitDialogOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/50">Title</label>
+                <input
+                  value={resubmitFormData.title}
+                  onChange={(e) => setResubmitFormData((p) => ({ ...p, title: e.target.value }))}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/50">Description</label>
+                <textarea
+                  value={resubmitFormData.description}
+                  onChange={(e) => setResubmitFormData((p) => ({ ...p, description: e.target.value }))}
+                  rows={3}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/50">Start Date</label>
+                  <input type="datetime-local" value={resubmitFormData.startsAt} onChange={(e) => setResubmitFormData((p) => ({ ...p, startsAt: e.target.value }))} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/50">End Date</label>
+                  <input type="datetime-local" value={resubmitFormData.endsAt} onChange={(e) => setResubmitFormData((p) => ({ ...p, endsAt: e.target.value }))} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/50">Team Min Size</label>
+                  <input type="number" value={resubmitFormData.teamMinSize} onChange={(e) => setResubmitFormData((p) => ({ ...p, teamMinSize: e.target.value }))} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/50">Team Max Size</label>
+                  <input type="number" value={resubmitFormData.teamMaxSize} onChange={(e) => setResubmitFormData((p) => ({ ...p, teamMaxSize: e.target.value }))} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/50">Additional Details</label>
+                <textarea
+                  value={resubmitFormData.additionalDetails}
+                  onChange={(e) => setResubmitFormData((p) => ({ ...p, additionalDetails: e.target.value }))}
+                  rows={3}
+                  placeholder="Address the admin's feedback here..."
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-orange-500/50 focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => setResubmitDialogOpen(false)}
+                className="rounded-lg border border-white/10 bg-transparent px-5 py-2.5 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResubmit}
+                disabled={resubmittingRequest}
+                className="flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-400 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${resubmittingRequest ? 'animate-spin' : ''}`} />
+                {resubmittingRequest ? 'Resubmitting…' : 'Resubmit Request'}
               </button>
             </div>
           </div>

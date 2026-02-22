@@ -1,0 +1,67 @@
+name: Deploy Hackathon Site
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'Hackathon slug (e.g., "code-sprint")'
+        required: true
+        type: string
+      title:
+        description: 'Hackathon title (e.g., "Code Sprint 2026")'
+        required: true
+        type: string
+      workspace_slug:
+        description: 'Workspace slug for URL (e.g., "ieee-vit"). Leave empty for individual hackathons.'
+        required: false
+        type: string
+      accent_color:
+        description: 'Accent color hex (default: #2DD4BF)'
+        required: false
+        default: '#2DD4BF'
+        type: string
+      description:
+        description: 'Hackathon description'
+        required: false
+        type: string
+
+jobs:
+  generate-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate hackathon site
+        run: |
+          CONFIG=$(echo '{
+            "slug": "${{ inputs.slug }}",
+            "title": "${{ inputs.title }}",
+            "workspaceSlug": "${{ inputs.workspace_slug }}",
+            "description": "${{ inputs.description }}",
+            "accentColor": "${{ inputs.accent_color }}",
+            "apiOrigin": "https://api.devsage.org"
+          }' | base64 -w 0)
+          node scripts/generate-hackathon-site.js --config "$CONFIG"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          DOMAIN="${{ inputs.slug }}.${{ inputs.workspace_slug && format('{0}.', inputs.workspace_slug) || 'hackathon.' }}devsage.org"
+          echo "## 🚀 Hackathon Site Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Title** | ${{ inputs.title }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Slug** | ${{ inputs.slug }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Domain** | https://${DOMAIN} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workers URL** | https://hackathon-${{ inputs.slug }}.devsage-org.workers.dev |" >> $GITHUB_STEP_SUMMARY

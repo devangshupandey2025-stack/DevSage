@@ -208,6 +208,58 @@ async function generateNotificationContent(
         null,
       );
 
+    // ── Hackathon creation request notifications ─────────────
+    case 'hackathon.request.submitted':
+      return simpleContent(
+        data?.resubmission ? 'Hackathon Request Resubmitted' : 'New Hackathon Request',
+        data?.resubmission
+          ? `A hackathon request "${data?.title ?? ''}" has been resubmitted after changes.`
+          : `A new hackathon creation request "${data?.title ?? ''}" has been submitted and is awaiting review.`,
+        null,
+      );
+
+    case 'hackathon.request.under_review':
+      return simpleContent(
+        'Request Under Review',
+        `Your hackathon request "${data?.title ?? ''}" is now being reviewed by the DevSage team.`,
+        null,
+      );
+
+    case 'hackathon.request.approved':
+      return simpleContent(
+        'Request Approved! 🎉',
+        `Great news! Your hackathon request "${data?.title ?? ''}" has been approved. We're getting things set up for you.`,
+        null,
+      );
+
+    case 'hackathon.request.rejected':
+      return simpleContent(
+        'Request Not Approved',
+        `Your hackathon request "${data?.title ?? ''}" was not approved.${data?.admin_notes ? ` Reason: ${data.admin_notes}` : ''} You can submit a new request with modifications.`,
+        null,
+      );
+
+    case 'hackathon.request.changes_requested':
+      return simpleContent(
+        'Changes Requested for Your Hackathon',
+        `The DevSage team has requested changes to your hackathon request "${data?.title ?? ''}".${data?.admin_notes ? ` Feedback: ${data.admin_notes}` : ''} Please review and resubmit.`,
+        null,
+      );
+
+    case 'hackathon.request.building':
+      return simpleContent(
+        'Building Your Hackathon',
+        `Your hackathon "${data?.title ?? ''}" is now being built! We're setting up the infrastructure and branded frontend.`,
+        null,
+      );
+
+    case 'hackathon.request.ready':
+      return simpleContent(
+        'Your Hackathon is Ready! 🚀',
+        `Your hackathon "${data?.title ?? ''}" has been created and is ready to configure. Head to your dashboard to set up rounds, rubrics, and invite judges.`,
+        null,
+      );
+
     default:
       return simpleContent(
         type

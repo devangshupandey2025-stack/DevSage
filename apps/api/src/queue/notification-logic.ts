@@ -83,6 +83,46 @@ export async function resolveNotificationRecipients(
       return members.results || [];
     }
 
+    // ── Hackathon creation request notifications ─────────────
+    case 'hackathon.request.submitted': {
+      // Notify all platform admins
+      const admins = await db.prepare(
+        `SELECT u.id as user_id, u.email FROM platform_admins pa JOIN users u ON pa.user_id = u.id`
+      ).all<Recipient>();
+      return admins.results || [];
+    }
+
+    case 'hackathon.request.under_review':
+    case 'hackathon.request.building': {
+      // Notify only the requesting organizer (in-app only style)
+      const requestedBy = data?.requested_by as string | undefined;
+      if (!requestedBy) return [];
+      const user = await db.prepare('SELECT id as user_id, email FROM users WHERE id = ?').bind(requestedBy).first<Recipient>();
+      return user ? [user] : [];
+    }
+
+    case 'hackathon.request.approved':
+    case 'hackathon.request.ready': {
+      // Notify requesting organizer + workspace members
+      const reqBy = data?.requested_by as string | undefined;
+      const wsId = data?.workspace_id as string | undefined;
+      if (!reqBy) return [];
+      const requester = await db.prepare('SELECT id as user_id, email FROM users WHERE id = ?').bind(reqBy).first<Recipient>();
+      const wsMembers = wsId ? await db.prepare(
+        `SELECT u.id as user_id, u.email FROM workspace_members wm JOIN users u ON wm.user_id = u.id WHERE wm.workspace_id = ?`
+      ).bind(wsId).all<Recipient>() : { results: [] };
+      return dedup([...(requester ? [requester] : []), ...(wsMembers.results || [])]);
+    }
+
+    case 'hackathon.request.rejected':
+    case 'hackathon.request.changes_requested': {
+      // Notify requesting organizer (with reason)
+      const rb = data?.requested_by as string | undefined;
+      if (!rb) return [];
+      const u = await db.prepare('SELECT id as user_id, email FROM users WHERE id = ?').bind(rb).first<Recipient>();
+      return u ? [u] : [];
+    }
+
     default:
       return getOrganizers(db, hackathonId);
   }

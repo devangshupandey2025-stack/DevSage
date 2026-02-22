@@ -18,6 +18,8 @@ import {
   Building2,
   Clock,
   MessageSquare,
+  Terminal,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -573,6 +575,58 @@ export function HackathonRequestsPage() {
                         </CardContent>
                       </Card>
                     )}
+
+                    {/* Deploy CLI Command — shown when approved or building */}
+                    {(req.status === 'approved' || req.status === 'building') && (() => {
+                      const slug = req.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                      const configObj = {
+                        slug,
+                        title: req.title,
+                        workspaceSlug: req.workspace_slug || undefined,
+                        description: req.description || undefined,
+                        hackingStart: req.starts_at || undefined,
+                        submissionDeadline: req.ends_at || undefined,
+                        maxTeamSize: 4,
+                      };
+                      const b64 = btoa(JSON.stringify(configObj));
+                      const cmd = `node scripts/generate-hackathon-site.js --config "${b64}"`;
+                      return (
+                        <Card className="border-cyan-500/20 bg-cyan-500/[0.03]">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm text-white flex items-center gap-2">
+                              <Terminal className="h-4 w-4 text-cyan-400" /> Deploy Command
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <p className="text-xs text-white/50">
+                              Run this command from the DevSage repo root to clone the template, brand it, and deploy:
+                            </p>
+                            <div className="relative">
+                              <pre className="text-xs bg-black/40 border border-white/10 rounded-lg p-3 overflow-x-auto text-cyan-300 whitespace-pre-wrap break-all">
+                                {cmd}
+                              </pre>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="absolute top-1 right-1 h-7 w-7 p-0 text-white/40 hover:text-white"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(cmd);
+                                  toast.success('Command copied to clipboard');
+                                }}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-white/40">
+                              After running, mark as "Ready" above. The site deploys to{' '}
+                              <span className="text-cyan-400">
+                                {slug}.{req.workspace_slug || 'hackathon'}.devsage.org
+                              </span>
+                            </p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })()}
                   </div>
                 )}
               </Card>

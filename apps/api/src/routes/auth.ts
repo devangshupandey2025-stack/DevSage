@@ -19,6 +19,7 @@ import {
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
+import { sendEmail } from '../services/email.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { rateLimitMiddleware } from '../middleware/rate-limit.js';
 import {
@@ -552,6 +553,201 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
   );
 
   return successResponse(c, { deleted: true });
+});
+
+// ── Password Reset ─────────────────────────────────────────────────
+
+auth.post('/forgot-password', async (c) => {
+  const body = await c.req.json<{ email?: string }>();
+  const email = body.email?.trim().toLowerCase();
+
+  if (!email || !EMAIL_REGEX.test(email)) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Valid email is required');
+  }
+
+  // Always return success to prevent email enumeration
+  const user = await c.env.DB.prepare(
+    'SELECT id, name FROM users WHERE email = ? AND password_hash IS NOT NULL LIMIT 1',
+  ).bind(email).first<{ id: string; name: string | null }>();
+
+  if (user) {
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+
+    // Store token in KV with prefix
+    await c.env.KV.put(`pwd_reset:${token}`, JSON.stringify({
+      userId: user.id,
+      email,
+    }), { expirationTtl: 1800 }); // 30 min TTL
+
+    const frontendOrigin = resolveFrontendOrigin(c.req.header('Origin'), c.env);
+    const resetUrl = `${frontendOrigin}/reset-password?token=${token}`;
+
+    c.executionCtx.waitUntil(
+      sendEmail(c.env, {
+        to: email,
+        subject: 'Reset your DevSage password',
+        html: `
+          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #2DD4BF;">DevSage Password Reset</h2>
+            <p>Hi ${user.name || 'there'},</p>
+            <p>We received a request to reset your password. Click the button below to set a new password:</p>
+            <p style="text-align: center; margin: 32px 0;">
+              <a href="${resetUrl}" style="background: #2DD4BF; color: #0F172A; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                Reset Password
+              </a>
+            </p>
+            <p style="color: #94A3B8; font-size: 14px;">This link expires in 30 minutes. If you didn't request this, you can ignore this email.</p>
+          </div>
+        `,
+      }),
+    );
+  }
+
+  return successResponse(c, { message: 'If that email exists, a reset link has been sent' });
+});
+
+auth.post('/reset-password', async (c) => {
+  const body = await c.req.json<{ token?: string; password?: string }>();
+  const { token, password } = body;
+
+  if (!token) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Reset token is required');
+  }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+
+  const stored = await c.env.KV.get(`pwd_reset:${token}`);
+  if (!stored) {
+    return errorResponse(c, 400, 'TOKEN_EXPIRED', 'Reset token is invalid or expired');
+  }
+
+  const { userId, email } = JSON.parse(stored) as { userId: string; email: string };
+
+  const passwordHash = await hashPassword(password);
+  await c.env.DB.prepare(
+    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+  ).bind(passwordHash, new Date().toISOString(), userId).run();
+
+  // Revoke the token
+  await c.env.KV.delete(`pwd_reset:${token}`);
+
+  // Revoke all existing sessions for security
+  await revokeAllUserTokens(c.env.DB, userId);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: userId,
+      actor_type: 'user',
+      action: 'auth.password_reset',
+      entity_type: 'user',
+      entity_id: userId,
+    }),
+  );
+
+  return successResponse(c, { message: 'Password has been reset. Please log in with your new password.' });
+});
+
+// ── Email Verification OTP ─────────────────────────────────────────
+
+auth.post('/send-verification', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+
+  // Check if already verified (stored in KV for D1 schema compatibility)
+  const verified = await c.env.KV.get(`email_verified:${user.id}`);
+  if (verified) {
+    return successResponse(c, { message: 'Email already verified' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+
+  // Store OTP in KV with 10 min TTL
+  await c.env.KV.put(`email_otp:${user.id}`, JSON.stringify({
+    otp,
+    email: user.email,
+    attempts: 0,
+  }), { expirationTtl: 600 });
+
+  c.executionCtx.waitUntil(
+    sendEmail(c.env, {
+      to: user.email,
+      subject: 'Verify your DevSage email',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #2DD4BF;">Email Verification</h2>
+          <p>Hi ${user.name || 'there'},</p>
+          <p>Your verification code is:</p>
+          <p style="text-align: center; margin: 24px 0;">
+            <span style="font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #2DD4BF; background: #1E293B; padding: 16px 32px; border-radius: 12px; display: inline-block;">
+              ${otp}
+            </span>
+          </p>
+          <p style="color: #94A3B8; font-size: 14px;">This code expires in 10 minutes.</p>
+        </div>
+      `,
+    }),
+  );
+
+  return successResponse(c, { message: 'Verification code sent to your email' });
+});
+
+auth.post('/verify-email', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const body = await c.req.json<{ otp?: string }>();
+  const otp = body.otp?.trim();
+
+  if (!otp || otp.length !== 6) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'A 6-digit verification code is required');
+  }
+
+  const stored = await c.env.KV.get(`email_otp:${user.id}`);
+  if (!stored) {
+    return errorResponse(c, 400, 'TOKEN_EXPIRED', 'Verification code expired. Request a new one.');
+  }
+
+  const data = JSON.parse(stored) as { otp: string; email: string; attempts: number };
+
+  // Rate limit: max 5 attempts
+  if (data.attempts >= 5) {
+    await c.env.KV.delete(`email_otp:${user.id}`);
+    return errorResponse(c, 429, 'TOO_MANY_ATTEMPTS', 'Too many attempts. Request a new code.');
+  }
+
+  if (data.otp !== otp) {
+    // Increment attempts
+    await c.env.KV.put(`email_otp:${user.id}`, JSON.stringify({
+      ...data,
+      attempts: data.attempts + 1,
+    }), { expirationTtl: 600 });
+    return errorResponse(c, 400, 'INVALID_OTP', 'Incorrect verification code');
+  }
+
+  // Mark email as verified in KV
+  const now = new Date().toISOString();
+  await c.env.KV.put(`email_verified:${user.id}`, now);
+
+  // Also try updating the users table (column may exist in newer schema)
+  try {
+    await c.env.DB.prepare(
+      'UPDATE users SET updated_at = ? WHERE id = ?',
+    ).bind(now, user.id).run();
+  } catch { /* ignore if column doesn't exist */ }
+
+  await c.env.KV.delete(`email_otp:${user.id}`);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'auth.email_verified',
+      entity_type: 'user',
+      entity_id: user.id,
+    }),
+  );
+
+  return successResponse(c, { verified: true });
 });
 
 export default auth;
