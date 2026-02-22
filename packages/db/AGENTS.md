@@ -82,3 +82,26 @@ migrations/                # Generated SQL migrations (wrangler.jsonc points her
 - Running `drizzle-kit generate` from wrong directory (must be `packages/db/`)
 - Accessing D1 directly instead of through Drizzle client
 - Omitting `.js` extension in barrel re-exports
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Creating/modifying Drizzle schemas | `d1-drizzle-schema` |
+| Running or creating DB migrations | `drizzle-migrations` |
+| Full schema + migration workflow | `d1-drizzle-schema`, `drizzle-migrations` |
+| TypeScript type issues | `typescript-expert` |
+
+### Subagent Strategy for DB Tasks
+
+Use subagents when a schema change is part of a larger feature:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New table for a feature** | 1. DB schema (`d1-drizzle-schema`, `drizzle-migrations`) + 2. Zod schemas in `packages/shared` (`zod`) in parallel → 3. API route in `apps/api` (`hono-api-scaffolder`) |
+| **Schema refactor** | 1. Schema changes (`d1-drizzle-schema`, `drizzle-migrations`) → 2. Update API queries (`hono-cloudflare`, `d1-drizzle-schema`) → 3. Run tests (`vitest`, `vitest-testing`) |
+| **Migration review** | 1. Review schema (`d1-drizzle-schema`) + 2. Review migration SQL (`drizzle-migrations`) in parallel |

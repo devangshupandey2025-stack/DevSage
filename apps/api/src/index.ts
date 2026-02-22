@@ -24,6 +24,7 @@ import audit from './routes/audit.js';
 import organizers from './routes/organizers.js';
 import announcements from './routes/announcements.js';
 import judgePortal from './routes/judge-portal.js';
+import hackathonRequests from './routes/hackathon-requests.js';
 import auth from './routes/auth.js';
 
 // Queue & Cron
@@ -59,6 +60,7 @@ app.route('/api/v1/admin', admin);
 app.route('/api/v1/notifications', notifications);
 app.route('/api/v1/invites', invites);
 app.route('/api/v1/judge', judgePortal);
+app.route('/api/v1/hackathon-requests', hackathonRequests);
 app.route('/auth', auth);
 app.route('/webhooks', webhooks);
 

@@ -17,6 +17,13 @@ import {
   BarChart3,
   X,
   Building,
+  Send,
+  Check,
+  Eye,
+  Hammer,
+  Package,
+  XCircle,
+  Clock,
 } from 'lucide-react';
 
 type HackathonStatus = 'draft' | 'active' | 'judging' | 'completed' | 'archived';
@@ -48,6 +55,31 @@ interface HackathonListResponse {
   data: Hackathon[];
   meta: { total: number; limit: number; offset: number };
 }
+
+type RequestStatus = 'submitted' | 'request_seen' | 'approved' | 'building' | 'built' | 'rejected';
+
+interface HackathonRequest {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  num_events: number | null;
+  additional_details: string | null;
+  status: RequestStatus;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const REQUEST_STAGES: { key: RequestStatus; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'submitted', label: 'Submitted', icon: Send },
+  { key: 'request_seen', label: 'Request Seen', icon: Eye },
+  { key: 'approved', label: 'Approved', icon: Check },
+  { key: 'building', label: 'Building', icon: Hammer },
+  { key: 'built', label: 'Built', icon: Package },
+];
 
 const NEXT_STATUS: Record<string, string> = {
   draft: 'active',
@@ -169,10 +201,23 @@ export function DashboardPage() {
     slug: '',
     type: 'organization' as 'club' | 'organization' | 'individual',
   });
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [requestFormData, setRequestFormData] = useState({
+    title: '',
+    description: '',
+    startsAt: '',
+    endsAt: '',
+    numEvents: '1',
+    additionalDetails: '',
+  });
+  const [myRequests, setMyRequests] = useState<HackathonRequest[]>([]);
+  const [fetchingRequests, setFetchingRequests] = useState(true);
 
   useEffect(() => {
     fetchHackathons();
     fetchWorkspaces();
+    fetchRequests();
   }, []);
 
   const fetchWorkspaces = async () => {
@@ -207,6 +252,53 @@ export function DashboardPage() {
       toast.error('Failed to create workspace');
     } finally {
       setCreatingWs(false);
+    }
+  };
+
+  const fetchRequests = async () => {
+    setFetchingRequests(true);
+    try {
+      const response = await apiRequest<{ ok: boolean; data: HackathonRequest[] }>('/api/v1/hackathon-requests');
+      setMyRequests(response.data);
+    } catch (_error) {
+      // Requests endpoint may not be available
+    } finally {
+      setFetchingRequests(false);
+    }
+  };
+
+  const submitRequest = async () => {
+    if (!requestFormData.title) {
+      toast.error('Please provide a title');
+      return;
+    }
+    if (workspaces.length === 0) {
+      toast.error('No workspace available. Create one first.');
+      setWsDialogOpen(true);
+      return;
+    }
+    setSubmittingRequest(true);
+    try {
+      await apiRequest('/api/v1/hackathon-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace_id: workspaces[0].id,
+          title: requestFormData.title,
+          description: requestFormData.description || undefined,
+          starts_at: requestFormData.startsAt ? new Date(requestFormData.startsAt).toISOString() : undefined,
+          ends_at: requestFormData.endsAt ? new Date(requestFormData.endsAt).toISOString() : undefined,
+          num_events: parseInt(requestFormData.numEvents, 10) || undefined,
+          additional_details: requestFormData.additionalDetails || undefined,
+        }),
+      });
+      toast.success('Hackathon request submitted!');
+      setRequestDialogOpen(false);
+      setRequestFormData({ title: '', description: '', startsAt: '', endsAt: '', numEvents: '1', additionalDetails: '' });
+      fetchRequests();
+    } catch (_error) {
+      toast.error('Failed to submit request');
+    } finally {
+      setSubmittingRequest(false);
     }
   };
 
@@ -359,6 +451,16 @@ export function DashboardPage() {
                     <Plus className="h-4 w-4" />
                   </span>
                   New Hackathon
+                </button>
+
+                <button
+                  onClick={() => setRequestDialogOpen(true)}
+                  className="group flex items-center justify-center gap-2 rounded-2xl border border-[#CCFF00]/30 bg-[#CCFF00]/10 px-5 py-3 text-sm font-bold text-[#CCFF00] transition hover:border-[#CCFF00]/50 hover:bg-[#CCFF00]/20"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#CCFF00]/10 transition group-hover:bg-[#CCFF00]/20">
+                    <Send className="h-4 w-4" />
+                  </span>
+                  Request Hackathon
                 </button>
               </div>
             </div>
@@ -528,6 +630,211 @@ export function DashboardPage() {
           <p className="mx-auto max-w-lg text-sm leading-relaxed text-white/40">
             Click on any hackathon card to access the full management dashboard with teams, submissions, judging, rounds, and analytics views.
           </p>
+        </div>
+
+        {/* My Requests tracker */}
+        <div className="mt-12">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#CCFF00]/10">
+                <Send className="h-5 w-5 text-[#CCFF00]" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white/90">My Requests</h2>
+                <p className="text-xs text-white/40">Track the status of your hackathon requests</p>
+              </div>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/40">
+              {myRequests.length} request{myRequests.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {fetchingRequests ? (
+            <div className="space-y-4">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={`req-skel-${String(i)}`} className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                  <Skeleton className="mb-4 h-5 w-1/3 rounded-lg bg-white/10" />
+                  <Skeleton className="mb-3 h-4 w-full rounded bg-white/10" />
+                  <Skeleton className="h-12 w-full rounded-xl bg-white/10" />
+                </div>
+              ))}
+            </div>
+          ) : myRequests.length === 0 ? (
+            <EmptyState
+              icon={Send}
+              title="No requests yet"
+              description="Submit a hackathon request and track its progress here — from submission to launch."
+              action={
+                <button
+                  onClick={() => setRequestDialogOpen(true)}
+                  className="flex items-center gap-2 rounded-full border border-[#CCFF00]/30 bg-[#CCFF00]/10 px-6 py-2.5 text-sm font-bold text-[#CCFF00] transition hover:bg-[#CCFF00]/20"
+                >
+                  <Send className="h-4 w-4" /> Submit a Request
+                </button>
+              }
+            />
+          ) : (
+            <div className="space-y-4">
+              {myRequests.map((req) => {
+                const isRejected = req.status === 'rejected';
+                const currentIdx = isRejected ? -1 : REQUEST_STAGES.findIndex((s) => s.key === req.status);
+
+                return (
+                  <div
+                    key={req.id}
+                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm transition-all duration-300 hover:border-white/20 hover:bg-white/[0.07]"
+                  >
+                    {/* Top accent bar */}
+                    <div
+                      className={`absolute top-0 left-0 right-0 h-1 transition-all duration-300 ${
+                        isRejected
+                          ? 'bg-red-500'
+                          : req.status === 'built'
+                            ? 'bg-emerald-500'
+                            : 'bg-[#CCFF00]'
+                      }`}
+                    />
+
+                    <div className="p-6">
+                      {/* Header row */}
+                      <div className="mb-4 flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-bold text-white">{req.title}</h3>
+                            {isRejected && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-0.5 text-[11px] font-bold text-red-400">
+                                <XCircle className="h-3 w-3" /> Rejected
+                              </span>
+                            )}
+                            {req.status === 'built' && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
+                                <Check className="h-3 w-3" /> Complete
+                              </span>
+                            )}
+                          </div>
+                          {req.description && (
+                            <p className="mt-1 line-clamp-2 text-sm text-white/45">{req.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-white/35">
+                          {req.starts_at && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(req.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          )}
+                          {req.ends_at && (
+                            <span className="flex items-center gap-1">
+                              → {new Date(req.ends_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Tracker stepper */}
+                      {!isRejected ? (
+                        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                          <div className="flex items-center">
+                            {REQUEST_STAGES.map((stage, idx) => {
+                              const isCompleted = idx < currentIdx;
+                              const isCurrent = idx === currentIdx;
+                              const isFuture = idx > currentIdx;
+                              const StageIcon = stage.icon;
+
+                              return (
+                                <div key={stage.key} className="flex flex-1 items-center">
+                                  <div className="flex flex-col items-center gap-2">
+                                    {/* Circle */}
+                                    <div
+                                      className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 transition-all duration-500 ${
+                                        isCompleted
+                                          ? 'border-[#CCFF00] bg-[#CCFF00] shadow-[0_0_16px_rgba(204,255,0,0.3)]'
+                                          : isCurrent
+                                            ? 'border-[#CCFF00] bg-[#CCFF00]/20 shadow-[0_0_20px_rgba(204,255,0,0.25)]'
+                                            : 'border-white/15 bg-white/5'
+                                      }`}
+                                    >
+                                      {isCompleted ? (
+                                        <Check className="h-4 w-4 text-black" />
+                                      ) : (
+                                        <StageIcon className={`h-4 w-4 ${isCurrent ? 'text-[#CCFF00]' : 'text-white/25'}`} />
+                                      )}
+                                      {isCurrent && (
+                                        <span className="absolute inset-0 animate-ping rounded-full border-2 border-[#CCFF00] opacity-20" />
+                                      )}
+                                    </div>
+                                    {/* Label */}
+                                    <span
+                                      className={`text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap ${
+                                        isCompleted
+                                          ? 'text-[#CCFF00]/70'
+                                          : isCurrent
+                                            ? 'text-[#CCFF00] font-bold'
+                                            : 'text-white/25'
+                                      }`}
+                                    >
+                                      {stage.label}
+                                    </span>
+                                  </div>
+                                  {/* Connector line */}
+                                  {idx < REQUEST_STAGES.length - 1 && (
+                                    <div className="mx-1 mb-5 h-0.5 flex-1">
+                                      <div
+                                        className={`h-full rounded-full transition-all duration-500 ${
+                                          idx < currentIdx ? 'bg-[#CCFF00]/60' : 'bg-white/10'
+                                        }`}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-red-500/15 bg-red-500/5 p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-red-500/40 bg-red-500/15">
+                              <XCircle className="h-4 w-4 text-red-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-red-400">Request was not approved</p>
+                              {req.admin_notes && (
+                                <p className="mt-0.5 text-xs text-red-400/60">{req.admin_notes}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Footer: metadata & admin notes */}
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3 text-[11px] text-white/30">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          {req.num_events && (
+                            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
+                              {req.num_events} event{req.num_events !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        {!isRejected && req.admin_notes && (
+                          <div className="max-w-xs rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+                            <p className="text-[11px] text-white/50">
+                              <span className="font-semibold text-white/60">Admin: </span>
+                              {req.admin_notes}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -816,6 +1123,138 @@ export function DashboardPage() {
                 className="rounded-lg bg-[#CCFF00] px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
               >
                 {creatingWs ? 'Creating…' : 'Create Workspace'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request hackathon dialog */}
+      {requestDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="absolute inset-0" onClick={() => setRequestDialogOpen(false)} />
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-white/20 bg-black/90 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_30px_120px_rgba(0,0,0,0.85)]">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Request New Hackathon</h3>
+                <p className="mt-1 text-sm text-white/40">Submit a request and we'll get it set up for you.</p>
+              </div>
+              <button
+                onClick={() => setRequestDialogOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-white/50 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {workspaces.length === 0 && (
+              <div className="mb-5 rounded-xl border border-[#CCFF00]/20 bg-[#CCFF00]/5 p-4">
+                <p className="text-sm text-white/60">
+                  You need a workspace before submitting a request.{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setRequestDialogOpen(false); setWsDialogOpen(true); }}
+                    className="font-semibold text-[#CCFF00] underline underline-offset-2 transition hover:text-white"
+                  >
+                    Create a workspace first
+                  </button>
+                </p>
+              </div>
+            )}
+
+            <div className="mb-6 space-y-5">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Title *
+                </label>
+                <input
+                  value={requestFormData.title}
+                  onChange={(e) => setRequestFormData((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Spring 2026 Innovation Hackathon"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Description
+                </label>
+                <textarea
+                  value={requestFormData.description}
+                  onChange={(e) => setRequestFormData((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Describe the hackathon theme, goals, and target audience…"
+                  rows={3}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00] resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                    Starts At
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={requestFormData.startsAt}
+                    onChange={(e) => setRequestFormData((f) => ({ ...f, startsAt: e.target.value }))}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                    Ends At
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={requestFormData.endsAt}
+                    onChange={(e) => setRequestFormData((f) => ({ ...f, endsAt: e.target.value }))}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Number of Events
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={requestFormData.numEvents}
+                  onChange={(e) => setRequestFormData((f) => ({ ...f, numEvents: e.target.value }))}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Additional Details
+                </label>
+                <textarea
+                  value={requestFormData.additionalDetails}
+                  onChange={(e) => setRequestFormData((f) => ({ ...f, additionalDetails: e.target.value }))}
+                  placeholder="Any extra info — special requirements, sponsors, venue details…"
+                  rows={3}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00] resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setRequestDialogOpen(false)}
+                className="rounded-lg border border-white/10 bg-transparent px-5 py-2.5 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitRequest}
+                disabled={submittingRequest}
+                className="flex items-center gap-2 rounded-lg bg-[#CCFF00] px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+                {submittingRequest ? 'Submitting…' : 'Submit Request'}
               </button>
             </div>
           </div>

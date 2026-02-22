@@ -159,3 +159,39 @@ pnpm --filter @devsage/api test
 ```
 
 Uses `@cloudflare/vitest-pool-workers` — real Workers runtime with D1/KV/DO bindings. `SELF.fetch()` for integration tests. `singleWorker: true`, `isolatedStorage: false`. Test helpers in `__tests__/helpers.ts` (schema setup, DB reset, auth cookie generation, 7-user seed data). 26 test files covering auth, hackathons, teams, submissions, judging, webhooks, state machine, cron, roles, audit.
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Writing/reviewing Worker code | `workers-best-practices`, `wrangler` |
+| Scaffolding new API routes | `hono-api-scaffolder`, `hono-cloudflare`, `api-design` |
+| Designing REST endpoints (naming, status codes, pagination) | `api-design` |
+| Writing Hono middleware or bindings | `hono-cloudflare`, `workers-best-practices` |
+| Creating/modifying Durable Objects | `durable-objects`, `workers-best-practices` |
+| Creating/modifying DB schemas | `d1-drizzle-schema`, `drizzle-migrations` |
+| Running or creating DB migrations | `drizzle-migrations` |
+| Writing Zod request/response schemas | `zod` |
+| Writing or running tests | `vitest`, `vitest-testing` |
+| Reviewing auth/session security | `auth-security-reviewer` |
+| Implementing email/password auth | `email-and-password-best-practices` |
+| Implementing 2FA | `two-factor-authentication-best-practices` |
+| TypeScript type issues | `typescript-expert`, `typescript-advanced-types` |
+| Configuring wrangler.jsonc / deploying | `wrangler` |
+| Backend architecture patterns | `nodejs-backend-patterns`, `nodejs-backend-typescript` |
+
+### Subagent Strategy for API Tasks
+
+Use subagents when a task touches multiple concerns. Each subagent loads its own skill set:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New CRUD endpoint** | 1. Schema (`d1-drizzle-schema`, `drizzle-migrations`) → 2. Zod types (`zod`) → 3. Route (`hono-api-scaffolder`, `api-design`) + Tests (`vitest`, `vitest-testing`) in parallel |
+| **New Durable Object** | 1. DO class (`durable-objects`, `workers-best-practices`) → 2. Route integration (`hono-cloudflare`) + DO tests (`vitest`, `durable-objects`) in parallel |
+| **Auth feature** | 1. Security review (`auth-security-reviewer`) → 2. Implementation (`email-and-password-best-practices` or `two-factor-authentication-best-practices`) → 3. Tests (`vitest`, `vitest-testing`) |
+| **Queue handler** | 1. Handler (`workers-best-practices`, `nodejs-backend-patterns`) + Tests (`vitest`, `vitest-testing`) in parallel |
+| **Perf optimization** | 1. Profile Worker (`workers-best-practices`) + 2. Review DB queries (`d1-drizzle-schema`) in parallel |

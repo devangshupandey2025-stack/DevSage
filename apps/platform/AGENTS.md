@@ -90,3 +90,31 @@ Root `/` and `*` redirect to `/dashboard`.
 - Putting participant-facing features here — those belong in `apps/web`
 - Direct `fetch()` instead of `apiRequest()` — loses cookie handling + 401 refresh
 - Adding routes outside `App.tsx`
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Building UI with shadcn/ui components | `shadcn`, `tailwind-v4-shadcn` |
+| Styling with Tailwind CSS v4 | `tailwind-v4-shadcn` |
+| Dark mode / theming / CSS variables | `tailwind-v4-shadcn`, `shadcn` |
+| Optimizing page load / performance | `performance` |
+| Writing or running tests | `vitest`, `vitest-testing` |
+| Writing Zod schemas for API responses | `zod` |
+| TypeScript type issues | `typescript-expert`, `typescript-advanced-types` |
+
+### Subagent Strategy for Platform Tasks
+
+Use subagents when a task involves multiple independent workstreams:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New organizer page** | 1. Page component (`shadcn`, `tailwind-v4-shadcn`, `performance`) → 2. Tests (`vitest`, `vitest-testing`) |
+| **New page + API endpoint** | 1. API route in `apps/api` (`hono-api-scaffolder`, `api-design`) + 2. Platform page (`shadcn`, `tailwind-v4-shadcn`) in parallel (after shared types are ready) |
+| **Judging workflow feature** | 1. API judging endpoint (`hono-cloudflare`, `api-design`) + 2. Judge scoring UI (`shadcn`, `tailwind-v4-shadcn`) in parallel |
+| **Performance audit** | 1. Analyze bundle/loading (`performance`) + 2. Review component rendering (`performance`, `shadcn`) in parallel |
+| **Analytics/dashboard page** | 1. Data fetching + query factories (`zod`, `typescript-expert`) + 2. Chart/metric UI (`shadcn`, `tailwind-v4-shadcn`) in parallel |

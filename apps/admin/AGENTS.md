@@ -50,3 +50,27 @@ Fallback: `*` → Navigate to `/`
 
 - Putting hackathon management features here — those belong in `apps/platform`
 - This app is for platform-wide admin only (managing admins, workspaces, invites)
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Building UI with shadcn/ui components | `shadcn`, `tailwind-v4-shadcn` |
+| Styling with Tailwind CSS v4 | `tailwind-v4-shadcn` |
+| Dark mode / theming / CSS variables | `tailwind-v4-shadcn`, `shadcn` |
+| Writing Zod schemas for API responses | `zod` |
+| TypeScript type issues | `typescript-expert`, `typescript-advanced-types` |
+
+### Subagent Strategy for Admin Tasks
+
+Use subagents when a task involves multiple independent workstreams:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New admin page** | 1. Page component (`shadcn`, `tailwind-v4-shadcn`) → 2. Wire API calls (`zod`, `typescript-expert`) |
+| **New admin page + API endpoint** | 1. API admin route in `apps/api` (`hono-api-scaffolder`, `api-design`) + 2. Admin page (`shadcn`, `tailwind-v4-shadcn`) in parallel |
+| **Platform admin feature** | 1. API `requirePlatformAdmin` middleware route (`hono-cloudflare`, `workers-best-practices`) → 2. Admin UI (`shadcn`, `tailwind-v4-shadcn`) |

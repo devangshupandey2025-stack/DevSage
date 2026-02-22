@@ -66,3 +66,26 @@ src/
 - Defining types separately from Zod schemas (derive with `z.infer`)
 - Forgetting `.js` extension in barrel re-exports
 - Importing from `@devsage/shared` in `@devsage/db` (no cross-dependency between these packages)
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Writing Zod validation schemas | `zod` |
+| Complex TypeScript type inference | `typescript-advanced-types` |
+| TypeScript type issues | `typescript-expert`, `typescript-advanced-types` |
+| Writing schema tests | `vitest`, `vitest-testing`, `zod` |
+
+### Subagent Strategy for Shared Tasks
+
+Use subagents when a schema change is part of a larger feature:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New entity schemas** | 1. Zod schemas (`zod`, `typescript-advanced-types`) + 2. DB table in `packages/db` (`d1-drizzle-schema`) in parallel → 3. API route in `apps/api` (`hono-api-scaffolder`) |
+| **Schema refactor** | 1. Update Zod schemas (`zod`) → 2. Update API routes consuming them (`hono-cloudflare`) + 3. Update frontend type usage (`typescript-expert`) in parallel |
+| **Schema tests** | 1. Write validation tests (`vitest`, `vitest-testing`, `zod`) |

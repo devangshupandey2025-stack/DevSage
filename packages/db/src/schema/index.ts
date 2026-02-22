@@ -10,6 +10,7 @@ export { workspaces } from './workspaces.js';
 export { workspaceMembers } from './workspace-members.js';
 export { workspaceInvites } from './workspace-invites.js';
 export { hackathons } from './hackathons.js';
+export { hackathonRequests } from './hackathon-requests.js';
 export { organizerRoles } from './organizer-roles.js';
 export { hackathonTracks } from './hackathon-tracks.js';
 export { hackathonRounds } from './hackathon-rounds.js';

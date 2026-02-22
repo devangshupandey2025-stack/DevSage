@@ -11,6 +11,7 @@ import { WorkspaceDetailPage } from '@/pages/workspace-detail';
 import { UsersPage } from '@/pages/users';
 import { HackathonsPage } from '@/pages/hackathons';
 import { HackathonDetailPage } from '@/pages/hackathon-detail';
+import { HackathonRequestsPage } from '@/pages/hackathon-requests';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
           { path: '/users', element: <UsersPage /> },
           { path: '/hackathons', element: <HackathonsPage /> },
           { path: '/hackathons/:id', element: <HackathonDetailPage /> },
+          { path: '/hackathon-requests', element: <HackathonRequestsPage /> },
           { path: '/profile', element: <ProfilePage /> },
         ],
       },

@@ -68,6 +68,9 @@ export function DashboardLayout() {
               <Link to="/workspaces" className={`transition ${navLinkClass('/workspaces')}`}>
                 Workspaces
               </Link>
+              <Link to="/hackathon-requests" className={`transition ${navLinkClass('/hackathon-requests')}`}>
+                Requests
+              </Link>
             </nav>
           </div>
 

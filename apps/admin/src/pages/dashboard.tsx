@@ -3,7 +3,7 @@ import { apiRequest } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Users, Building2, Trophy, Activity, Database } from 'lucide-react';
+import { Users, Building2, Trophy, Activity, Database, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface PlatformStats {
@@ -13,15 +13,30 @@ interface PlatformStats {
   active_hackathons: number;
 }
 
+interface RequestStats {
+  submitted: number;
+  seen: number;
+  approved: number;
+  building: number;
+  built: number;
+  rejected: number;
+  total: number;
+}
+
 export function AdminDashboardPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [requestStats, setRequestStats] = useState<RequestStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchStats() {
       try {
-        const res = await apiRequest<{ data: PlatformStats }>('/api/v1/admin/stats');
-        setStats(res.data);
+        const [platformRes, reqRes] = await Promise.all([
+          apiRequest<{ data: PlatformStats }>('/api/v1/admin/stats'),
+          apiRequest<{ data: RequestStats }>('/api/v1/hackathon-requests/admin/stats').catch(() => ({ data: { submitted: 0, seen: 0, approved: 0, building: 0, built: 0, rejected: 0, total: 0 } })),
+        ]);
+        setStats(platformRes.data);
+        setRequestStats(reqRes.data);
       } catch {
         setStats({ total_users: 0, total_workspaces: 0, total_hackathons: 0, active_hackathons: 0 });
       } finally {
@@ -36,6 +51,7 @@ export function AdminDashboardPage() {
     { label: 'Workspaces', value: stats?.total_workspaces ?? 0, icon: Building2, color: 'text-purple-400' },
     { label: 'Hackathons', value: stats?.total_hackathons ?? 0, icon: Trophy, color: 'text-[#CCFF00]' },
     { label: 'Active Now', value: stats?.active_hackathons ?? 0, icon: Activity, color: 'text-emerald-400' },
+    { label: 'Pending Requests', value: (requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0), icon: FileText, color: 'text-orange-400' },
   ];
 
   return (
@@ -102,6 +118,17 @@ export function AdminDashboardPage() {
             >
               <p className="font-medium text-white">Users</p>
               <p className="mt-1 text-xs text-white/40">Browse all platform users</p>
+            </a>
+            <a
+              href="/hackathon-requests"
+              className="rounded-lg border border-white/10 bg-white/5 p-4 text-center transition hover:border-[#CCFF00]/20 hover:bg-white/10"
+            >
+              <p className="font-medium text-white">Hackathon Requests</p>
+              <p className="mt-1 text-xs text-white/40">
+                {(requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0) > 0
+                  ? `${(requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0)} pending`
+                  : 'Review creation requests'}
+              </p>
             </a>
           </div>
         </CardContent>
