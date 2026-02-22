@@ -89,3 +89,30 @@ pnpm --filter @devsage/web test
 ```
 
 jsdom environment, `@testing-library/react`, globals enabled. Tests in `src/__tests__/`.
+
+## SKILLS
+
+Load these skills from `.agents/skills/` **before starting work** in this package. Each skill contains domain-specific rules and patterns that override general knowledge.
+
+### Skill Routing
+
+| Task | Skills to Load |
+|------|---------------|
+| Building UI with shadcn/ui components | `shadcn`, `tailwind-v4-shadcn` |
+| Styling with Tailwind CSS v4 | `tailwind-v4-shadcn` |
+| Dark mode / theming / CSS variables | `tailwind-v4-shadcn`, `shadcn` |
+| Optimizing page load / performance | `performance` |
+| Writing or running tests | `vitest`, `vitest-testing` |
+| Writing Zod schemas for API responses | `zod` |
+| TypeScript type issues | `typescript-expert`, `typescript-advanced-types` |
+
+### Subagent Strategy for Web Tasks
+
+Use subagents when a task involves multiple independent workstreams:
+
+| Task | Subagent Decomposition |
+|------|----------------------|
+| **New page** | 1. Page component (`shadcn`, `tailwind-v4-shadcn`, `performance`) → 2. Tests (`vitest`, `vitest-testing`) |
+| **New page + API endpoint** | 1. API route in `apps/api` (`hono-api-scaffolder`, `api-design`) + 2. Frontend page (`shadcn`, `tailwind-v4-shadcn`) in parallel (after shared types are ready) |
+| **Performance audit** | 1. Analyze bundle/loading (`performance`) + 2. Review component rendering (`performance`, `shadcn`) in parallel |
+| **Component library update** | 1. Update shadcn components (`shadcn`, `tailwind-v4-shadcn`) → 2. Verify tests (`vitest`, `vitest-testing`) |
