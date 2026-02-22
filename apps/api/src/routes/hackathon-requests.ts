@@ -202,10 +202,10 @@ hackathonRequests.patch('/admin/:id', authMiddleware, requirePlatformAdmin, asyn
       `INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at) VALUES (?, ?, ?, 'organizer', ?)`
     ).bind(crypto.randomUUID(), hackathonId, existing.requested_by as string, now).run();
 
-    // Link hackathon to the request (update admin_notes with hackathon reference)
+    // Link hackathon to the request
     await c.env.DB.prepare(
-      `UPDATE hackathon_requests SET admin_notes = COALESCE(admin_notes || '\n', '') || ? WHERE id = ?`
-    ).bind(`[Auto-created hackathon: ${finalSlug} (${hackathonId})]`, id).run();
+      `UPDATE hackathon_requests SET hackathon_id = ?, admin_notes = COALESCE(admin_notes || '\n', '') || ? WHERE id = ?`
+    ).bind(hackathonId, `[Auto-created hackathon: ${finalSlug} (${hackathonId})]`, id).run();
   }
 
   // ── Dispatch notification for status transition ────────────
@@ -226,10 +226,12 @@ hackathonRequests.patch('/admin/:id', authMiddleware, requirePlatformAdmin, asyn
   } catch (_) { /* notification failure should not block status update */ }
 
   const updated = await c.env.DB.prepare(`
-    SELECT hr.*, w.name as workspace_name, w.slug as workspace_slug, u.name as requester_name, u.email as requester_email
+    SELECT hr.*, w.name as workspace_name, w.slug as workspace_slug, u.name as requester_name, u.email as requester_email,
+           h.slug as hackathon_slug
     FROM hackathon_requests hr
     JOIN workspaces w ON hr.workspace_id = w.id
     JOIN users u ON hr.requested_by = u.id
+    LEFT JOIN hackathons h ON hr.hackathon_id = h.id
     WHERE hr.id = ?
   `).bind(id).first();
 

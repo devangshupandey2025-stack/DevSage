@@ -91,7 +91,7 @@
     "JUDGE_URL": "https://judge.devsage.org",
     "API_URL": "https://api.devsage.org",
     "EMAIL_FROM": "noreply@devsage.org",
-    "HACKATHON_ORIGIN_PATTERN": "https://*.hackathon.devsage.org",
+    "HACKATHON_ORIGIN_PATTERN": "https://*.devsage.org",
     "PAGES_ORIGIN_PATTERN": "https://*.pages.dev",
     "WORKERS_ORIGIN_PATTERN": "https://*.workers.dev"
   }
