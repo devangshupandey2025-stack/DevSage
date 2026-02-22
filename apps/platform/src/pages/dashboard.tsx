@@ -16,6 +16,7 @@ import {
   Star,
   BarChart3,
   X,
+  Building,
 } from 'lucide-react';
 
 type HackathonStatus = 'draft' | 'active' | 'judging' | 'completed' | 'archived';
@@ -161,6 +162,13 @@ export function DashboardPage() {
     judgingStarts: '',
     maxTeamSize: '4',
   });
+  const [wsDialogOpen, setWsDialogOpen] = useState(false);
+  const [creatingWs, setCreatingWs] = useState(false);
+  const [wsFormData, setWsFormData] = useState({
+    name: '',
+    slug: '',
+    type: 'organization' as 'club' | 'organization' | 'individual',
+  });
 
   useEffect(() => {
     fetchHackathons();
@@ -173,6 +181,32 @@ export function DashboardPage() {
       setWorkspaces(response.data);
     } catch (_error) {
       // Workspaces may not be accessible for all users
+    }
+  };
+
+  const createWorkspace = async () => {
+    if (!wsFormData.name || !wsFormData.slug) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    setCreatingWs(true);
+    try {
+      await apiRequest('/api/v1/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: wsFormData.name,
+          slug: wsFormData.slug,
+          type: wsFormData.type,
+        }),
+      });
+      toast.success('Workspace created!');
+      setWsDialogOpen(false);
+      setWsFormData({ name: '', slug: '', type: 'organization' });
+      fetchWorkspaces();
+    } catch (_error) {
+      toast.error('Failed to create workspace');
+    } finally {
+      setCreatingWs(false);
     }
   };
 
@@ -198,7 +232,8 @@ export function DashboardPage() {
       return;
     }
     if (workspaces.length === 0) {
-      toast.error('No workspace available. Please contact an admin.');
+      toast.error('No workspace available. Create one first.');
+      setWsDialogOpen(true);
       return;
     }
     const slug = formData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -305,6 +340,16 @@ export function DashboardPage() {
                     <span>{byStatus('active') + byStatus('judging')} in flight</span>
                   </div>
                 </div>
+
+                <button
+                  onClick={() => setWsDialogOpen(true)}
+                  className="group flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 transition group-hover:bg-white/10">
+                    <Building className="h-4 w-4" />
+                  </span>
+                  New Workspace
+                </button>
 
                 <button
                   onClick={() => setCreateDialogOpen(true)}
@@ -595,6 +640,21 @@ export function DashboardPage() {
               </button>
             </div>
 
+            {workspaces.length === 0 && (
+              <div className="mb-5 rounded-xl border border-[#CCFF00]/20 bg-[#CCFF00]/5 p-4">
+                <p className="text-sm text-white/60">
+                  You need a workspace before creating a hackathon.{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setCreateDialogOpen(false); setWsDialogOpen(true); }}
+                    className="font-semibold text-[#CCFF00] underline underline-offset-2 transition hover:text-white"
+                  >
+                    Create a workspace first
+                  </button>
+                </p>
+              </div>
+            )}
+
             <div className="mb-6 space-y-5">
               <div>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
@@ -672,7 +732,90 @@ export function DashboardPage() {
                 disabled={creating}
                 className="rounded-lg bg-[#CCFF00] px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
               >
-                {creating ? 'Creating…' : 'Create Hackathon'}
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create workspace dialog */}
+      {wsDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="absolute inset-0" onClick={() => setWsDialogOpen(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-white/20 bg-black/90 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_30px_120px_rgba(0,0,0,0.85)]">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Create Workspace</h3>
+                <p className="mt-1 text-sm text-white/40">Set up a workspace to organize your hackathons.</p>
+              </div>
+              <button
+                onClick={() => setWsDialogOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-white/50 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-6 space-y-5">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Name *
+                </label>
+                <input
+                  value={wsFormData.name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                    setWsFormData((f) => ({ ...f, name, slug }));
+                  }}
+                  placeholder="e.g. Acme Engineering"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Slug *
+                </label>
+                <input
+                  value={wsFormData.slug}
+                  onChange={(e) => setWsFormData((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                  placeholder="acme-engineering"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                />
+                <p className="mt-1.5 text-xs text-white/30">URL-friendly identifier, auto-generated from name</p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Type *
+                </label>
+                <select
+                  value={wsFormData.type}
+                  onChange={(e) => setWsFormData((f) => ({ ...f, type: e.target.value as 'club' | 'organization' | 'individual' }))}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                >
+                  <option value="organization" className="bg-black text-white">Organization</option>
+                  <option value="club" className="bg-black text-white">Club</option>
+                  <option value="individual" className="bg-black text-white">Individual</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setWsDialogOpen(false)}
+                className="rounded-lg border border-white/10 bg-transparent px-5 py-2.5 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createWorkspace}
+                disabled={creatingWs}
+                className="rounded-lg bg-[#CCFF00] px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
+              >
+                {creatingWs ? 'Creating…' : 'Create Workspace'}
               </button>
             </div>
           </div>

@@ -141,4 +141,56 @@ admin.patch('/hackathons/:hackathonId/rounds/:roundId/initialize', async (c) => 
   return successResponse(c, updated);
 });
 
+// ─── Invites ─────────────────────────────────────────────────
+
+admin.get('/invites', async (c) => {
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '10'), 100);
+  const offset = parseInt(c.req.query('offset') ?? '0');
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM platform_invites ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .bind(limit, offset).all(),
+    c.env.DB.prepare('SELECT COUNT(*) as total FROM platform_invites').first<{ total: number }>(),
+  ]);
+  return paginatedResponse(c, rows.results || [], count?.total ?? 0, limit, offset);
+});
+
+admin.post('/invites', async (c) => {
+  const user = c.get('user')!;
+  const body = await c.req.json<{ email: string }>();
+  if (!body.email) return errorResponse(c, 400, 'VALIDATION_ERROR', 'email required');
+
+  const id = crypto.randomUUID();
+  const invite_code = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+  const now = new Date().toISOString();
+  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO platform_invites (id, email, invite_code, status, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, body.email, invite_code, 'pending', user.id, now, expires).run();
+  } catch {
+    return errorResponse(c, 409, 'DUPLICATE', 'Invite already exists for this email');
+  }
+  return successResponse(c, { id, email: body.email, invite_code, status: 'pending', created_at: now, expires_at: expires }, { status: 201 });
+});
+
+admin.delete('/invites/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare("UPDATE platform_invites SET status = 'revoked' WHERE id = ? AND status = 'pending'").bind(id).run();
+  return successResponse(c, { revoked: true });
+});
+
+// ─── Workspaces ──────────────────────────────────────────────
+
+admin.get('/workspaces', async (c) => {
+  const rows = await c.env.DB.prepare(`
+    SELECT w.*,
+      (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) as member_count,
+      (SELECT COUNT(*) FROM hackathons h WHERE h.workspace_id = w.id) as hackathon_count
+    FROM workspaces w
+    ORDER BY w.created_at DESC
+  `).all();
+  return successResponse(c, rows.results || []);
+});
+
 export default admin;

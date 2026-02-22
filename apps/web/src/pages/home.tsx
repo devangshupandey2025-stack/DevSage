@@ -46,7 +46,7 @@ import ibhanImg from '@/photos/ibhan.jpeg';
 import devangshuImg from '@/photos/devangshu.png';
 import srijanImg from '@/photos/srijan.png';
 import logo from '@/photos/logo.png';
-import { fileURLToPath } from 'url';
+import { useAuth } from '@/contexts/auth-context';
 
 /* ─────────────────────────────────────────────
    NAVBAR
@@ -55,6 +55,7 @@ const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
+  const { isAuthenticated, user, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -135,14 +136,33 @@ const Navbar = () => {
             ))}
           </div>
           <div className="hidden lg:flex items-center gap-3">
-            <motion.button
-              className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
-            >
-              Get in Touch
-            </motion.button>
+            {!authLoading && isAuthenticated ? (
+              <motion.button
+                className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/dashboard')}
+              >
+                Dashboard
+              </motion.button>
+            ) : !authLoading ? (
+              <>
+                <motion.button
+                  className="text-white/70 hover:text-white text-sm font-medium px-4 py-2.5 transition-colors"
+                  onClick={() => navigate('/login')}
+                >
+                  Sign In
+                </motion.button>
+                <motion.button
+                  className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => navigate('/login')}
+                >
+                  Get Started
+                </motion.button>
+              </>
+            ) : null}
           </div>
 
           <button
@@ -178,6 +198,16 @@ const Navbar = () => {
                     {link.label}
                   </motion.button>
                 ))}
+              <motion.button
+                type="button"
+                className="text-3xl md:text-5xl font-black text-black hover:text-white transition-colors bg-transparent border-none cursor-pointer mt-4"
+                initial={{ opacity: 0, y: 50 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 * navLinks.length + 0.3 }}
+                onClick={() => { navigate(isAuthenticated ? '/dashboard' : '/login'); setIsOpen(false); }}
+              >
+                {isAuthenticated ? 'Dashboard' : 'Sign In'}
+              </motion.button>
             </nav>
           </motion.div>
         )}

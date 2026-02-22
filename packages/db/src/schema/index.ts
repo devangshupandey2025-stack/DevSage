@@ -5,6 +5,7 @@ export { deletionRequests } from './deletion-requests.js';
 
 // Business tables
 export { platformAdmins } from './platform-admins.js';
+export { platformInvites } from './platform-invites.js';
 export { workspaces } from './workspaces.js';
 export { workspaceMembers } from './workspace-members.js';
 export { workspaceInvites } from './workspace-invites.js';
