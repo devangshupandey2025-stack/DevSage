@@ -1,10 +1,11 @@
 # Architecture — Frontend Apps
 
-**Generated:** 2026-02-18  
+**Updated:** 2026-02-22  
 **Framework:** React 18.3.1  
 **Build:** Vite 6.0.0  
 **Styling:** Tailwind CSS v4 + Radix UI + shadcn/ui  
-**Deploy:** Cloudflare Workers Static Assets
+**Deploy:** Cloudflare Workers Static Assets  
+**Apps:** 5 (admin, platform, web, judge, hackathon sites)
 
 ---
 

@@ -1,10 +1,11 @@
 # Architecture — API Backend
 
-**Generated:** 2026-02-18  
+**Updated:** 2026-02-22  
 **Package:** `@devsage/api`  
 **Runtime:** Cloudflare Workers  
 **Framework:** Hono 4.6.14  
-**Deploy:** `api.devsage.org` (Workers)
+**Deploy:** `api.devsage.org` (Workers)  
+**Endpoints:** 108 across 17 route files
 
 ---
 
@@ -135,9 +136,9 @@ All services use fail-open pattern: 10s timeout via AbortController, log warning
 
 | Middleware | File | Purpose |
 |-----------|------|---------|
-| `corsMiddleware` | `cors.ts` | Dynamic origin validation |
+| `corsMiddleware` | `cors.ts` | Dynamic origin validation (supports `*.devsage.org`) |
 | `requestIdMiddleware` | `request-id.ts` | UUID per request |
-| `optionalAuth` | `auth.ts` | Non-blocking JWT extraction |
+| `optionalAuth` | `auth.ts` | Non-blocking JWT extraction (cookie + Bearer) |
 | `authMiddleware` | `auth.ts` | Strict auth guard (401) |
 | `errorHandler` | `error-handler.ts` | Global error → envelope |
 | `hackathonContext` | `hackathon.ts` | Slug → hackathon resolution |
@@ -145,6 +146,8 @@ All services use fail-open pattern: 10s timeout via AbortController, log warning
 | `requireExactRole(role)` | `role.ts` | Exact role match |
 | `requirePlatformAdmin` | `platform-admin.ts` | Platform admin guard |
 | `rateLimitMiddleware(tier)` | `rate-limit.ts` | KV-backed rate limiting |
+| `kvCache(ttl)` | `cache.ts` | KV-backed response caching |
+| `cacheControl(maxAge)` | `cache.ts` | Cache-Control header injection |
 
 ---
 
@@ -178,3 +181,62 @@ errorResponse(c, status, code, message) → { ok: false, error: { code, message 
 - External JWT libraries — use `crypto.subtle`
 - Storing roles in JWT — resolve per-request
 - Backward state transitions (except archived→completed)
+
+---
+
+## Route Files
+
+| File | Mount Path | Endpoints | Purpose |
+|------|-----------|-----------|---------|
+| `auth.ts` | `/auth` | 14 | Login, register, OAuth, password reset, email verification |
+| `hackathons.ts` | `/api/v1/hackathons` | 7 | CRUD, state transitions, search |
+| `hackathon-requests.ts` | `/api/v1/hackathon-requests` | 6 | Creation request lifecycle |
+| `teams.ts` | `/api/v1/hackathons/:slug/teams` | 11 | Team CRUD, join, invite |
+| `team-repos.ts` | `/api/v1/hackathons/:slug/teams` | 3 | Repo linking/unlinking |
+| `submissions.ts` | `/api/v1/hackathons/:slug/submissions` | 9 | Submission management |
+| `judging.ts` | `/api/v1/hackathons/:slug/judging` | 13 | Rubric, judges, scoring, leaderboard |
+| `rounds.ts` | `/api/v1/hackathons/:slug/rounds` | 5 | Round management |
+| `announcements.ts` | `/api/v1/hackathons/:slug/announcements` | 4 | Broadcast messages |
+| `organizers.ts` | `/api/v1/hackathons/:slug/organizers` | 3 | Organizer role management |
+| `audit.ts` | `/api/v1/hackathons/:slug/audit` | 1 | Audit trail |
+| `workspaces.ts` | `/api/v1/workspaces` | 7 | Workspace CRUD + members |
+| `admin.ts` | `/api/v1/admin` | 14 | Platform admin operations |
+| `notifications.ts` | `/api/v1/notifications` | 4 | In-app notifications |
+| `invites.ts` | `/api/v1/invites` | 7 | Invite token resolution |
+| `judge-portal.ts` | `/api/v1/judge` | 1 | Judge-specific views |
+| `webhooks.ts` | `/webhooks` | 1 | GitHub webhook receiver |
+
+---
+
+## Login Access Control
+
+The API restricts login based on the `Origin` header:
+
+| Origin | Access Level | Requirement |
+|--------|-------------|-------------|
+| `devsage.org` | Participant | Always allowed |
+| `platform.devsage.org` | Organizer | Workspace membership or platform admin |
+| `shikdd.devsage.org` | Admin | Platform admin record |
+| `judge.devsage.org` | Judge | Accepted judge invite |
+
+Platform admins bypass all origin-based access checks.
+
+---
+
+## CORS Configuration
+
+Allowed origins:
+- Static: `FRONTEND_URL`, `PLATFORM_URL`, `ADMIN_URL`, `JUDGE_URL`
+- Pattern: `*.devsage.org`, `*.pages.dev`, `*.workers.dev`
+- Credentials: `true` (cookies)
+
+---
+
+## Performance Optimizations
+
+- **ETag + Cache-Control** on hackathon detail and leaderboard responses
+- **KV-backed leaderboard cache** with TTL (30s judging, 300s completed)
+- **Role resolution caching** in KV (60s TTL)
+- **148 database indexes** including composite indexes for JOIN queries
+- **waitUntil()** for non-blocking KV writes and audit logging
+- **UNION ALL** role resolution query (single query instead of 5 sequential)

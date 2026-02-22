@@ -1,9 +1,10 @@
 # Data Models — DevSage
 
-**Generated:** 2026-02-18  
+**Updated:** 2026-02-22  
 **ORM:** Drizzle ORM (SQLite mode)  
 **Database:** Cloudflare D1  
-**Total Tables:** 36
+**Total Tables:** 49  
+**Total Indexes:** 148
 
 ---
 

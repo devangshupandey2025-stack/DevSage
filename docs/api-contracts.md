@@ -1,8 +1,10 @@
 # API Contracts — DevSage API
 
-**Generated:** 2026-02-18  
+**Updated:** 2026-02-22  
 **Base URL:** `https://api.devsage.org`  
-**Response Envelope:** `{ ok: true, data, meta }` / `{ ok: false, error: { code, message } }`
+**Total Endpoints:** 108 (48 GET, 37 POST, 10 PATCH, 12 DELETE, 1 PUT)  
+**Response Envelope:** `{ ok: true, data, meta }` / `{ ok: false, error: { code, message } }`  
+**Auth:** Cookie-based JWT (`access_token` HttpOnly cookie) — use `credentials: 'include'`
 
 ---
 
