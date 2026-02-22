@@ -40,6 +40,7 @@ export interface UserContext {
   name: string;
   image: string | null;
   avatar_url: string | null;
+  github_username: string | null;
   created_at: string | null;
   platformAdmin: boolean;
   hackathonRoles: Record<string, string[]>;

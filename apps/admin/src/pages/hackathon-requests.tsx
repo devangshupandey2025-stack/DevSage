@@ -46,7 +46,7 @@ interface HackathonRequest {
   updated_at: string;
 }
 
-type Status = 'submitted' | 'seen' | 'approved' | 'building' | 'built' | 'rejected';
+type Status = 'submitted' | 'under_review' | 'approved' | 'rejected' | 'changes_requested' | 'building' | 'ready';
 
 interface StatusHistoryEntry {
   status: string;
@@ -69,41 +69,44 @@ interface StatsRes {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const STATUSES: Status[] = ['submitted', 'seen', 'approved', 'building', 'built', 'rejected'];
-const PIPELINE: Status[] = ['submitted', 'seen', 'approved', 'building', 'built'];
+const STATUSES: Status[] = ['submitted', 'under_review', 'approved', 'changes_requested', 'building', 'ready', 'rejected'];
+const PIPELINE: Status[] = ['submitted', 'under_review', 'approved', 'building', 'ready'];
 
 const STATUS_COLORS: Record<Status, string> = {
   submitted: 'bg-amber-500/20 text-amber-400',
-  seen: 'bg-blue-500/20 text-blue-400',
+  under_review: 'bg-blue-500/20 text-blue-400',
   approved: 'bg-emerald-500/20 text-emerald-400',
+  changes_requested: 'bg-orange-500/20 text-orange-400',
   building: 'bg-purple-500/20 text-purple-400',
-  built: 'bg-sky-500/20 text-sky-400',
+  ready: 'bg-sky-500/20 text-sky-400',
   rejected: 'bg-red-500/20 text-red-400',
 };
 
 const STATUS_LABELS: Record<Status, string> = {
   submitted: 'Submitted',
-  seen: 'Seen',
+  under_review: 'Under Review',
   approved: 'Approved',
+  changes_requested: 'Changes Requested',
   building: 'Building',
-  built: 'Built',
+  ready: 'Ready',
   rejected: 'Rejected',
 };
 
 const NEXT_ACTION_LABEL: Record<string, string> = {
-  submitted: 'Mark as Seen',
-  seen: 'Approve',
+  submitted: 'Start Review',
+  under_review: 'Approve',
   approved: 'Start Building',
-  building: 'Mark as Built',
+  building: 'Mark as Ready',
 };
 
 const FILTER_TABS: Array<{ label: string; value: Status | 'all' }> = [
   { label: 'All', value: 'all' },
   { label: 'Submitted', value: 'submitted' },
-  { label: 'Seen', value: 'seen' },
+  { label: 'Under Review', value: 'under_review' },
   { label: 'Approved', value: 'approved' },
+  { label: 'Changes Requested', value: 'changes_requested' },
   { label: 'Building', value: 'building' },
-  { label: 'Built', value: 'built' },
+  { label: 'Ready', value: 'ready' },
   { label: 'Rejected', value: 'rejected' },
 ];
 
@@ -394,10 +397,11 @@ export function HackathonRequestsPage() {
                       <div className="flex items-center gap-0">
                         {PIPELINE.map((step, i) => {
                           const stepIdx = PIPELINE.indexOf(step);
-                          const currentIdx = req.status === 'rejected' ? -1 : PIPELINE.indexOf(req.status);
+                          const currentIdx = (req.status === 'rejected' || req.status === 'changes_requested') ? -1 : PIPELINE.indexOf(req.status);
                           const isCompleted = currentIdx > stepIdx;
                           const isCurrent = currentIdx === stepIdx;
                           const isRejected = req.status === 'rejected';
+                          const isChangesRequested = req.status === 'changes_requested';
 
                           return (
                             <div key={step} className="flex items-center">
@@ -407,7 +411,7 @@ export function HackathonRequestsPage() {
                                   className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-all ${
                                     isCompleted
                                       ? 'border-[#CCFF00] bg-[#CCFF00]/20 text-[#CCFF00]'
-                                      : isCurrent && !isRejected
+                                      : isCurrent && !isRejected && !isChangesRequested
                                         ? 'border-[#CCFF00] bg-[#CCFF00] text-black'
                                         : 'border-white/20 bg-white/5 text-white/30'
                                   }`}
@@ -416,7 +420,7 @@ export function HackathonRequestsPage() {
                                 </div>
                                 <span
                                   className={`mt-1 text-[10px] ${
-                                    isCurrent && !isRejected ? 'text-[#CCFF00] font-bold' : isCompleted ? 'text-[#CCFF00]/60' : 'text-white/30'
+                                    isCurrent && !isRejected && !isChangesRequested ? 'text-[#CCFF00] font-bold' : isCompleted ? 'text-[#CCFF00]/60' : 'text-white/30'
                                   }`}
                                 >
                                   {STATUS_LABELS[step]}
@@ -443,6 +447,18 @@ export function HackathonRequestsPage() {
                                 <X className="h-4 w-4" />
                               </div>
                               <span className="mt-1 text-[10px] text-red-400 font-bold">Rejected</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Changes Requested indicator */}
+                        {req.status === 'changes_requested' && (
+                          <div className="flex items-center ml-4">
+                            <div className="flex flex-col items-center">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-orange-500 bg-orange-500/20 text-orange-400">
+                                <MessageSquare className="h-4 w-4" />
+                              </div>
+                              <span className="mt-1 text-[10px] text-orange-400 font-bold">Changes</span>
                             </div>
                           </div>
                         )}
@@ -485,7 +501,7 @@ export function HackathonRequestsPage() {
                     )}
 
                     {/* Status update controls */}
-                    {req.status !== 'built' && (
+                    {req.status !== 'ready' && (
                       <Card className="border-white/10 bg-white/[0.03]">
                         <CardHeader className="pb-3">
                           <CardTitle className="text-sm text-white flex items-center gap-2">
@@ -521,7 +537,7 @@ export function HackathonRequestsPage() {
                             )}
 
                             {/* Reject button */}
-                            {req.status !== 'rejected' && (
+                            {req.status !== 'rejected' && req.status !== 'changes_requested' && (
                               <Button
                                 variant="outline"
                                 onClick={() => updateStatus(req, 'rejected')}
@@ -534,6 +550,23 @@ export function HackathonRequestsPage() {
                                   <X className="h-4 w-4 mr-1" />
                                 )}
                                 Reject
+                              </Button>
+                            )}
+
+                            {/* Request Changes button */}
+                            {(req.status === 'submitted' || req.status === 'under_review') && (
+                              <Button
+                                variant="outline"
+                                onClick={() => updateStatus(req, 'changes_requested')}
+                                disabled={updatingId === req.id}
+                                className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
+                              >
+                                {updatingId === req.id ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                                ) : (
+                                  <MessageSquare className="h-4 w-4 mr-1" />
+                                )}
+                                Request Changes
                               </Button>
                             )}
                           </div>

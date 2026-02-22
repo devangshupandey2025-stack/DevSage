@@ -56,7 +56,7 @@ interface HackathonListResponse {
   meta: { total: number; limit: number; offset: number };
 }
 
-type RequestStatus = 'submitted' | 'request_seen' | 'approved' | 'building' | 'built' | 'rejected';
+type RequestStatus = 'submitted' | 'under_review' | 'approved' | 'rejected' | 'changes_requested' | 'building' | 'ready';
 
 interface HackathonRequest {
   id: string;
@@ -66,6 +66,9 @@ interface HackathonRequest {
   starts_at: string | null;
   ends_at: string | null;
   num_events: number | null;
+  expected_participants: number | null;
+  team_min_size: number | null;
+  team_max_size: number | null;
   additional_details: string | null;
   status: RequestStatus;
   admin_notes: string | null;
@@ -75,10 +78,10 @@ interface HackathonRequest {
 
 const REQUEST_STAGES: { key: RequestStatus; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: 'submitted', label: 'Submitted', icon: Send },
-  { key: 'request_seen', label: 'Request Seen', icon: Eye },
+  { key: 'under_review', label: 'Under Review', icon: Eye },
   { key: 'approved', label: 'Approved', icon: Check },
   { key: 'building', label: 'Building', icon: Hammer },
-  { key: 'built', label: 'Built', icon: Package },
+  { key: 'ready', label: 'Ready', icon: Package },
 ];
 
 const NEXT_STATUS: Record<string, string> = {
@@ -209,6 +212,9 @@ export function DashboardPage() {
     startsAt: '',
     endsAt: '',
     numEvents: '1',
+    expectedParticipants: '',
+    teamMinSize: '',
+    teamMaxSize: '',
     additionalDetails: '',
   });
   const [myRequests, setMyRequests] = useState<HackathonRequest[]>([]);
@@ -288,12 +294,15 @@ export function DashboardPage() {
           starts_at: requestFormData.startsAt ? new Date(requestFormData.startsAt).toISOString() : undefined,
           ends_at: requestFormData.endsAt ? new Date(requestFormData.endsAt).toISOString() : undefined,
           num_events: parseInt(requestFormData.numEvents, 10) || undefined,
+          expected_participants: parseInt(requestFormData.expectedParticipants, 10) || undefined,
+          team_min_size: parseInt(requestFormData.teamMinSize, 10) || undefined,
+          team_max_size: parseInt(requestFormData.teamMaxSize, 10) || undefined,
           additional_details: requestFormData.additionalDetails || undefined,
         }),
       });
       toast.success('Hackathon request submitted!');
       setRequestDialogOpen(false);
-      setRequestFormData({ title: '', description: '', startsAt: '', endsAt: '', numEvents: '1', additionalDetails: '' });
+      setRequestFormData({ title: '', description: '', startsAt: '', endsAt: '', numEvents: '1', expectedParticipants: '', teamMinSize: '', teamMaxSize: '', additionalDetails: '' });
       fetchRequests();
     } catch (_error) {
       toast.error('Failed to submit request');
@@ -677,7 +686,8 @@ export function DashboardPage() {
             <div className="space-y-4">
               {myRequests.map((req) => {
                 const isRejected = req.status === 'rejected';
-                const currentIdx = isRejected ? -1 : REQUEST_STAGES.findIndex((s) => s.key === req.status);
+                const isChangesRequested = req.status === 'changes_requested';
+                const currentIdx = (isRejected || isChangesRequested) ? -1 : REQUEST_STAGES.findIndex((s) => s.key === req.status);
 
                 return (
                   <div
@@ -689,7 +699,7 @@ export function DashboardPage() {
                       className={`absolute top-0 left-0 right-0 h-1 transition-all duration-300 ${
                         isRejected
                           ? 'bg-red-500'
-                          : req.status === 'built'
+                          : req.status === 'ready'
                             ? 'bg-emerald-500'
                             : 'bg-[#CCFF00]'
                       }`}
@@ -706,9 +716,14 @@ export function DashboardPage() {
                                 <XCircle className="h-3 w-3" /> Rejected
                               </span>
                             )}
-                            {req.status === 'built' && (
+                            {req.status === 'ready' && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
-                                <Check className="h-3 w-3" /> Complete
+                                <Check className="h-3 w-3" /> Ready
+                              </span>
+                            )}
+                            {req.status === 'changes_requested' && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2.5 py-0.5 text-[11px] font-bold text-orange-400">
+                                <Clock className="h-3 w-3" /> Changes Requested
                               </span>
                             )}
                           </div>
@@ -732,7 +747,7 @@ export function DashboardPage() {
                       </div>
 
                       {/* Tracker stepper */}
-                      {!isRejected ? (
+                      {!isRejected && !isChangesRequested ? (
                         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                           <div className="flex items-center">
                             {REQUEST_STAGES.map((stage, idx) => {
@@ -789,6 +804,21 @@ export function DashboardPage() {
                                 </div>
                               );
                             })}
+                          </div>
+                        </div>
+                      ) : isChangesRequested ? (
+                        <div className="rounded-xl border border-orange-500/15 bg-orange-500/5 p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-orange-500/40 bg-orange-500/15">
+                              <Clock className="h-4 w-4 text-orange-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-orange-400">Changes requested by admin</p>
+                              {req.admin_notes && (
+                                <p className="mt-0.5 text-xs text-orange-400/60">{req.admin_notes}</p>
+                              )}
+                              <p className="mt-1 text-xs text-white/40">Edit and resubmit your request to continue.</p>
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -1225,6 +1255,49 @@ export function DashboardPage() {
                   onChange={(e) => setRequestFormData((f) => ({ ...f, numEvents: e.target.value }))}
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
                 />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Expected Participants
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={requestFormData.expectedParticipants}
+                  onChange={(e) => setRequestFormData((f) => ({ ...f, expectedParticipants: e.target.value }))}
+                  placeholder="e.g. 200"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                    Team Min Size
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={requestFormData.teamMinSize}
+                    onChange={(e) => setRequestFormData((f) => ({ ...f, teamMinSize: e.target.value }))}
+                    placeholder="e.g. 2"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-white/50">
+                    Team Max Size
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={requestFormData.teamMaxSize}
+                    onChange={(e) => setRequestFormData((f) => ({ ...f, teamMaxSize: e.target.value }))}
+                    placeholder="e.g. 5"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/30 focus:border-[#CCFF00] focus:outline-none focus:ring-1 focus:ring-[#CCFF00]"
+                  />
+                </div>
               </div>
 
               <div>

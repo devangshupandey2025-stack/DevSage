@@ -42,6 +42,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
       name: payloadName,
       image: payloadImage,
       avatar_url: payloadImage,
+      github_username: null,
       created_at: null,
       platformAdmin: payloadPlatformAdmin,
       hackathonRoles: payloadHackathonRoles,
@@ -51,7 +52,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   }
 
   const user = await c.env.DB.prepare(
-    `SELECT id, email, name, avatar_url, created_at
+    `SELECT id, email, name, avatar_url, github_username, created_at
      FROM users
      WHERE id = ?
      LIMIT 1`,
@@ -60,6 +61,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     email: string;
     name: string | null;
     avatar_url: string | null;
+    github_username: string | null;
     created_at: string | null;
   }>();
 
@@ -129,6 +131,7 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     name: user.name ?? user.email,
     image: user.avatar_url,
     avatar_url: user.avatar_url,
+    github_username: user.github_username,
     created_at: user.created_at,
     platformAdmin: !!platformAdminRow,
     hackathonRoles,

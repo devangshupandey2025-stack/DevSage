@@ -18,6 +18,9 @@ hackathonRequests.post('/', authMiddleware, async (c) => {
     starts_at?: string;
     ends_at?: string;
     num_events?: number;
+    expected_participants?: number;
+    team_min_size?: number;
+    team_max_size?: number;
     additional_details?: string;
   }>();
 
@@ -41,12 +44,14 @@ hackathonRequests.post('/', authMiddleware, async (c) => {
   ]);
 
   await c.env.DB.prepare(`
-    INSERT INTO hackathon_requests (id, workspace_id, requested_by, title, description, starts_at, ends_at, num_events, additional_details, status, status_history, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)
+    INSERT INTO hackathon_requests (id, workspace_id, requested_by, title, description, starts_at, ends_at, num_events, expected_participants, team_min_size, team_max_size, additional_details, status, status_history, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)
   `).bind(
     id, body.workspace_id, user.id, body.title,
     body.description || null, body.starts_at || null, body.ends_at || null,
-    body.num_events || null, body.additional_details || null,
+    body.num_events || null, body.expected_participants || null,
+    body.team_min_size || null, body.team_max_size || null,
+    body.additional_details || null,
     initialHistory, now, now
   ).run();
 
@@ -133,7 +138,7 @@ hackathonRequests.patch('/admin/:id', authMiddleware, requirePlatformAdmin, asyn
     admin_notes?: string;
   }>();
 
-  const validStatuses = ['submitted', 'seen', 'approved', 'building', 'built', 'rejected'];
+  const validStatuses = ['submitted', 'under_review', 'approved', 'rejected', 'changes_requested', 'building', 'ready'];
   if (!validStatuses.includes(body.status)) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', `status must be one of: ${validStatuses.join(', ')}`);
   }
@@ -171,12 +176,13 @@ hackathonRequests.get('/admin/stats', authMiddleware, requirePlatformAdmin, asyn
   const counts = await c.env.DB.prepare(`
     SELECT
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as pending,
-      SUM(CASE WHEN status = 'seen' THEN 1 ELSE 0 END) as seen,
+      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as submitted,
+      SUM(CASE WHEN status = 'under_review' THEN 1 ELSE 0 END) as under_review,
       SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
       SUM(CASE WHEN status = 'building' THEN 1 ELSE 0 END) as building,
-      SUM(CASE WHEN status = 'built' THEN 1 ELSE 0 END) as built,
-      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+      SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) as ready,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+      SUM(CASE WHEN status = 'changes_requested' THEN 1 ELSE 0 END) as changes_requested
     FROM hackathon_requests
   `).first();
 

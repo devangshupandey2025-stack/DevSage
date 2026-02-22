@@ -15,11 +15,12 @@ interface PlatformStats {
 
 interface RequestStats {
   submitted: number;
-  seen: number;
+  under_review: number;
   approved: number;
   building: number;
-  built: number;
+  ready: number;
   rejected: number;
+  changes_requested: number;
   total: number;
 }
 
@@ -33,7 +34,7 @@ export function AdminDashboardPage() {
       try {
         const [platformRes, reqRes] = await Promise.all([
           apiRequest<{ data: PlatformStats }>('/api/v1/admin/stats'),
-          apiRequest<{ data: RequestStats }>('/api/v1/hackathon-requests/admin/stats').catch(() => ({ data: { submitted: 0, seen: 0, approved: 0, building: 0, built: 0, rejected: 0, total: 0 } })),
+          apiRequest<{ data: RequestStats }>('/api/v1/hackathon-requests/admin/stats').catch(() => ({ data: { submitted: 0, under_review: 0, approved: 0, building: 0, ready: 0, rejected: 0, changes_requested: 0, total: 0 } })),
         ]);
         setStats(platformRes.data);
         setRequestStats(reqRes.data);
@@ -51,7 +52,7 @@ export function AdminDashboardPage() {
     { label: 'Workspaces', value: stats?.total_workspaces ?? 0, icon: Building2, color: 'text-purple-400' },
     { label: 'Hackathons', value: stats?.total_hackathons ?? 0, icon: Trophy, color: 'text-[#CCFF00]' },
     { label: 'Active Now', value: stats?.active_hackathons ?? 0, icon: Activity, color: 'text-emerald-400' },
-    { label: 'Pending Requests', value: (requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0), icon: FileText, color: 'text-orange-400' },
+    { label: 'Pending Requests', value: (requestStats?.submitted ?? 0) + (requestStats?.under_review ?? 0), icon: FileText, color: 'text-orange-400' },
   ];
 
   return (
@@ -125,8 +126,8 @@ export function AdminDashboardPage() {
             >
               <p className="font-medium text-white">Hackathon Requests</p>
               <p className="mt-1 text-xs text-white/40">
-                {(requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0) > 0
-                  ? `${(requestStats?.submitted ?? 0) + (requestStats?.seen ?? 0)} pending`
+                {(requestStats?.submitted ?? 0) + (requestStats?.under_review ?? 0) > 0
+                  ? `${(requestStats?.submitted ?? 0) + (requestStats?.under_review ?? 0)} pending`
                   : 'Review creation requests'}
               </p>
             </a>
