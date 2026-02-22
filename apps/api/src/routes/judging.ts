@@ -122,9 +122,10 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
   const now = new Date().toISOString();
 
   try {
+    // user_id is NOT NULL in schema — use empty string placeholder for email-only invites
     await c.env.DB.prepare(
       `INSERT INTO judges (id, hackathon_id, user_id, email, invite_status, invite_token, track_id, invited_by, invited_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, hackathon.id, targetUserId, email ?? '', initialStatus, inviteToken, body.track_id ?? null, user.id, now, isSelfInvite ? now : null).run();
+    ).bind(id, hackathon.id, targetUserId ?? '', email ?? '', initialStatus, inviteToken, body.track_id ?? null, user.id, now, isSelfInvite ? now : null).run();
   } catch (err) {
     if (err instanceof Error && err.message.includes('UNIQUE')) {
       // Judge already exists — re-send the invite email and return the existing record
@@ -431,14 +432,28 @@ judging.post('/results/publish', authMiddleware, requireRole('organizer'), async
 
   // Persist results
   const now = new Date().toISOString();
+  const roundId = body.round_id ?? null;
   for (const entry of leaderboard) {
     const id = crypto.randomUUID();
-    const roundId = body.round_id ?? null;
-    await c.env.DB.prepare(`
-      INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
-      VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
-      ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
-    `).bind(id, hackathon.id, roundId, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
+    if (roundId) {
+      await c.env.DB.prepare(`
+        INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
+        VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
+        ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
+      `).bind(id, hackathon.id, roundId, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
+    } else {
+      // Get default round if no round_id specified
+      const defaultRound = await c.env.DB.prepare(
+        'SELECT id FROM hackathon_rounds WHERE hackathon_id = ? ORDER BY round_number ASC LIMIT 1'
+      ).bind(hackathon.id).first<{ id: string }>();
+      if (defaultRound) {
+        await c.env.DB.prepare(`
+          INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
+          VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
+          ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
+        `).bind(id, hackathon.id, defaultRound.id, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
+      }
+    }
   }
 
   // Notify

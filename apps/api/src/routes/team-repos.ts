@@ -47,14 +47,19 @@ teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
 
   const repoId = crypto.randomUUID();
   await c.env.DB.prepare(
-    `INSERT INTO team_repos (id, team_id, github_repo_url, github_owner, github_repo, linked_by)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(repoId, teamId, body.github_repo_url, owner, repo, user.id).run();
+    `INSERT INTO team_repos (id, team_id, hackathon_id, provider, repo_full_name, repo_url, installation_id, bot_active, is_primary, created_at)
+     VALUES (?, ?, ?, 'github', ?, ?, '', 0, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+  ).bind(repoId, teamId, hackathon.id, `${owner}/${repo}`, body.github_repo_url).run();
 
   // Add to pending installations for bot activation
-  await c.env.DB.prepare(
-    'INSERT INTO pending_installations (id, team_id, github_owner, github_repo) VALUES (?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), teamId, owner, repo).run();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO pending_installations (id, provider, repo_full_name, installation_id, installed_by, created_at)
+       VALUES (?, 'github', ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+    ).bind(crypto.randomUUID(), `${owner}/${repo}`, user.id).run();
+  } catch (_e) {
+    // Non-critical — bot activation can be retried later
+  }
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
@@ -97,8 +102,11 @@ teamRepos.delete('/:teamId/repo', authMiddleware, async (c) => {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead can unlink a repo');
   }
 
+  const repo = await c.env.DB.prepare('SELECT repo_full_name FROM team_repos WHERE team_id = ?').bind(teamId).first<{repo_full_name?: string}>();
   await c.env.DB.prepare('DELETE FROM team_repos WHERE team_id = ?').bind(teamId).run();
-  await c.env.DB.prepare('DELETE FROM pending_installations WHERE team_id = ?').bind(teamId).run();
+  if (repo?.repo_full_name) {
+    await c.env.DB.prepare('DELETE FROM pending_installations WHERE repo_full_name = ?').bind(repo.repo_full_name).run();
+  }
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
