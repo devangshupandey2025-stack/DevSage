@@ -16,6 +16,7 @@ export const hackathonRequests = sqliteTable('hackathon_requests', {
   team_min_size: integer('team_min_size'),
   team_max_size: integer('team_max_size'),
   additional_details: text('additional_details'),
+  hackathon_id: text('hackathon_id'),
   status: text('status').notNull().default('submitted'),
   admin_notes: text('admin_notes'),
   status_history: text('status_history').notNull().default('[]'),

@@ -272,6 +272,7 @@ hackathons.get('/:slug', hackathonContext, async (c) => {
   }
 
   c.header('ETag', etag);
+  c.header('Cache-Control', 'public, max-age=10, stale-while-revalidate=30');
   return successResponse(c, full);
 });
 

@@ -31,7 +31,7 @@ workspaces.post('/', authMiddleware, async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO workspaces (id, name, slug, description, type, created_by, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, body.name, body.slug, body.description ?? null, body.type, user.id, now, now).run();
+  ).bind(id, body.name, body.slug, body.description ?? '', body.type ?? 'club', user.id, now, now).run();
 
   // Add creator as owner
   await c.env.DB.prepare(

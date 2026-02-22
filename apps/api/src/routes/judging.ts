@@ -401,6 +401,7 @@ judging.get('/leaderboard', async (c) => {
       return c.body(null, 304);
     }
     c.header('ETag', etag);
+    c.header('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
     return successResponse(c, data);
   }
 
@@ -414,6 +415,7 @@ judging.get('/leaderboard', async (c) => {
 
   const etag = await generateETag(leaderboard);
   c.header('ETag', etag);
+  c.header('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
   return successResponse(c, leaderboard);
 });
 

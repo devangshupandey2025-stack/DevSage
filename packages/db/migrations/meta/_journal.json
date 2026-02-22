@@ -6,70 +6,14 @@
       "idx": 0,
       "version": "6",
       "when": 1770739337950,
-      "tag": "0000_whole_paibok",
+      "tag": "0000_schema",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
       "when": 1770969072178,
-      "tag": "0001_harsh_franklin_storm",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1771157717305,
-      "tag": "0002_v3_clean_reset",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1771157717400,
-      "tag": "0003_email_password_auth",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1771157717500,
-      "tag": "0004_seed_accounts",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1771157717600,
-      "tag": "0005_announcements",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1771157717700,
-      "tag": "0006_round_initialization",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1771725370083,
-      "tag": "0007_foamy_peter_parker",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1771727264215,
-      "tag": "0008_tan_black_tarantula",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1771731710099,
-      "tag": "0009_bizarre_morgan_stark",
+      "tag": "0001_seed",
       "breakpoints": true
     }
   ]
