@@ -61,12 +61,17 @@ function runCapture(cmd, cwd) {
 
 function showHelp() {
   console.log(`
-\x1b[1mDevSage Hackathon Site Generator\x1b[0m
+\x1b[1mDevSage Hackathon Site Generator (devsage-cli)\x1b[0m
 
 \x1b[36mUsage:\x1b[0m
-  node scripts/generate-hackathon-site.js --config '<base64-json>'
-  node scripts/generate-hackathon-site.js --interactive
-  node scripts/generate-hackathon-site.js --generate-command  (explains admin UI integration)
+  devsage-cli deploy-hackathon --hackathon-slug <slug> [--workspace-slug <slug>] [--title <title>]
+  devsage-cli deploy-hackathon --config '<base64-json>'
+  devsage-cli --config '<base64-json>'
+  devsage-cli --interactive
+  devsage-cli --generate-command  (explains admin UI integration)
+
+\x1b[36mSubcommands:\x1b[0m
+  deploy-hackathon   Clone template, brand, push to GitHub, deploy to Cloudflare Workers
 
 \x1b[36mConfig JSON fields:\x1b[0m
   slug              \x1b[33m(required)\x1b[0m  URL-safe hackathon slug (e.g., "code-sprint")
@@ -83,8 +88,9 @@ function showHelp() {
   logoUrl           \x1b[90m(optional)\x1b[0m  URL to logo image
   bannerUrl         \x1b[90m(optional)\x1b[0m  URL to banner image
 
-\x1b[36mExample:\x1b[0m
-  echo '{"slug":"code-sprint","title":"Code Sprint 2026","workspaceSlug":"ieee-vit"}' | base64 | xargs -I{} node scripts/generate-hackathon-site.js --config {}
+\x1b[36mExamples:\x1b[0m
+  devsage-cli deploy-hackathon --hackathon-slug code-sprint --workspace-slug ieee-vit --title "Code Sprint 2026"
+  echo '{"slug":"code-sprint","title":"Code Sprint 2026","workspaceSlug":"ieee-vit"}' | base64 | xargs -I{} devsage-cli --config {}
 
 \x1b[36mWhat it does:\x1b[0m
   1. Clones ${TEMPLATE_REPO} from GitHub
@@ -106,9 +112,37 @@ function parseArgs() {
     console.log(`When marking a request as "building", the admin UI should:`);
     console.log(`1. Encode the request data as base64 JSON`);
     console.log(`2. Display a copyable CLI command\n`);
-    console.log(`  \x1b[36mnode scripts/generate-hackathon-site.js --config "<BASE64>"\x1b[0m\n`);
+    console.log(`  \x1b[36mdevsage-cli deploy-hackathon --config "<BASE64>"\x1b[0m\n`);
     console.log(`The admin copies and runs it. That's it — site gets deployed.\n`);
     process.exit(0);
+  }
+
+  // Support `deploy-hackathon` subcommand (plan-compatible interface)
+  if (args[0] === 'deploy-hackathon') {
+    const slugIdx = args.indexOf('--hackathon-slug');
+    const wsIdx = args.indexOf('--workspace-slug');
+    const titleIdx = args.indexOf('--title');
+    const configIdx = args.indexOf('--config');
+
+    if (configIdx !== -1 && args[configIdx + 1]) {
+      const raw = args[configIdx + 1];
+      try {
+        const decoded = Buffer.from(raw, 'base64').toString('utf8');
+        return normalizeConfig(JSON.parse(decoded));
+      } catch {
+        fail('Invalid --config value. Must be base64-encoded JSON.');
+      }
+    }
+
+    if (slugIdx === -1 || !args[slugIdx + 1]) {
+      fail('deploy-hackathon requires --hackathon-slug <slug> (and optionally --workspace-slug <slug> --title <title>)');
+    }
+
+    const slug = args[slugIdx + 1];
+    const workspaceSlug = wsIdx !== -1 ? args[wsIdx + 1] : null;
+    const title = titleIdx !== -1 ? args[titleIdx + 1] : slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+    return normalizeConfig({ slug, title, workspaceSlug });
   }
 
   if (args.includes('--interactive')) {
