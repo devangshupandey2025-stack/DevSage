@@ -589,7 +589,8 @@ export function HackathonRequestsPage() {
                         maxTeamSize: 4,
                       };
                       const b64 = btoa(JSON.stringify(configObj));
-                      const cmd = `node scripts/generate-hackathon-site.js --config "${b64}"`;
+                      const cmd = `devsage-cli deploy-hackathon --hackathon-slug "${slug}" --workspace-slug "${req.workspace_slug || ''}" --title "${req.title}"`;
+                      const cmdAlt = `node scripts/generate-hackathon-site.js --config "${b64}"`;
                       return (
                         <Card className="border-cyan-500/20 bg-cyan-500/[0.03]">
                           <CardHeader className="pb-3">
@@ -617,6 +618,12 @@ export function HackathonRequestsPage() {
                                 <Copy className="h-3.5 w-3.5" />
                               </Button>
                             </div>
+                            <details className="text-xs text-white/30">
+                              <summary className="cursor-pointer hover:text-white/50">Alternative (base64 config)</summary>
+                              <pre className="mt-1 bg-black/40 border border-white/10 rounded-lg p-2 overflow-x-auto text-cyan-300/50 whitespace-pre-wrap break-all">
+                                {cmdAlt}
+                              </pre>
+                            </details>
                             <p className="text-xs text-white/40">
                               After running, mark as "Ready" above. The site deploys to{' '}
                               <span className="text-cyan-400">
