@@ -188,7 +188,9 @@ rounds.post('/:roundId/advance', authMiddleware, requireRole('co_organizer'), as
   }
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    for (let i = 0; i < statements.length; i += 20) {
+      await c.env.DB.batch(statements.slice(i, i + 20));
+    }
   }
 
   return successResponse(c, {

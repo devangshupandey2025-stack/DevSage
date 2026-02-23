@@ -382,6 +382,33 @@ judging.get('/my-assignments', authMiddleware, async (c) => {
   return successResponse(c, assignments.results || []);
 });
 
+// Get MY scores summary (all scores I've submitted)
+judging.get('/my-scores', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+
+  const judge = await c.env.DB.prepare(
+    'SELECT id FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = ?'
+  ).bind(hackathon.id, user.id, 'accepted').first<{ id: string }>();
+
+  if (!judge) return successResponse(c, []);
+
+  const scores = await c.env.DB.prepare(`
+    SELECT s.submission_id, s.criteria_id, s.score, s.comment, s.round, s.scored_at,
+           rc.name as criterion_name, rc.max_score, rc.weight,
+           sub.title as submission_title, t.name as team_name
+    FROM scores s
+    JOIN rubric_criteria rc ON s.criteria_id = rc.id
+    LEFT JOIN submissions sub ON s.submission_id = sub.id
+    LEFT JOIN teams t ON sub.team_id = t.id
+    WHERE s.judge_id = ?
+    ORDER BY s.scored_at DESC
+    LIMIT 200
+  `).bind(judge.id).all();
+
+  return successResponse(c, scores.results || []);
+});
+
 // === Scoring (judges only) ===
 
 // Submit scores for a submission

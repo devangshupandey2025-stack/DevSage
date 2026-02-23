@@ -59,13 +59,13 @@ organizers.delete('/:roleId', authMiddleware, requireRole('organizer'), async (c
   const roleId = c.req.param('roleId');
 
   const role = await c.env.DB.prepare(
-    'SELECT user_id FROM organizer_roles WHERE id = ?'
-  ).bind(roleId).first<{ user_id: string }>();
+    'SELECT user_id FROM organizer_roles WHERE id = ? AND hackathon_id = ?'
+  ).bind(roleId, hackathon.id).first<{ user_id: string }>();
 
   if (!role) return errorResponse(c, 404, 'NOT_FOUND', 'Role not found');
   if (role.user_id === user.id) return errorResponse(c, 409, 'CANNOT_REMOVE_SELF', 'Cannot remove yourself');
 
-  await c.env.DB.prepare('DELETE FROM organizer_roles WHERE id = ?').bind(roleId).run();
+  await c.env.DB.prepare('DELETE FROM organizer_roles WHERE id = ? AND hackathon_id = ?').bind(roleId, hackathon.id).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
