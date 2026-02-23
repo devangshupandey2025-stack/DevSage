@@ -290,17 +290,20 @@ submissions.get('/', async (c) => {
 // AI Score leaderboard (MUST be before /:submissionId to avoid route conflict)
 submissions.get('/ai-leaderboard', async (c) => {
   const hackathon = c.get('hackathon')!;
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10), 1), 100);
+  const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.team_id, s.title, s.repo_url, s.ai_score, s.submitted_at,
             t.name as team_name
      FROM submissions s
      LEFT JOIN teams t ON s.team_id = t.id
      WHERE s.hackathon_id = ? AND s.is_final = 1 AND s.ai_score IS NOT NULL
-     ORDER BY s.ai_score DESC`
-  ).bind(hackathon.id).all();
+     ORDER BY s.ai_score DESC
+     LIMIT ? OFFSET ?`
+  ).bind(hackathon.id, limit + 1, offset).all();
 
-  const entries = (rows.results || []).map((row, idx) => ({
-    rank: idx + 1,
+  const items = (rows.results || []).map((row, idx) => ({
+    rank: offset + idx + 1,
     team_id: row.team_id,
     team_name: row.team_name,
     title: row.title,
@@ -309,7 +312,8 @@ submissions.get('/ai-leaderboard', async (c) => {
     submitted_at: row.submitted_at,
   }));
 
-  return successResponse(c, entries);
+  const has_more = items.length > limit;
+  return successResponse(c, items.slice(0, limit), { meta: { limit, offset, has_more } });
 });
 
 // Get team's current submission (MUST be before /:submissionId)
@@ -362,6 +366,14 @@ submissions.post('/', authMiddleware, async (c) => {
 
   if (!membership) {
     return errorResponse(c, 403, 'NOT_ON_TEAM', 'You must be on a team to submit');
+  }
+
+  // Block eliminated teams from submitting
+  const teamStatus = await c.env.DB.prepare(
+    'SELECT status FROM teams WHERE id = ? AND hackathon_id = ?'
+  ).bind(membership.team_id, hackathon.id).first<{ status: string }>();
+  if (teamStatus?.status === 'eliminated') {
+    return errorResponse(c, 403, 'TEAM_ELIMINATED', 'Eliminated teams cannot submit');
   }
 
   const body = await c.req.json<{
