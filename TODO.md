@@ -1,5 +1,52 @@
 # DevSage Hackathon Platform — TODO
 
+## Implementation Status (Last Updated: Feb 2026)
+
+### ✅ COMPLETED
+
+| Feature | Location | Notes |
+|---------|----------|-------|
+| Auth (email/password, Google OAuth, GitHub OAuth, refresh tokens) | `apps/api/src/routes/auth.ts` | Dual-token, cookie-based, 15-min access + 30-day refresh |
+| Workspace CRUD + members + invites + acceptance | `apps/api/src/routes/workspaces.ts` | Admin-only creation, invite acceptance flow |
+| Hackathon CRUD + 5-state machine transitions | `apps/api/src/routes/hackathons.ts` | draft → active → judging → completed → archived |
+| Hackathon request pipeline (Amazon-style tracking) | `apps/api/src/routes/hackathon-requests.ts` | 7 statuses, auto-creates hackathon on `ready` |
+| Teams (create, join, leave, transfer, dissolve, seed) | `apps/api/src/routes/teams.ts` | 3-mode seeding (full_structure, leaders_only, participants_only) |
+| Submissions (create, list, git-tag based) | `apps/api/src/routes/submissions.ts` | Eliminated team blocking, DO-based locking |
+| Rounds (create, delete, types, publish, advance) | `apps/api/src/routes/rounds.ts` | Elimination + scoring-only types, team advancement |
+| Judging (rubric CRUD, judge invite, assignments, scoring, COI, leaderboard) | `apps/api/src/routes/judging.ts` | COI declaration, reassignment, batch publish, my-scores |
+| Judge credential creation (temp password, forced reset) | `apps/api/src/routes/judging.ts` + `auth.ts` | `password_must_change` flag, session revocation on change |
+| CLI deployment tool (devsage-cli) | `scripts/generate-hackathon-site.js` | `deploy-hackathon` subcommand, interactive + config modes |
+| Admin dashboard (stats, users, workspaces, hackathons, admins, invites) | `apps/admin/src/pages/` | 11 routes, all fully implemented |
+| Platform dashboard (hackathons, settings, rounds, teams, submissions, judging) | `apps/platform/src/pages/` | 15 routes, workspace + hackathon management |
+| Judge portal (dashboard, scoring, assignments, leaderboard, COI, password change) | `apps/judge/src/pages/` | 8 routes, full scoring flow |
+| Web (public site, hackathon listing, about, FAQ, terms, privacy) | `apps/web/src/pages/` | 9 routes, lazy-loaded |
+| Production hardening (pagination, boundary checks, batch chunking, input validation) | Multiple files | D1 batch limits, truncation feedback, error collection |
+
+### ❌ REMAINING (Excludes Billing — will be done manually)
+
+#### Priority 1: Core Missing Features
+
+- [ ] **Hackathon registration on branded sites** — Web app shows "Registration feature coming soon" on hackathon detail page. Participants cannot register for hackathons via `devsage.org`. Need: registration form, team selection, GitHub OAuth flow on branded site
+- [ ] **Judging window time enforcement** — Currently judges can score anytime once hackathon is in `judging` state. Plan requires 1-2 hour tight scoring windows. Need: `scoring_opens_at` / `scoring_closes_at` fields on rounds, enforcement in scoring endpoint, countdown UI in judge portal
+- [ ] **Judge guidelines/instructions** — No endpoint or UI for Event Leads to post judging guidelines that judges can review before scoring. Need: API endpoint + platform UI for creating guidelines + judge portal page for viewing them
+
+#### Priority 2: Enhancement Features
+
+- [ ] **Eliminated team notification UI** — When teams are eliminated in elimination rounds, they should see a clear status change. Currently team status is set to `eliminated` in DB but there's no participant-facing UI showing this clearly
+- [ ] **Team disbanding for eliminated teams** — Plan mentions eliminated teams can be disbanded. Need: API endpoint to disband eliminated teams, UI in platform
+- [ ] **Announcements POST endpoint visibility** — Platform has announcements page but need to verify the full CRUD flow works end-to-end with notifications
+- [ ] **Web app hackathon test files** — `@devsage/web` test suite fails because no test files exist. Need: at least basic smoke tests for route rendering
+
+#### Priority 3: Polish
+
+- [ ] **Analytics page real data** — Platform analytics page uses mock/sample data for charts. Need to wire up real aggregate queries
+- [ ] **Settings page enhancements** — Basic settings page works but could expose more hackathon configuration (email domain restrictions, timezone, submission tag patterns)
+- [ ] **GitHub repo private validation** — Plan says repos must be private during hackathon. No validation currently enforced via GitHub API check
+- [ ] **Late submission flagging UI** — Schema supports late submissions but no participant-facing indicator
+- [ ] **Per-round submission tag patterns** — Currently one tag pattern per hackathon, plan suggests per-round patterns
+
+---
+
 **BDD-Driven Development Specification**
 Behavioral specifications describing every feature that must be built, integrated, or hardened to ship a production-ready hackathon management platform.
 
