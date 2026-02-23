@@ -1,0 +1,149 @@
+---
+title: "Participants — User Flow"
+---
+
+flowchart TD
+    %% ── Entry Points ────────────────────────────
+    subgraph ENTRY["🚪 Entry Points"]
+        E1["Private: Invite email from Event Lead"]
+        E2["Public: Browse devsage.org"]
+    end
+
+    %% ── Private Hackathon Flow ──────────────────
+    subgraph PRIVATE["🔒 Private Hackathon"]
+        direction TB
+        PV1["Event Lead uploads Excel"]
+        PV2{"Excel mode?"}
+
+        PV3A["Mode A: Full Structure
+(Name, Email, Team, Role)
+Teams pre-created"]
+        PV3B["Mode B: Leaders Only
+(Name, Email, Role=lead)"]
+        PV3C["Mode C: Participants Only
+(Name, Email)
+Self-organize"]
+
+        PV4["Invite emails sent
+(leaders first in A & B)"]
+        PV5["Click link →
+branded site → GitHub OAuth"]
+        PV6{"Leader with
+pre-assigned team?"}
+        PV7["Confirm pre-assigned team"]
+        PV8["Create own team"]
+        PV9["Invite members
+(email or team code)"]
+        PV10["Members join team"]
+        PV11["Self-organize:
+create or join team"]
+    end
+
+    E1 --> PV1 --> PV2
+    PV2 -->|"A: Full"| PV3A --> PV4
+    PV2 -->|"B: Leaders"| PV3B --> PV4
+    PV2 -->|"C: Participants"| PV3C --> PV4
+    PV4 --> PV5 --> PV6
+    PV6 -->|Yes| PV7 --> PV9 --> PV10
+    PV6 -->|No - leader| PV8 --> PV9
+    PV6 -->|"No - Mode C"| PV11
+
+    %% ── Public Hackathon Flow ───────────────────
+    subgraph PUBLIC["🌐 Public Hackathon"]
+        direction TB
+        PB1["Find hackathon on devsage.org"]
+        PB2["Click → branded hackathon site"]
+        PB3["Register via GitHub OAuth"]
+        PB4{"Create or
+join team?"}
+        PB5["Create team →
+Team Leader"]
+        PB6["Join via invite code →
+Team Member"]
+    end
+
+    E2 --> PB1 --> PB2 --> PB3 --> PB4
+    PB4 -->|Create| PB5
+    PB4 -->|Join| PB6
+
+    %% ── Repo & Build ───────────────────────────
+    subgraph BUILD["💻 Repo & Build"]
+        direction TB
+        H1["Team Leader links GitHub repo
+(must be private)"]
+        H2["Team pushes code
+(webhooks capture commits)"]
+    end
+
+    PV10 --> H1
+    PV11 --> H1
+    PB5 --> H1
+    PB6 --> H1
+    H1 --> H2
+
+    %% ── Submission ─────────────────────────────
+    subgraph SUBMIT["📤 Submission"]
+        direction TB
+        S1["Team Leader creates git tag
+matching round's pattern"]
+        S2["Webhook auto-creates
+submission record (exactly-once)"]
+        S3["Submission appears on
+dashboard with status"]
+    end
+
+    H2 --> S1 --> S2 --> S3
+
+    %% ── Multi-Round Cycle ──────────────────────
+    subgraph ROUNDS["🔄 Multi-Round Cycle"]
+        direction TB
+        MR1[Wait for judging]
+        MR2["Round results published —
+scores & rankings visible"]
+        MR3{"Round type?"}
+        MR4{"Advanced?"}
+        MR5["Eliminated
+(can view, can't submit)"]
+        MR6["All teams proceed —
+no elimination"]
+        MR7{More rounds?}
+        MR8["Next round
+(new deadline, new tag pattern)"]
+        MR9[Final results published]
+    end
+
+    S3 --> MR1 --> MR2 --> MR3
+    MR3 -->|Elimination| MR4
+    MR3 -->|Scoring-only| MR6 --> MR7
+    MR4 -->|Yes| MR7
+    MR4 -->|No| MR5
+    MR7 -->|Yes| MR8 --> S1
+    MR7 -->|No| MR9
+
+    %% ── Post-Hackathon ─────────────────────────
+    subgraph POST["🏆 Post-Hackathon"]
+        PS1[View final leaderboard]
+        PS2[Hackathon completed]
+        PS3["May appear on devsage.org
+as showcase"]
+    end
+
+    MR9 --> PS1 --> PS2 --> PS3
+    MR5 -.->|Read-only access| PS1
+
+    %% ── Styling ─────────────────────────────────
+    classDef entry fill:#1e1e2e,stroke:#fab387,color:#cdd6f4
+    classDef private fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+    classDef public fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    classDef build fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    classDef submit fill:#1e1e2e,stroke:#89dceb,color:#cdd6f4
+    classDef rounds fill:#1e1e2e,stroke:#cba6f7,color:#cdd6f4
+    classDef post fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+
+    class ENTRY entry
+    class PRIVATE private
+    class PUBLIC public
+    class BUILD build
+    class SUBMIT submit
+    class ROUNDS rounds
+    class POST post

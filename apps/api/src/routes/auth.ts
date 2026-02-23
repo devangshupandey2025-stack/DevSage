@@ -191,7 +191,7 @@ auth.post('/login', async (c) => {
   }
 
   const user = await c.env.DB.prepare(
-    `SELECT id, email, name, password_hash, avatar_url, github_id, github_username
+    `SELECT id, email, name, password_hash, avatar_url, github_id, github_username, password_must_change
      FROM users
      WHERE email = ?
      LIMIT 1`,
@@ -203,6 +203,7 @@ auth.post('/login', async (c) => {
     avatar_url: string | null;
     github_id: number | null;
     github_username: string | null;
+    password_must_change: number;
   }>();
 
   if (!user || !user.password_hash) {
@@ -246,6 +247,7 @@ auth.post('/login', async (c) => {
     email: user.email,
     name: user.name ?? user.email,
     avatar_url: user.avatar_url,
+    password_must_change: !!user.password_must_change,
   });
 });
 
@@ -446,6 +448,11 @@ auth.get('/me', authMiddleware, async (c) => {
     || Object.values(workspaceRoles).some((role) => role === 'owner' || role === 'admin');
   const isJudge = roleLists.some((roles) => roles.includes('judge'));
 
+  // Check password_must_change flag
+  const userRecord = await c.env.DB.prepare(
+    'SELECT password_must_change FROM users WHERE id = ?'
+  ).bind(user.id).first<{ password_must_change: number }>();
+
   return successResponse(c, {
     user: {
       id: user.id,
@@ -460,6 +467,7 @@ auth.get('/me', authMiddleware, async (c) => {
     isJudge,
     hackathonRoles,
     workspaceRoles,
+    password_must_change: !!(userRecord?.password_must_change),
   });
 });
 
@@ -647,6 +655,50 @@ auth.post('/reset-password', async (c) => {
   );
 
   return successResponse(c, { message: 'Password has been reset. Please log in with your new password.' });
+});
+
+// ── Forced Password Change (for judge temp credentials) ────────────
+auth.post('/change-password', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const body = await c.req.json<{ current_password: string; new_password: string }>();
+
+  if (!body.current_password || !body.new_password) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'current_password and new_password are required');
+  }
+  if (body.new_password.length < MIN_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+
+  const userRecord = await c.env.DB.prepare(
+    'SELECT password_hash FROM users WHERE id = ?'
+  ).bind(user.id).first<{ password_hash: string | null }>();
+
+  if (!userRecord?.password_hash) {
+    return errorResponse(c, 400, 'NO_PASSWORD', 'Account does not have a password set');
+  }
+
+  const valid = await verifyPassword(body.current_password, userRecord.password_hash);
+  if (!valid) {
+    return errorResponse(c, 401, 'INVALID_CREDENTIALS', 'Current password is incorrect');
+  }
+
+  const newHash = await hashPassword(body.new_password);
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    'UPDATE users SET password_hash = ?, password_must_change = 0, updated_at = ? WHERE id = ?'
+  ).bind(newHash, now, user.id).run();
+
+  // Revoke all existing sessions for security
+  await revokeAllUserTokens(c.env.DB, user.id);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id, actor_type: 'user',
+      action: 'auth.password_changed', entity_type: 'user', entity_id: user.id,
+    })
+  );
+
+  return successResponse(c, { message: 'Password changed successfully.' });
 });
 
 // ── Email Verification OTP ─────────────────────────────────────────

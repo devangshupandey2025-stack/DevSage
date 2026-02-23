@@ -8,11 +8,13 @@ import { JudgeScoringPage } from '@/pages/judge-scoring';
 import { JudgeAssignmentsPage } from '@/pages/judge-assignments';
 import { JudgeInviteAcceptPage } from '@/pages/judge-invite-accept';
 import { LeaderboardPage } from '@/pages/leaderboard';
+import { ChangePasswordPage } from '@/pages/change-password';
 
 const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <LoginPage /> },
   { path: '/invite/judge/:token', element: <JudgeInviteAcceptPage /> },
+  { path: '/change-password', element: <ChangePasswordPage /> },
 
   // Protected routes (judge-only) with app shell
   {

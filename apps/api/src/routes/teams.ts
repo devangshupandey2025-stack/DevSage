@@ -4,6 +4,7 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
+import { requireRole } from '../middleware/role.js';
 import { generateInviteCode } from '../lib/utils.js';
 
 const teams = new Hono<AppEnv>();
@@ -451,6 +452,154 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
   );
 
   return successResponse(c, { dissolved: true });
+});
+
+// ─── Participant Seeding (Event Lead / Organizer) ────────────────────
+
+interface SeedTeamEntry {
+  team_name: string;
+  leader_email?: string;
+  member_emails?: string[];
+}
+
+// Bulk seed participants: 3 modes
+// Mode 1 (full_structure): { teams: [{ team_name, leader_email, member_emails }] }
+// Mode 2 (leaders_only): { teams: [{ team_name, leader_email }] }
+// Mode 3 (participants_only): { emails: ["a@b.com", ...] }
+teams.post('/seed', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
+  const body = await c.req.json<{
+    mode: 'full_structure' | 'leaders_only' | 'participants_only';
+    teams?: SeedTeamEntry[];
+    emails?: string[];
+    send_invites?: boolean;
+  }>();
+
+  if (!body.mode) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'mode is required (full_structure, leaders_only, participants_only)');
+  }
+
+  const now = new Date().toISOString();
+  const sendInvites = body.send_invites !== false;
+  const results: Array<{ team_id: string; team_name: string; members_invited: number }> = [];
+  const inviteEmails: Array<{ email: string; team_name: string; invite_token: string }> = [];
+  const errors: Array<{ context: string; message: string }> = [];
+  let truncated = false;
+
+  if (body.mode === 'full_structure' || body.mode === 'leaders_only') {
+    if (!body.teams || body.teams.length === 0) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'teams array is required for this mode');
+    }
+    if (body.teams.length > 100) truncated = true;
+
+    for (const entry of body.teams.slice(0, 100)) {
+      const teamId = crypto.randomUUID();
+      const inviteCode = generateInviteCode();
+
+      // Create team
+      await c.env.DB.prepare(
+        `INSERT INTO teams (id, hackathon_id, name, invite_code, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'forming', ?, ?)`
+      ).bind(teamId, hackathon.id, entry.team_name, inviteCode, now, now).run();
+
+      let membersInvited = 0;
+
+      // Invite leader
+      if (entry.leader_email) {
+        const leaderEmail = entry.leader_email.trim().toLowerCase();
+        const token = crypto.randomUUID();
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        try {
+          await c.env.DB.prepare(
+            `INSERT INTO team_invites (id, team_id, email, invite_token, status, invited_by, created_at, expires_at)
+             VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`
+          ).bind(crypto.randomUUID(), teamId, leaderEmail, token, user.id, now, expiresAt).run();
+          inviteEmails.push({ email: leaderEmail, team_name: entry.team_name, invite_token: token });
+          membersInvited++;
+        } catch { errors.push({ context: `leader:${leaderEmail}`, message: 'duplicate invite' }); }
+      }
+
+      // Invite members (full_structure mode)
+      if (body.mode === 'full_structure' && entry.member_emails) {
+        for (const memberEmail of entry.member_emails) {
+          const email = memberEmail.trim().toLowerCase();
+          const token = crypto.randomUUID();
+          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          try {
+            await c.env.DB.prepare(
+              `INSERT INTO team_invites (id, team_id, email, invite_token, status, invited_by, created_at, expires_at)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`
+            ).bind(crypto.randomUUID(), teamId, email, token, user.id, now, expiresAt).run();
+            inviteEmails.push({ email, team_name: entry.team_name, invite_token: token });
+            membersInvited++;
+          } catch { errors.push({ context: `member:${email}`, message: 'duplicate invite' }); }
+        }
+      }
+
+      results.push({ team_id: teamId, team_name: entry.team_name, members_invited: membersInvited });
+    }
+  } else if (body.mode === 'participants_only') {
+    if (!body.emails || body.emails.length === 0) {
+      return errorResponse(c, 400, 'VALIDATION_ERROR', 'emails array is required for participants_only mode');
+    }
+    if (body.emails.length > 500) truncated = true;
+
+    // Create a single pool team for unassigned participants
+    const teamId = crypto.randomUUID();
+    const inviteCode = generateInviteCode();
+    await c.env.DB.prepare(
+      `INSERT INTO teams (id, hackathon_id, name, invite_code, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'forming', ?, ?)`
+    ).bind(teamId, hackathon.id, 'Unassigned Pool', inviteCode, now, now).run();
+
+    let membersInvited = 0;
+    for (const rawEmail of body.emails.slice(0, 500)) {
+      const email = rawEmail.trim().toLowerCase();
+      if (!email) continue;
+      const token = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      try {
+        await c.env.DB.prepare(
+          `INSERT INTO team_invites (id, team_id, email, invite_token, status, invited_by, created_at, expires_at)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`
+        ).bind(crypto.randomUUID(), teamId, email, token, user.id, now, expiresAt).run();
+        inviteEmails.push({ email, team_name: 'Unassigned Pool', invite_token: token });
+        membersInvited++;
+      } catch { errors.push({ context: `participant:${email}`, message: 'duplicate invite' }); }
+    }
+
+    results.push({ team_id: teamId, team_name: 'Unassigned Pool', members_invited: membersInvited });
+  } else {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Invalid mode');
+  }
+
+  // Send invite notifications via queue
+  if (sendInvites && inviteEmails.length > 0) {
+    c.executionCtx.waitUntil(
+      c.env.NOTIFICATION_QUEUE.send({
+        type: 'team.bulk_invites',
+        hackathon_id: hackathon.id,
+        data: { invites: inviteEmails, hackathon_name: hackathon.slug },
+      })
+    );
+  }
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'team.participants_seeded', entity_type: 'hackathon', entity_id: hackathon.id,
+      details: { mode: body.mode, teams_created: results.length, total_invites: inviteEmails.length },
+    })
+  );
+
+  return successResponse(c, {
+    mode: body.mode,
+    teams: results,
+    total_invites_sent: sendInvites ? inviteEmails.length : 0,
+    truncated,
+    skipped: errors.length > 0 ? errors : undefined,
+  }, { status: 201 });
 });
 
 export default teams;

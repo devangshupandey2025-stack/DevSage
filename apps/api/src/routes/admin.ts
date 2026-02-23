@@ -3,7 +3,7 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
-import { backfillAuditHashes } from '../lib/audit.js';
+import { backfillAuditHashes, insertAuditEvent } from '../lib/audit.js';
 
 const admin = new Hono<AppEnv>();
 admin.use('/*', authMiddleware, requirePlatformAdmin);
@@ -191,6 +191,102 @@ admin.get('/workspaces', async (c) => {
     ORDER BY w.created_at DESC
   `).all();
   return successResponse(c, rows.results || []);
+});
+
+// Create workspace (admin-only) + invite owner
+admin.post('/workspaces', async (c) => {
+  const user = c.get('user')!;
+  const body = await c.req.json<{
+    name: string;
+    slug: string;
+    type: string;
+    description?: string;
+    owner_email: string;
+  }>();
+
+  if (!body.name || !body.slug || !body.type || !body.owner_email) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name, slug, type, and owner_email are required');
+  }
+
+  const existing = await c.env.DB.prepare('SELECT id FROM workspaces WHERE slug = ?').bind(body.slug).first();
+  if (existing) return errorResponse(c, 409, 'SLUG_TAKEN', 'Slug already in use');
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await c.env.DB.prepare(
+    `INSERT INTO workspaces (id, name, slug, description, type, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, body.name, body.slug, body.description ?? '', body.type, user.id, now, now).run();
+
+  // Create workspace invite for the owner
+  const inviteId = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  await c.env.DB.prepare(
+    `INSERT INTO workspace_invites (id, workspace_id, email, role, invite_token, invited_by, status, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(inviteId, id, body.owner_email, 'owner', inviteToken, user.id, 'pending', expiresAt).run();
+
+  // Send invite email
+  const { sendEmail } = await import('../services/email.js');
+  const platformUrl = c.env.PLATFORM_URL || 'https://platform.devsage.org';
+  const inviteLink = `${platformUrl}/invite/workspace/${inviteToken}`;
+
+  c.executionCtx.waitUntil(
+    Promise.all([
+      sendEmail(c.env, {
+        to: body.owner_email,
+        subject: `You've been invited to manage ${body.name} on DevSage`,
+        html: `
+          <h2>Workspace Invitation</h2>
+          <p>You've been invited as the <strong>Owner</strong> of the <strong>${body.name}</strong> workspace on DevSage.</p>
+          <p><a href="${inviteLink}" style="display:inline-block;padding:12px 24px;background:#CCFF00;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Accept Invitation</a></p>
+          <p>This invite expires in 7 days.</p>
+        `,
+      }),
+      insertAuditEvent(c.env.DB, {
+        actor_id: user.id, actor_type: 'user',
+        action: 'workspace.created', entity_type: 'workspace', entity_id: id,
+        details: { name: body.name, owner_email: body.owner_email },
+      }),
+    ])
+  );
+
+  const created = await c.env.DB.prepare('SELECT * FROM workspaces WHERE id = ?').bind(id).first();
+  return successResponse(c, { workspace: created, invite_token: inviteToken }, { status: 201 });
+});
+
+// Get workspace detail (admin)
+admin.get('/workspaces/:workspaceId', async (c) => {
+  const workspaceId = c.req.param('workspaceId');
+  const workspace = await c.env.DB.prepare('SELECT * FROM workspaces WHERE id = ?').bind(workspaceId).first();
+  if (!workspace) return errorResponse(c, 404, 'NOT_FOUND', 'Workspace not found');
+
+  const [members, hackathons, invites] = await Promise.all([
+    c.env.DB.prepare(`
+      SELECT wm.id, wm.user_id, wm.role, wm.created_at,
+             u.name, u.email, u.avatar_url as image
+      FROM workspace_members wm
+      JOIN users u ON wm.user_id = u.id
+      WHERE wm.workspace_id = ?
+      ORDER BY wm.created_at ASC
+    `).bind(workspaceId).all(),
+    c.env.DB.prepare(
+      'SELECT id, title, slug, status, created_at FROM hackathons WHERE workspace_id = ? ORDER BY created_at DESC'
+    ).bind(workspaceId).all(),
+    c.env.DB.prepare(
+      'SELECT id, email, role, status, created_at, expires_at FROM workspace_invites WHERE workspace_id = ? ORDER BY created_at DESC'
+    ).bind(workspaceId).all(),
+  ]);
+
+  return successResponse(c, {
+    ...workspace,
+    members: members.results || [],
+    hackathons: hackathons.results || [],
+    invites: invites.results || [],
+  });
 });
 
 export default admin;
