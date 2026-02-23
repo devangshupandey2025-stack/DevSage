@@ -1,0 +1,120 @@
+---
+title: "Judge — Scoring & Evaluation User Flow"
+---
+
+flowchart TD
+    %% ── Entry Points ────────────────────────────
+    subgraph ENTRY["🚪 Entry Points"]
+        E1["Email Invite from Event Lead"]
+        E2["Credentials provided by Event Lead"]
+    end
+
+    %% ── Onboarding ─────────────────────────────
+    subgraph ONBOARD["📩 Onboarding"]
+        O1["Navigate to judge.devsage.org"]
+        O2{"Invite or
+credentials?"}
+        O3["Click invite link →
+create password"]
+        O4["Log in with temp password →
+forced password reset"]
+        O5["Account active —
+see assigned hackathons"]
+    end
+
+    E1 --> O1
+    E2 --> O1
+    O1 --> O2
+    O2 -->|Invite| O3 --> O5
+    O2 -->|Credentials| O4 --> O5
+
+    %% ── Pre-Judging ────────────────────────────
+    subgraph PREJUDGE["📖 Pre-Judging"]
+        PJ1["View assigned hackathon(s)"]
+        PJ2["Review rubric —
+criteria & weights"]
+        PJ3["Review judging guidelines"]
+        PJ4["Cannot score yet —
+window not open"]
+    end
+
+    O5 --> PJ1 --> PJ2 --> PJ3 --> PJ4
+
+    %% ── Conflict of Interest ────────────────────
+    subgraph CONFLICT["⚠️ Conflict of Interest (before scoring a submission)"]
+        COI1["Review assigned submissions"]
+        COI2{"Any conflicts?"}
+        COI3["Declare conflict —
+flag team(s)"]
+        COI4["Event Lead reassigns
+flagged submissions"]
+        COI5["No conflicts — proceed"]
+    end
+
+    PJ4 --> COI1 --> COI2
+    COI2 -->|Yes| COI3 --> COI4
+    COI2 -->|No| COI5
+
+    %% ── Scoring ─────────────────────────────────
+    subgraph SCORING["⚖️ Scoring (1–2 Hour Window)"]
+        S1["Judging window opens —
+notification sent"]
+        S2["View assigned submissions:
+team, repo (read-only via dashboard),
+metadata, late flag"]
+        S3["Review code/project via repo"]
+        S4["Score each rubric criterion"]
+        S5["Optional: add written feedback"]
+        S6["Submit scores for submission"]
+        S7{"More
+submissions?"}
+        S8["Revise scores if needed
+(until window closes)"]
+    end
+
+    COI4 --> S1
+    COI5 --> S1
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+    S7 -->|Yes| S2
+    S7 -->|No| S8
+
+    %% ── Multi-Round ─────────────────────────────
+    subgraph ROUNDS["🔄 Multi-Round Judging"]
+        MR1["Judging window closes —
+scores locked"]
+        MR2["Event Lead publishes
+round results"]
+        MR3{More rounds?}
+        MR4["New assignments for next round
+(pool may narrow if elimination round)"]
+    end
+
+    S8 --> MR1 --> MR2 --> MR3
+    MR3 -->|Yes| MR4 --> COI1
+    MR3 -->|No| POST
+
+    %% ── Post-Judging ────────────────────────────
+    subgraph POST["🏆 Post-Judging"]
+        PS1["View own scores — read-only"]
+        PS2["Final leaderboard published"]
+        PS3["Judge involvement ends"]
+    end
+
+    PS1 --> PS2 --> PS3
+
+    %% ── Styling ─────────────────────────────────
+    classDef entry fill:#1e1e2e,stroke:#fab387,color:#cdd6f4
+    classDef onboard fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    classDef prejudge fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    classDef conflict fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+    classDef scoring fill:#1e1e2e,stroke:#cba6f7,color:#cdd6f4
+    classDef rounds fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    classDef post fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+
+    class ENTRY entry
+    class ONBOARD onboard
+    class PREJUDGE prejudge
+    class CONFLICT conflict
+    class SCORING scoring
+    class ROUNDS rounds
+    class POST post

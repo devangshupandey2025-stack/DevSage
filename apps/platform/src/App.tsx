@@ -5,7 +5,10 @@ import { LoginPage } from '@/pages/login';
 import { DashboardPage } from '@/pages/dashboard';
 import { ProfilePage } from '@/pages/profile';
 import { InviteAcceptPage } from '@/pages/invite-accept';
+import { WorkspaceInviteAcceptPage } from '@/pages/workspace-invite-accept';
 import { HackathonOverviewPage } from '@/pages/hackathon-overview';
+import { WorkspacesPage } from '@/pages/workspaces';
+import { WorkspaceDetailPage } from '@/pages/workspace-detail';
 import { TeamsPage } from '@/pages/teams';
 import { TeamDetailPage } from '@/pages/team-detail';
 import { SubmissionsPage } from '@/pages/submissions';
@@ -21,6 +24,7 @@ const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <LoginPage /> },
 { path: '/invite/:code', element: <InviteAcceptPage /> },
+{ path: '/invite/workspace/:token', element: <WorkspaceInviteAcceptPage /> },
 
   // Protected routes with app shell
   {
@@ -31,6 +35,8 @@ const router = createBrowserRouter([
         children: [
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/profile', element: <ProfilePage /> },
+          { path: '/workspaces', element: <WorkspacesPage /> },
+          { path: '/workspaces/:slug', element: <WorkspaceDetailPage /> },
 
           // Hackathon management
           { path: '/hackathons/:slug', element: <HackathonOverviewPage /> },

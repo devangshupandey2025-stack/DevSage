@@ -13,6 +13,8 @@ import {
   Crown,
   GitBranch,
   ExternalLink,
+  Upload,
+  X,
 } from 'lucide-react';
 
 interface TeamMember {
@@ -48,6 +50,10 @@ export function TeamsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showSeedDialog, setShowSeedDialog] = useState(false);
+  const [seedMode, setSeedMode] = useState<'full_structure' | 'leaders_only' | 'participants_only'>('leaders_only');
+  const [seedInput, setSeedInput] = useState('');
+  const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -65,6 +71,44 @@ export function TeamsPage() {
     }
   };
 
+  const handleSeed = async () => {
+    if (!slug || !seedInput.trim()) return;
+    setSeeding(true);
+    try {
+      let payload: Record<string, unknown>;
+      if (seedMode === 'participants_only') {
+        const emails = seedInput.split('\n').map(e => e.trim()).filter(Boolean);
+        payload = { mode: seedMode, emails };
+      } else {
+        // Parse as JSON array: [{ team_name, leader_email, member_emails? }]
+        try {
+          const parsed = JSON.parse(seedInput);
+          payload = { mode: seedMode, teams: parsed };
+        } catch {
+          // Fallback: parse as CSV lines — "Team Name, leader@email.com"
+          const lines = seedInput.split('\n').filter(l => l.trim());
+          const teams = lines.map(line => {
+            const parts = line.split(',').map(p => p.trim());
+            return { team_name: parts[0], leader_email: parts[1], member_emails: parts.slice(2) };
+          });
+          payload = { mode: seedMode, teams };
+        }
+      }
+      const res = await apiRequest<{ data: { total_invites_sent: number; teams: unknown[] } }>(
+        `/api/v1/hackathons/${slug}/teams/seed`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+      );
+      toast.success(`Seeded ${res.data.teams?.length ?? 0} teams, ${res.data.total_invites_sent} invites sent`);
+      setShowSeedDialog(false);
+      setSeedInput('');
+      fetchTeams();
+    } catch {
+      toast.error('Failed to seed participants');
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   const filtered = teams.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -76,6 +120,12 @@ export function TeamsPage() {
         description={`${teams.length} teams registered`}
         actions={
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSeedDialog(true)}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold border border-[#CCFF00]/20 bg-[#CCFF00]/8 text-[#CCFF00] hover:bg-[#CCFF00]/15 transition-all"
+            >
+              <Upload className="h-3 w-3" /> Seed Participants
+            </button>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/25" />
               <Input
@@ -168,6 +218,68 @@ export function TeamsPage() {
             </motion.div>
           ))}
         </motion.div>
+      )}
+
+      {/* Seed Participants Dialog */}
+      {showSeedDialog && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-lg w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Seed Participants</h3>
+              <button onClick={() => setShowSeedDialog(false)} className="text-zinc-500 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Mode</label>
+              <select
+                value={seedMode}
+                onChange={(e) => setSeedMode(e.target.value as typeof seedMode)}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
+              >
+                <option value="full_structure">Full Structure (team + leader + members)</option>
+                <option value="leaders_only">Leaders Only (team + leader)</option>
+                <option value="participants_only">Participants Only (emails)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">
+                {seedMode === 'participants_only'
+                  ? 'Enter one email per line'
+                  : 'Enter CSV (Team Name, leader@email.com, member1@email.com, ...)'}
+              </label>
+              <textarea
+                value={seedInput}
+                onChange={(e) => setSeedInput(e.target.value)}
+                rows={8}
+                className="w-full p-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm font-mono resize-none"
+                placeholder={
+                  seedMode === 'participants_only'
+                    ? 'alice@example.com\nbob@example.com\n...'
+                    : 'Team Alpha, leader@example.com, member1@example.com\nTeam Beta, leader2@example.com'
+                }
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSeedDialog(false)}
+                className="px-4 py-2 border border-zinc-700 rounded-lg text-sm text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSeed}
+                disabled={seeding || !seedInput.trim()}
+                className="px-4 py-2 bg-[#CCFF00] text-black rounded-lg text-sm font-bold hover:bg-[#CCFF00]/80 disabled:opacity-40 transition-all"
+              >
+                {seeding ? 'Seeding...' : 'Seed Participants'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

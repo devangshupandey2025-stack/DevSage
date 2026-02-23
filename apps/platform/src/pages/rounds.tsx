@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader, EmptyState } from '@/components/common';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { apiRequest } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -92,6 +93,8 @@ function RoundCard({
   onDelete,
   onToggleInit,
   initializingId,
+  onPublishResults,
+  onAdvanceTeams,
 }: {
   round: Round;
   index: number;
@@ -99,6 +102,8 @@ function RoundCard({
   onDelete: (id: string) => void;
   onToggleInit: (round: Round) => void;
   initializingId: string | null;
+  onPublishResults: (round: Round) => void;
+  onAdvanceTeams: (round: Round) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -220,6 +225,13 @@ function RoundCard({
                     <Flag className="h-3 w-3" />
                     Round {round.round_number}
                   </span>
+                  {round.type && (
+                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      round.type === 'elimination' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
+                    }`}>
+                      {round.type === 'elimination' ? '⚔ Elimination' : '📊 Scoring Only'}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -246,6 +258,26 @@ function RoundCard({
                 )}
                 {round.is_initialized ? 'Un-initialize' : 'Initialize'}
               </button>
+
+              {/* Publish Results */}
+              {round.status !== 'completed' && round.is_initialized === 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onPublishResults(round); }}
+                  className="shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 border border-emerald-500/20 bg-emerald-500/8 text-emerald-400 hover:bg-emerald-500/15"
+                >
+                  <Trophy className="h-3 w-3" /> Publish Results
+                </button>
+              )}
+
+              {/* Select Advancing Teams (elimination only, after completed) */}
+              {round.type === 'elimination' && round.status === 'completed' && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAdvanceTeams(round); }}
+                  className="shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all duration-200 border border-[#CCFF00]/20 bg-[#CCFF00]/8 text-[#CCFF00] hover:bg-[#CCFF00]/15"
+                >
+                  <Users className="h-3 w-3" /> Advance Teams
+                </button>
+              )}
 
               {/* Delete */}
               <AnimatePresence mode="wait">
@@ -297,11 +329,15 @@ function AddRoundInput({
   onChange,
   onAdd,
   creating,
+  roundType,
+  onTypeChange,
 }: {
   value: string;
   onChange: (v: string) => void;
   onAdd: () => void;
   creating: boolean;
+  roundType: string;
+  onTypeChange: (t: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
 
@@ -310,23 +346,32 @@ function AddRoundInput({
   };
 
   return (
-    <div
-      className="flex items-center gap-0 overflow-hidden rounded-xl transition-all duration-200"
-      style={{
-        border: focused ? '1px solid rgba(204,255,0,0.3)' : '1px solid rgba(255,255,255,0.08)',
-        background: focused ? 'rgba(204,255,0,0.03)' : 'rgba(255,255,255,0.03)',
-        boxShadow: focused ? '0 0 0 3px rgba(204,255,0,0.05)' : 'none',
-      }}
-    >
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKey}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder="Round name..."
-        className="bg-transparent px-4 py-2.5 text-sm text-white/80 placeholder:text-white/15 outline-none w-44"
-      />
+    <div className="flex items-center gap-2">
+      <select
+        value={roundType}
+        onChange={(e) => onTypeChange(e.target.value)}
+        className="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5 text-xs text-white/60 outline-none"
+      >
+        <option value="scoring_only">Scoring Only</option>
+        <option value="elimination">Elimination</option>
+      </select>
+      <div
+        className="flex items-center gap-0 overflow-hidden rounded-xl transition-all duration-200"
+        style={{
+          border: focused ? '1px solid rgba(204,255,0,0.3)' : '1px solid rgba(255,255,255,0.08)',
+          background: focused ? 'rgba(204,255,0,0.03)' : 'rgba(255,255,255,0.03)',
+          boxShadow: focused ? '0 0 0 3px rgba(204,255,0,0.05)' : 'none',
+        }}
+      >
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKey}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Round name..."
+          className="bg-transparent px-4 py-2.5 text-sm text-white/80 placeholder:text-white/15 outline-none w-44"
+        />
       <button
         onClick={onAdd}
         disabled={creating || !value.trim()}
@@ -348,6 +393,7 @@ function AddRoundInput({
         Add
       </button>
     </div>
+    </div>
   );
 }
 
@@ -359,6 +405,7 @@ export function RoundsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [roundType, setRoundType] = useState('scoring_only');
   const [initializingId, setInitializingId] = useState<string | null>(null);
 
   const fetchRounds = async () => {
@@ -383,7 +430,7 @@ export function RoundsPage() {
       await apiRequest(`/api/v1/hackathons/${slug}/rounds`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim(), round_number: nextNumber }),
+        body: JSON.stringify({ name: newName.trim(), round_number: nextNumber, type: roundType }),
       });
       toast.success('Round created');
       setNewName('');
@@ -425,6 +472,76 @@ export function RoundsPage() {
     }
   };
 
+  const handlePublishResults = async (round: Round) => {
+    if (!slug) return;
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds/${round.id}/publish`, { method: 'POST' });
+      toast.success(`Results published for "${round.name}"`);
+      fetchRounds();
+    } catch {
+      toast.error('Failed to publish results');
+    }
+  };
+
+  // Advance teams state
+  const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
+  const [advanceRound, setAdvanceRound] = useState<Round | null>(null);
+  const [advanceResults, setAdvanceResults] = useState<Array<{ team_id: string; team_name: string; rank: number; total_score: number; status: string }>>([]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+
+  const handleAdvanceTeams = async (round: Round) => {
+    if (!slug) return;
+    try {
+      const res = await apiRequest<{ data: Array<{ team_id: string; team_name: string; rank: number; total_score: number; status: string }> }>(
+        `/api/v1/hackathons/${slug}/rounds/${round.id}/results`
+      );
+      const results = res.data ?? [];
+      if (results.length === 0) {
+        toast.error('No results to advance. Publish results first.');
+        return;
+      }
+      setAdvanceRound(round);
+      setAdvanceResults(results);
+      setSelectedTeamIds(new Set(results.map(r => r.team_id)));
+      setAdvanceDialogOpen(true);
+    } catch {
+      toast.error('Failed to load round results');
+    }
+  };
+
+  const handleToggleTeam = (teamId: string) => {
+    setSelectedTeamIds(prev => {
+      const next = new Set(prev);
+      if (next.has(teamId)) next.delete(teamId);
+      else next.add(teamId);
+      return next;
+    });
+  };
+
+  const handleSelectTopN = (n: number) => {
+    setSelectedTeamIds(new Set(advanceResults.slice(0, n).map(r => r.team_id)));
+  };
+
+  const handleConfirmAdvance = async () => {
+    if (!slug || !advanceRound || selectedTeamIds.size === 0) return;
+    setAdvanceLoading(true);
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds/${advanceRound.id}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ advancing_team_ids: Array.from(selectedTeamIds) }),
+      });
+      toast.success(`${selectedTeamIds.size} teams advanced, ${advanceResults.length - selectedTeamIds.size} eliminated`);
+      setAdvanceDialogOpen(false);
+      fetchRounds();
+    } catch {
+      toast.error('Failed to advance teams');
+    } finally {
+      setAdvanceLoading(false);
+    }
+  };
+
   // Stats
   const completed = rounds.filter((r) => r.status === 'completed').length;
   const active = rounds.filter((r) => r.status === 'active').length;
@@ -440,6 +557,8 @@ export function RoundsPage() {
             onChange={setNewName}
             onAdd={handleCreate}
             creating={creating}
+            roundType={roundType}
+            onTypeChange={setRoundType}
           />
         }
       />
@@ -522,6 +641,8 @@ export function RoundsPage() {
               onDelete={handleDelete}
               onToggleInit={handleToggleInit}
               initializingId={initializingId}
+              onPublishResults={handlePublishResults}
+              onAdvanceTeams={handleAdvanceTeams}
             />
           ))}
 
@@ -534,6 +655,73 @@ export function RoundsPage() {
           </motion.div>
         </motion.div>
       )}
+
+      {/* Advance Teams Dialog */}
+      <Dialog open={advanceDialogOpen} onOpenChange={setAdvanceDialogOpen}>
+        <DialogContent className="max-w-xl bg-zinc-900 border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              Advance Teams — {advanceRound?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-zinc-400">Quick select top:</span>
+              {[Math.ceil(advanceResults.length / 2), Math.ceil(advanceResults.length * 0.75)].map(n => (
+                <button
+                  key={n}
+                  onClick={() => handleSelectTopN(n)}
+                  className="px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                >
+                  Top {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setSelectedTeamIds(new Set(advanceResults.map(r => r.team_id)))}
+                className="px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              >
+                All
+              </button>
+              <button
+                onClick={() => setSelectedTeamIds(new Set())}
+                className="px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              >
+                None
+              </button>
+            </div>
+            {advanceResults.map((team) => (
+              <label
+                key={team.team_id}
+                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                  selectedTeamIds.has(team.team_id) ? 'bg-[#CCFF00]/10 border border-[#CCFF00]/30' : 'bg-zinc-800/50 border border-zinc-700/50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedTeamIds.has(team.team_id)}
+                  onChange={() => handleToggleTeam(team.team_id)}
+                  className="accent-[#CCFF00]"
+                />
+                <span className="text-xs font-mono text-zinc-500">#{team.rank}</span>
+                <span className="text-sm text-white flex-1">{team.team_name}</span>
+                <span className="text-xs text-zinc-400">{team.total_score.toFixed(1)} pts</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter className="flex items-center justify-between">
+            <span className="text-xs text-zinc-400">
+              {selectedTeamIds.size} advancing / {advanceResults.length - selectedTeamIds.size} eliminated
+            </span>
+            <button
+              onClick={handleConfirmAdvance}
+              disabled={advanceLoading || selectedTeamIds.size === 0}
+              className="px-4 py-2 rounded-lg bg-[#CCFF00] text-black text-sm font-medium hover:bg-[#CCFF00]/90 disabled:opacity-50"
+            >
+              {advanceLoading ? 'Processing...' : `Advance ${selectedTeamIds.size} Teams`}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

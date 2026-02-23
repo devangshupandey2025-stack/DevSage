@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { assignSubmissionsRoundRobin, computeLeaderboard } from '../services/judging-service.js';
+import { hashPassword } from '../lib/password.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { KV_TTL } from '../lib/constants.js';
 
@@ -227,6 +228,81 @@ judging.delete('/judges/:judgeId', authMiddleware, requireRole('co_organizer'), 
   return successResponse(c, { deleted: true });
 });
 
+// Create judge account with temporary credentials
+judging.post('/judges/create-account', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await c.req.json<{
+    email: string; name: string; temp_password: string; track_id?: string | null;
+  }>();
+
+  if (!body.email || !body.name || !body.temp_password) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'email, name, and temp_password are required');
+  }
+  if (body.temp_password.length < 8) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Password must be at least 8 characters');
+  }
+  if (body.name.length > 200) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name too long (max 200 characters)');
+  }
+
+  const email = body.email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Invalid email format');
+  }
+  const now = new Date().toISOString();
+
+  // Check if user already exists
+  let existingUser = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE email = ?'
+  ).bind(email).first<{ id: string }>();
+
+  let userId: string;
+  if (existingUser) {
+    userId = existingUser.id;
+  } else {
+    // Create new user with temp password + forced reset
+    userId = crypto.randomUUID();
+    const passwordHash = await hashPassword(body.temp_password);
+    await c.env.DB.prepare(
+      `INSERT INTO users (id, email, name, password_hash, password_must_change, email_verified, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 1, ?, ?)`
+    ).bind(userId, email, body.name, passwordHash, now, now).run();
+  }
+
+  // Create judge record (auto-accepted since organizer is creating the account)
+  const judgeId = crypto.randomUUID();
+  const inviteToken = generateInviteToken();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO judges (id, hackathon_id, user_id, email, invite_status, invite_token, track_id, invited_by, invited_at, responded_at)
+       VALUES (?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?)`
+    ).bind(judgeId, hackathon.id, userId, email, inviteToken, body.track_id ?? null, user.id, now, now).run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('UNIQUE')) {
+      return errorResponse(c, 409, 'JUDGE_ALREADY_EXISTS', 'Judge already exists for this hackathon');
+    }
+    throw err;
+  }
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'judge.account_created', entity_type: 'judge', entity_id: judgeId,
+      details: { user_id: userId, email, with_credentials: true },
+    })
+  );
+
+  return successResponse(c, {
+    judge_id: judgeId,
+    user_id: userId,
+    email,
+    name: body.name,
+    password_must_change: !existingUser,
+    invite_status: 'accepted',
+  }, { status: 201 });
+});
+
 // Assign judge to a track
 judging.post('/judges/:judgeId/tracks', authMiddleware, requireRole('co_organizer'), async (c) => {
   const judgeId = c.req.param('judgeId');
@@ -419,6 +495,117 @@ judging.get('/leaderboard', async (c) => {
   return successResponse(c, leaderboard);
 });
 
+// === Conflict of Interest (COI) ===
+
+// Judge declares a conflict of interest for an assignment
+judging.post('/assignments/:assignmentId/coi', authMiddleware, requireRole('judge'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const assignmentId = c.req.param('assignmentId');
+  const body = await c.req.json<{ reason: string }>();
+
+  if (!body.reason || body.reason.trim().length === 0) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Reason is required');
+  }
+
+  const judge = await c.env.DB.prepare(
+    'SELECT id FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = ?'
+  ).bind(hackathon.id, user.id, 'accepted').first<{ id: string }>();
+
+  if (!judge) return errorResponse(c, 403, 'FORBIDDEN', 'Not an accepted judge');
+
+  const assignment = await c.env.DB.prepare(
+    'SELECT id, team_id, status FROM judge_assignments WHERE id = ? AND judge_id = ?'
+  ).bind(assignmentId, judge.id).first<{ id: string; team_id: string; status: string }>();
+
+  if (!assignment) return errorResponse(c, 404, 'NOT_FOUND', 'Assignment not found');
+  if (assignment.status === 'scored') {
+    return errorResponse(c, 409, 'ALREADY_SCORED', 'Cannot declare COI after scoring');
+  }
+
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    "UPDATE judge_assignments SET status = 'conflict', completed_at = ? WHERE id = ?"
+  ).bind(now, assignmentId).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'judge.coi_declared', entity_type: 'judge_assignment', entity_id: assignmentId,
+      details: { reason: body.reason, team_id: assignment.team_id },
+    })
+  );
+
+  return successResponse(c, { conflict_declared: true, assignment_id: assignmentId });
+});
+
+// Event Lead: List all COI declarations for reassignment
+judging.get('/coi', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+
+  const conflicts = await c.env.DB.prepare(`
+    SELECT ja.id as assignment_id, ja.team_id, ja.judge_id, ja.round, ja.completed_at as declared_at,
+           t.name as team_name, u.name as judge_name, u.email as judge_email
+    FROM judge_assignments ja
+    JOIN teams t ON ja.team_id = t.id
+    JOIN judges j ON ja.judge_id = j.id
+    LEFT JOIN users u ON j.user_id = u.id
+    WHERE ja.hackathon_id = ? AND ja.status = 'conflict'
+    ORDER BY ja.completed_at DESC
+  `).bind(hackathon.id).all();
+
+  return successResponse(c, conflicts.results || []);
+});
+
+// Event Lead: Reassign a conflicted assignment to another judge
+judging.post('/assignments/:assignmentId/reassign', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
+  const assignmentId = c.req.param('assignmentId');
+  const body = await c.req.json<{ new_judge_id: string }>();
+
+  if (!body.new_judge_id) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'new_judge_id is required');
+  }
+
+  const assignment = await c.env.DB.prepare(
+    "SELECT id, team_id, submission_id, round FROM judge_assignments WHERE id = ? AND hackathon_id = ? AND status = 'conflict'"
+  ).bind(assignmentId, hackathon.id).first<{ id: string; team_id: string; submission_id: string | null; round: number }>();
+
+  if (!assignment) return errorResponse(c, 404, 'NOT_FOUND', 'Conflicted assignment not found');
+
+  const newJudge = await c.env.DB.prepare(
+    "SELECT id FROM judges WHERE id = ? AND hackathon_id = ? AND invite_status = 'accepted'"
+  ).bind(body.new_judge_id, hackathon.id).first<{ id: string }>();
+
+  if (!newJudge) return errorResponse(c, 404, 'NOT_FOUND', 'New judge not found or not accepted');
+
+  const now = new Date().toISOString();
+  const newAssignmentId = crypto.randomUUID();
+
+  await c.env.DB.batch([
+    // Mark old assignment as reassigned
+    c.env.DB.prepare(
+      "UPDATE judge_assignments SET status = 'reassigned' WHERE id = ?"
+    ).bind(assignmentId),
+    // Create new assignment for the new judge
+    c.env.DB.prepare(
+      `INSERT INTO judge_assignments (id, hackathon_id, judge_id, team_id, submission_id, round, status, assigned_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
+    ).bind(newAssignmentId, hackathon.id, body.new_judge_id, assignment.team_id, assignment.submission_id, assignment.round, now),
+  ]);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'judge.assignment_reassigned', entity_type: 'judge_assignment', entity_id: newAssignmentId,
+      details: { old_assignment_id: assignmentId, new_judge_id: body.new_judge_id, team_id: assignment.team_id },
+    })
+  );
+
+  return successResponse(c, { reassigned: true, new_assignment_id: newAssignmentId });
+});
+
 // === Results Publication (organizer) ===
 
 judging.post('/results/publish', authMiddleware, requireRole('organizer'), async (c) => {
@@ -432,30 +619,36 @@ judging.post('/results/publish', authMiddleware, requireRole('organizer'), async
 
   const leaderboard = await computeLeaderboard(c.env.DB, hackathon.id, body.round_id);
 
-  // Persist results
+  // Resolve round ID
   const now = new Date().toISOString();
-  const roundId = body.round_id ?? null;
-  for (const entry of leaderboard) {
-    const id = crypto.randomUUID();
-    if (roundId) {
-      await c.env.DB.prepare(`
-        INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
-        VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
-        ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
-      `).bind(id, hackathon.id, roundId, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
-    } else {
-      // Get default round if no round_id specified
-      const defaultRound = await c.env.DB.prepare(
-        'SELECT id FROM hackathon_rounds WHERE hackathon_id = ? ORDER BY round_number ASC LIMIT 1'
-      ).bind(hackathon.id).first<{ id: string }>();
-      if (defaultRound) {
-        await c.env.DB.prepare(`
-          INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
-          VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
-          ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
-        `).bind(id, hackathon.id, defaultRound.id, entry.team_id, entry.rank, entry.total_score, user.id, now, entry.rank, entry.total_score, user.id).run();
-      }
-    }
+  let targetRoundId = body.round_id ?? null;
+  if (!targetRoundId) {
+    const defaultRound = await c.env.DB.prepare(
+      'SELECT id FROM hackathon_rounds WHERE hackathon_id = ? ORDER BY round_number ASC LIMIT 1'
+    ).bind(hackathon.id).first<{ id: string }>();
+    if (defaultRound) targetRoundId = defaultRound.id;
+  }
+
+  if (!targetRoundId) {
+    return errorResponse(c, 400, 'NO_ROUNDS', 'No rounds found for this hackathon');
+  }
+
+  // Batch upsert results (D1 batch limit: 100 bound params, so chunk)
+  const statements = leaderboard.map((entry) =>
+    c.env.DB.prepare(`
+      INSERT INTO round_results (id, hackathon_id, round_id, team_id, status, rank, total_score, decided_by, created_at)
+      VALUES (?, ?, ?, ?, 'published', ?, ?, ?, ?)
+      ON CONFLICT(round_id, team_id) DO UPDATE SET rank = ?, total_score = ?, status = 'published', decided_by = ?
+    `).bind(
+      crypto.randomUUID(), hackathon.id, targetRoundId, entry.team_id,
+      entry.rank, entry.total_score, user.id, now,
+      entry.rank, entry.total_score, user.id
+    )
+  );
+
+  // Execute in chunks of 20 (staying under D1 bound parameter limit)
+  for (let i = 0; i < statements.length; i += 20) {
+    await c.env.DB.batch(statements.slice(i, i + 20));
   }
 
   // Notify

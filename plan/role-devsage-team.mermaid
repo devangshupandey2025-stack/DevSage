@@ -1,0 +1,111 @@
+---
+title: "DevSage Team — Platform Admin User Flow"
+---
+
+flowchart TD
+    %% ── Workspace Provisioning ──────────────────
+    subgraph PROVISION["🏗️ Workspace Provisioning"]
+        P1[College/club reaches out]
+        P2[Log into Admin Dashboard]
+        P3[Create Workspace]
+        P4[Invite Club President as Owner]
+        P5[Monitor invite acceptance]
+    end
+
+    P1 --> P2 --> P3 --> P4 --> P5
+
+    %% ── Hackathon Request Review ────────────────
+    subgraph REVIEW["📋 Hackathon Request Review"]
+        R1[Manager submits hackathon request]
+        R2[Request appears on Admin Dashboard]
+        R3[Review basics: title, slug, dates, team sizes]
+        R4{Approve?}
+        R5[Reject with reason]
+        R6["Backend auto-creates:
+• Hackathon in draft state
+• DO state machine initialized
+• Slugs & IDs generated
+• Audit event logged"]
+        R7["Dashboard shows CLI command"]
+    end
+
+    R1 -.->|Request pipeline| R2
+    R2 --> R3 --> R4
+    R4 -->|No| R5
+    R4 -->|Yes| R6 --> R7
+
+    %% ── CLI Automated Steps ─────────────────────
+    subgraph CLI["⚡ CLI Automated Steps"]
+        C1["Copy CLI command from dashboard"]
+        C2["Clone hackathon template repo"]
+        C3["Rename folder:
+{hack-slug}-{ws-slug}"]
+        C4["Text-based edit across repo:
+slugs, IDs, config, API origin"]
+        C5["Push to SHIKDD-org on GitHub"]
+        C6["Deploy to Cloudflare Workers
+(Static Assets)"]
+        C7["Subdomain live:
+{hack}.{ws}.devsage.org"]
+    end
+
+    R7 --> C1 --> C2 --> C3 --> C4 --> C5 --> C6 --> C7
+
+    %% ── Manual Steps ────────────────────────────
+    subgraph MANUAL["🎨 Manual Steps"]
+        M1["Frontend design customization
+(branding, logos, colors, copy)"]
+        M2["Sponsor content
+(add directly OR give Event Lead repo access)"]
+        M3[Review & QA]
+        M4["CORS origin update
+(if new subdomain/domain)"]
+        M5["Custom domain setup
+(if applicable — CNAME)"]
+        M6[Final deploy + push to GitHub]
+        M7[Notify Event Leads — frontend is live]
+    end
+
+    C7 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> M7
+
+    %% ── Handoff ─────────────────────────────────
+    subgraph HANDOFF["✅ Handoff to Event Leads"]
+        H1["Event Leads configure hackathon
+(rounds, rubric, judges, settings)"]
+        H2["Event Leads can change deadlines
+or postpone while in draft/active"]
+        H3["Frontend stays with DevSage team"]
+    end
+
+    M7 --> H1
+    H1 --> H2
+    H1 --> H3
+
+    %% ── Ongoing Platform Management ─────────────
+    subgraph ONGOING["🔧 Ongoing Platform Management"]
+        O1[System stats dashboard]
+        O2[User management]
+        O3[Workspace oversight]
+        O4[Hackathon oversight]
+        O5[Admin list management]
+        O6[Audit hash backfill]
+        O7["Intervene: fix issues,
+override states, debug pipelines"]
+    end
+
+    P2 --> ONGOING
+
+    %% ── Styling ─────────────────────────────────
+    classDef provision fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    classDef review fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+    classDef cli fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    classDef manual fill:#1e1e2e,stroke:#cba6f7,color:#cdd6f4
+    classDef handoff fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    classDef ongoing fill:#1e1e2e,stroke:#fab387,color:#cdd6f4
+
+    class PROVISION provision
+    class REVIEW review
+    class CLI cli
+    class MANUAL manual
+    class HANDOFF handoff
+    class ONGOING ongoing

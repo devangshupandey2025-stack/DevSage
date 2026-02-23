@@ -10,6 +10,7 @@ export const users = sqliteTable('users', {
   github_username: text('github_username'),
   google_id: text('google_id'),
   avatar_url: text('avatar_url'),
+  password_must_change: integer('password_must_change').notNull().default(0),
   email_verified: integer('email_verified').notNull().default(0),
   email_bounced: integer('email_bounced').notNull().default(0),
   suspended: integer('suspended').notNull().default(0),

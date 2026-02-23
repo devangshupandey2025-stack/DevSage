@@ -99,9 +99,14 @@ export function JudgingPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [rubric, setRubric] = useState<RubricCriterion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric' | 'scoring'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric' | 'scoring' | 'conflicts'>('leaderboard');
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteUserId, setInviteUserId] = useState('');
+  const [createAccountDialog, setCreateAccountDialog] = useState(false);
+  const [newJudgeName, setNewJudgeName] = useState('');
+  const [newJudgeEmail, setNewJudgeEmail] = useState('');
+  const [newJudgeTempPwd, setNewJudgeTempPwd] = useState('');
+  const [conflicts, setConflicts] = useState<Array<{ assignment_id: string; team_id: string; judge_id: string; team_name: string; judge_name: string; judge_email: string; declared_at: string }>>([]);
   const [rubricDialogOpen, setRubricDialogOpen] = useState(false);
   const [newCriterion, setNewCriterion] = useState({ name: '', description: '', max_score: '10', weight: '1' });
   const [isCreatingCriterion, setIsCreatingCriterion] = useState(false);
@@ -135,6 +140,12 @@ export function JudgingPage() {
       if (leaderboardRes.status === 'fulfilled') setLeaderboard(leaderboardRes.value.data ?? []);
       if (rubricRes.status === 'fulfilled') setRubric(rubricRes.value.data ?? []);
       if (assignmentsRes?.status === 'fulfilled') setAssignments(assignmentsRes.value.data ?? []);
+
+      // Fetch COI conflicts
+      try {
+        const coiRes = await apiRequest<{ data: typeof conflicts }>(`/api/v1/hackathons/${slug}/judging/coi`);
+        setConflicts(coiRes.data ?? []);
+      } catch { /* may not be organizer */ }
     } catch (_err) {
       // graceful
     } finally {
@@ -231,6 +242,31 @@ export function JudgingPage() {
     }
   };
 
+  const createJudgeAccount = async () => {
+    if (!newJudgeName.trim() || !newJudgeEmail.trim() || !newJudgeTempPwd.trim()) {
+      toast.error('All fields are required');
+      return;
+    }
+    if (newJudgeTempPwd.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/judging/judges/create-account`, {
+        method: 'POST',
+        body: JSON.stringify({ name: newJudgeName, email: newJudgeEmail, temp_password: newJudgeTempPwd }),
+      });
+      toast.success('Judge account created with credentials');
+      setCreateAccountDialog(false);
+      setNewJudgeName('');
+      setNewJudgeEmail('');
+      setNewJudgeTempPwd('');
+      fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create judge account');
+    }
+  };
+
   const createCriterion = async () => {
     if (!newCriterion.name.trim()) {
       toast.error('Criterion name is required');
@@ -320,6 +356,10 @@ export function JudgingPage() {
   if (isJudge) {
     tabs.push({ key: 'scoring', label: 'Scoring', icon: Gavel, badge: pendingAssignments.length || undefined });
   }
+  // Add conflicts tab if any exist
+  if (conflicts.length > 0) {
+    tabs.push({ key: 'conflicts', label: 'Conflicts', icon: AlertCircle, badge: conflicts.length });
+  }
 
   return (
     <div>
@@ -338,7 +378,7 @@ export function JudgingPage() {
               {isAssigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shuffle className="h-4 w-4" />}
               Assign Submissions
             </motion.button>
-            <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+             <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
               <DialogTrigger asChild>
                 <motion.button
                   whileHover={{ scale: 1.03 }}
@@ -373,6 +413,56 @@ export function JudgingPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+            {/* Create Judge Account with credentials */}
+            <Dialog open={createAccountDialog} onOpenChange={setCreateAccountDialog}>
+              <DialogTrigger asChild>
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-2 rounded-full border border-white/10 px-5 py-2.5 text-sm font-bold text-white/60 transition hover:border-[#CCFF00]/30 hover:text-[#CCFF00]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Account
+                </motion.button>
+              </DialogTrigger>
+              <DialogContent className="border-white/8 bg-black/95 backdrop-blur-xl sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-white text-xl font-black">Create Judge Account</DialogTitle>
+                  <DialogDescription className="text-white/35">
+                    Create a judge account with temporary credentials. The judge must change their password on first login.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-4">
+                  <Input
+                    value={newJudgeName}
+                    onChange={(e) => setNewJudgeName(e.target.value)}
+                    placeholder="Full name"
+                    className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
+                  />
+                  <Input
+                    value={newJudgeEmail}
+                    onChange={(e) => setNewJudgeEmail(e.target.value)}
+                    placeholder="judge@example.com"
+                    type="email"
+                    className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
+                  />
+                  <Input
+                    value={newJudgeTempPwd}
+                    onChange={(e) => setNewJudgeTempPwd(e.target.value)}
+                    placeholder="Temporary password (min 8 chars)"
+                    type="text"
+                    className="border-white/8 bg-white/3 text-white placeholder:text-white/20"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCreateAccountDialog(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white">Cancel</Button>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={createJudgeAccount} className="rounded-lg bg-[#CCFF00] px-5 py-2 text-sm font-bold text-black transition hover:bg-white">
+                    Create Account
+                  </motion.button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         }
       />
@@ -855,6 +945,54 @@ export function JudgingPage() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Conflicts Tab */}
+          {activeTab === 'conflicts' && conflicts.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-white">Conflict of Interest Declarations</h3>
+              <p className="text-sm text-white/40">
+                Judges have declared conflicts with these assignments. Reassign them to other judges.
+              </p>
+              <div className="space-y-3">
+                {conflicts.map((conflict) => (
+                  <div key={conflict.assignment_id} className="border border-red-500/20 bg-red-500/5 rounded-xl p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          <span className="text-red-400">{conflict.judge_name || conflict.judge_email}</span>
+                          {' → '}
+                          <span className="text-white/80">{conflict.team_name}</span>
+                        </p>
+                        <p className="text-xs text-white/30 mt-1">
+                          Declared {new Date(conflict.declared_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const newJudgeId = prompt('Enter the judge ID to reassign to:');
+                          if (!newJudgeId) return;
+                          try {
+                            await apiRequest(`/api/v1/hackathons/${slug}/judging/assignments/${conflict.assignment_id}/reassign`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ new_judge_id: newJudgeId }),
+                            });
+                            toast.success('Assignment reassigned');
+                            fetchData();
+                          } catch {
+                            toast.error('Failed to reassign');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-[#CCFF00]/10 text-[#CCFF00] text-xs font-bold hover:bg-[#CCFF00]/20 transition-colors"
+                      >
+                        Reassign
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>
