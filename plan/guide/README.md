@@ -14,6 +14,7 @@
 | `06-async-systems.md` | Queues, cron, Durable Objects, notifications, webhooks |
 | `07-frontend-apps.md` | All 4 apps — pages, routing, auth flow, API integration patterns |
 | `08-conventions.md` | Code style, naming, error handling, pagination, timestamps, testing |
+| `09-end-to-end-flows.md` | Every user journey start-to-finish — exact API calls, state changes, data mutations |
 
 ## Reading Order
 
@@ -25,3 +26,4 @@
 6. `03-api-contracts.md` — The API contract reference.
 7. `06-async-systems.md` — Background processing.
 8. `07-frontend-apps.md` — How frontends consume the API.
+9. `09-end-to-end-flows.md` — Complete user journeys tying everything together.
