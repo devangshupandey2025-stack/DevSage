@@ -38,6 +38,7 @@ wrangler.toml.local
 .npmrc
 .pypirc
 .netrc
+.codex
 *.pem
 *.key
 *.p12
@@ -62,3 +63,4 @@ pnpm-debug.log*
 
 # TypeScript incremental build
 *.tsbuildinfo
+

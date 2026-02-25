@@ -23,9 +23,8 @@ DevSage/
 │   ├── config/       # Shared tsconfig variants (base, react, worker) + ESLint flat config
 │   ├── db/           # Drizzle ORM schemas (~35 tables) + D1 migrations
 │   └── shared/       # Zod schemas, types, constants (only dep: zod)
-├── docs/
-│   └── api/          # API endpoint documentation (14 files)
-└── templates/        # Hackathon site template for {slug}.devsage.org
+├── docs/             # Architecture docs, API contracts, data models, deployment guides
+└── scripts/          # Hackathon site generator CLI (uses external SHIKDD-org/hackathon-template repo)
 ```
 
 ## WHERE TO LOOK
@@ -364,12 +363,12 @@ Skills are installed in `.agents/skills/`. **Always load the relevant skill(s) b
 ## NOTES
 
 - Three frontend apps: `admin` (shikdd.devsage.org), `platform` (platform.devsage.org), `judge` (judge.devsage.org), `web` (devsage.org)
-- Participant sites (`{slug}.devsage.org`) are separate repos, generated from `templates/hackathon-site/`
+- Participant sites (`{slug}.devsage.org`) are separate repos, generated via `scripts/generate-hackathon-site.js` from external `SHIKDD-org/hackathon-template` repo
 - Vite dev proxy: `/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787` (prefix matching)
 - Production API: `https://api.devsage.org`. Routes use `/api/v1/` prefix with slug-based hackathon addressing
 - DB migrations path in wrangler.jsonc: `../../packages/db/migrations` (relative from apps/api)
 - Durable Objects MUST be re-exported from `apps/api/src/index.ts` or wrangler fails
 - Cron trigger: `0 * * * *` (hourly) — checks submission deadlines, sends reminder notifications
 - OAuth state stored in KV with 10-min TTL
-- Architecture docs: `docs/api/` for API endpoints. Historical docs archived in `docs_ignore_this_stuff/`
+- Architecture docs: `docs/` (api-contracts.md, architecture-*.md, data-models.md, deployment.md, development-guide.md)
 - Complexity hotspots: `hackathon-state-machine.ts`, `judging.ts`, `notification-handler.ts`
