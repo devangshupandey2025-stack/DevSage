@@ -50,7 +50,6 @@ export function AnnouncementsPage() {
   const fetchAnnouncements = async () => {
     try {
       const res = await apiRequest<{ data: Announcement[]; ok: boolean }>(`/api/v1/hackathons/${slug}/announcements`);
-      console.log('[announcements] Fetch result:', { ok: res.ok, count: res.data?.length ?? 0, data: res.data });
       setAnnouncements(res.data ?? []);
     } catch (_err) {
       toast.error('Failed to load announcements');
@@ -69,7 +68,6 @@ export function AnnouncementsPage() {
         method: 'POST',
         body: JSON.stringify({ title: title.trim(), content: content.trim() }),
       });
-      console.log('[announcements] Create result:', res);
       toast.success('Announcement published!');
       setShowCompose(false);
       setTitle('');
