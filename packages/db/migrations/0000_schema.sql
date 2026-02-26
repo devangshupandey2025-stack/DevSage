@@ -19,6 +19,7 @@ CREATE TABLE `users` (
 	`suspended_at` text,
 	`suspended_reason` text,
 	`last_login_at` text,
+	`password_must_change` integer DEFAULT 0 NOT NULL,
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	`updated_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL
 );

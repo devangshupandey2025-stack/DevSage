@@ -15,13 +15,6 @@
       "when": 1770969072178,
       "tag": "0001_seed",
       "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1771000000000,
-      "tag": "0002_add_password_must_change",
-      "breakpoints": true
     }
   ]
 }
