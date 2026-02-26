@@ -15,8 +15,8 @@ export async function handlePushEvent(
 
   // Find team repo
   const teamRepo = await env.DB.prepare(
-    'SELECT id, team_id FROM team_repos WHERE github_owner = ? AND github_repo = ?'
-  ).bind(repository.owner, repository.name).first<{ id: string; team_id: string }>();
+    'SELECT id, team_id FROM team_repos WHERE repo_full_name = ?'
+  ).bind(`${repository.owner}/${repository.name}`).first<{ id: string; team_id: string }>();
 
   if (!teamRepo) return; // Not a tracked repo
 

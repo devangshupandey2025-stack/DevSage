@@ -8,6 +8,18 @@ import { hackathonContext } from '../middleware/hackathon.js';
 const teamRepos = new Hono<AppEnv>();
 teamRepos.use('/*', hackathonContext);
 
+// Transform DB team_repo row to API response format
+function transformRepoResponse(row: Record<string, unknown>) {
+  const fullName = String(row.repo_full_name ?? '');
+  const [owner = '', repo = ''] = fullName.split('/');
+  return {
+    ...row,
+    github_owner: owner,
+    github_repo: repo,
+    github_repo_url: row.repo_url ?? `https://github.com/${fullName}`,
+  };
+}
+
 // Link repo to team
 teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
   const user = c.get('user')!;
@@ -74,7 +86,7 @@ teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
   );
 
   const created = await c.env.DB.prepare('SELECT * FROM team_repos WHERE id = ?').bind(repoId).first();
-  return successResponse(c, created, { status: 201 });
+  return successResponse(c, created ? transformRepoResponse(created as Record<string, unknown>) : created, { status: 201 });
 });
 
 // Get team's repo
@@ -85,7 +97,7 @@ teamRepos.get('/:teamId/repo', async (c) => {
   ).bind(teamId).first();
 
   if (!repo) return errorResponse(c, 404, 'NOT_FOUND', 'No repo linked');
-  return successResponse(c, repo);
+  return successResponse(c, transformRepoResponse(repo as Record<string, unknown>));
 });
 
 // Unlink repo

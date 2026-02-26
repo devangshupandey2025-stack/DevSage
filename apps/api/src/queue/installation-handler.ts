@@ -23,11 +23,10 @@ export async function handleInstallationEvent(
       const pending = await env.DB.prepare(
         `SELECT pi.id, pi.installation_id AS pending_install_id, tr.id AS team_repo_id, tr.team_id
          FROM pending_installations pi
-         JOIN team_repos tr ON tr.github_owner = ? AND tr.github_repo = ?
+         JOIN team_repos tr ON tr.repo_full_name = ?
          WHERE pi.provider = 'github' AND pi.repo_full_name = ?`
       ).bind(
-        repo.full_name.split('/')[0],
-        repo.full_name.split('/')[1],
+        repo.full_name,
         repo.full_name
       ).first<{ id: string; pending_install_id: number; team_repo_id: string; team_id: string }>();
 
@@ -62,10 +61,9 @@ export async function handleInstallationEvent(
   } else if (type === 'github_installation_repos_removed') {
     // Deactivate bot for removed repos
     for (const repo of data.repositories) {
-      const [owner, name] = repo.full_name.split('/');
       await env.DB.prepare(
-        'UPDATE team_repos SET bot_active = 0, installation_id = NULL WHERE github_owner = ? AND github_repo = ?'
-      ).bind(owner, name).run();
+        'UPDATE team_repos SET bot_active = 0, installation_id = NULL WHERE repo_full_name = ?'
+      ).bind(repo.full_name).run();
     }
   }
 }

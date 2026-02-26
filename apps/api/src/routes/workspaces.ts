@@ -3,7 +3,6 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { requirePlatformAdmin } from '../middleware/platform-admin.js';
 
 const workspaces = new Hono<AppEnv>();
 
@@ -14,8 +13,8 @@ async function getWorkspaceRole(c: Context<AppEnv>, workspaceId: string, userId:
   return membership?.role ?? null;
 }
 
-// Create workspace (platform admin only)
-workspaces.post('/', authMiddleware, requirePlatformAdmin, async (c) => {
+// Create workspace (any authenticated user)
+workspaces.post('/', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json<{ name: string; slug: string; description?: string; type: string }>();
 
@@ -36,8 +35,8 @@ workspaces.post('/', authMiddleware, requirePlatformAdmin, async (c) => {
 
   // Add creator as owner
   await c.env.DB.prepare(
-    'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), id, user.id, 'owner', now, now).run();
+    'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), id, user.id, 'owner', now).run();
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {

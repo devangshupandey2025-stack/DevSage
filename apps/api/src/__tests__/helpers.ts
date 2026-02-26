@@ -314,14 +314,17 @@ export async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS team_repos (
       id text PRIMARY KEY NOT NULL,
       team_id text NOT NULL,
-      github_repo_url text NOT NULL,
-      github_owner text NOT NULL,
-      github_repo text NOT NULL,
+      hackathon_id text NOT NULL,
+      provider text NOT NULL,
+      repo_full_name text NOT NULL,
+      repo_url text NOT NULL,
       installation_id text,
       bot_active integer DEFAULT 0 NOT NULL,
-      linked_by text NOT NULL,
+      is_primary integer DEFAULT 1 NOT NULL,
+      access_token_encrypted text,
       created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (hackathon_id) REFERENCES hackathons(id)
     )`,
 
     // judges
@@ -533,11 +536,11 @@ export async function ensureSchema() {
     // pending_installations
     `CREATE TABLE IF NOT EXISTS pending_installations (
       id text PRIMARY KEY NOT NULL,
-      team_id text NOT NULL,
-      github_owner text NOT NULL,
-      github_repo text NOT NULL,
-      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+      provider text NOT NULL,
+      repo_full_name text NOT NULL,
+      installation_id text NOT NULL,
+      installed_by text NOT NULL,
+      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     )`,
 
     // deletion_requests
@@ -797,14 +800,18 @@ export async function insertNotification(params: {
 export async function insertTeamRepo(params: {
   id: string;
   teamId: string;
+  hackathonId?: string;
   owner: string;
   repo: string;
   linkedBy: string;
 }) {
   await env.DB.prepare(
-    `INSERT INTO team_repos (id, team_id, github_repo_url, github_owner, github_repo, linked_by)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(params.id, params.teamId, `https://github.com/${params.owner}/${params.repo}`, params.owner, params.repo, params.linkedBy).run();
+    `INSERT INTO team_repos (id, team_id, hackathon_id, provider, repo_full_name, repo_url, created_at)
+     VALUES (?, ?, ?, 'github', ?, ?, ?)`
+  ).bind(
+    params.id, params.teamId, params.hackathonId ?? SEED.hackathon,
+    `${params.owner}/${params.repo}`, `https://github.com/${params.owner}/${params.repo}`, now
+  ).run();
 }
 
 // ── Seed the full test scenario ───────────────────────────────
