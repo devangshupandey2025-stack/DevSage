@@ -746,7 +746,7 @@ CREATE INDEX `idx_ai_reviews_submission` ON `ai_reviews` (`submission_id`);
 --> statement-breakpoint
 CREATE INDEX `idx_announcements_hackathon_created` ON `announcements` (`hackathon_id`,`created_at`);
 --> statement-breakpoint
-CREATE INDEX `idx_audit_action` ON `audit_events` (`action`);
+CREATE INDEX `idx_audit_action` ON `audit_events` (`event_type`);
 --> statement-breakpoint
 CREATE INDEX `idx_audit_actor` ON `audit_events` (`actor_id`,`created_at`);
 --> statement-breakpoint
@@ -756,17 +756,11 @@ CREATE INDEX `idx_audit_entity` ON `audit_events` (`entity_type`,`entity_id`);
 --> statement-breakpoint
 CREATE INDEX `idx_audit_event_type` ON `audit_events` (`event_type`);
 --> statement-breakpoint
-CREATE INDEX `idx_audit_hackathon_seq` ON `audit_events` (`hackathon_id`,`sequence`);
---> statement-breakpoint
 CREATE INDEX `idx_audit_hackathon_time` ON `audit_events` (`hackathon_id`,`created_at`);
---> statement-breakpoint
-CREATE INDEX `idx_commit_log_delivery` ON `commit_log` (`delivery_id`);
 --> statement-breakpoint
 CREATE INDEX `idx_commit_log_repo_time` ON `commit_log` (`team_repo_id`,`committed_at`);
 --> statement-breakpoint
-CREATE INDEX `idx_commit_log_sha` ON `commit_log` (`sha`);
---> statement-breakpoint
-CREATE INDEX `idx_commit_log_team_time` ON `commit_log` (`hackathon_id`,`team_id`,`committed_at`);
+CREATE INDEX `idx_commit_log_sha` ON `commit_log` (`commit_sha`);
 --> statement-breakpoint
 CREATE INDEX `idx_custom_phases_hackathon` ON `custom_phases` (`hackathon_id`);
 --> statement-breakpoint
@@ -778,13 +772,9 @@ CREATE INDEX `idx_email_verification_token_hash` ON `email_verification_tokens` 
 --> statement-breakpoint
 CREATE INDEX `idx_email_verification_user_id` ON `email_verification_tokens` (`user_id`);
 --> statement-breakpoint
-CREATE INDEX `idx_force_push_hackathon_time` ON `force_push_events` (`hackathon_id`,`created_at`);
---> statement-breakpoint
 CREATE INDEX `idx_force_push_repo` ON `force_push_events` (`team_repo_id`);
 --> statement-breakpoint
-CREATE INDEX `idx_force_push_resolved` ON `force_push_events` (`resolved`);
---> statement-breakpoint
-CREATE INDEX `idx_force_push_team` ON `force_push_events` (`team_id`);
+CREATE INDEX `idx_force_push_time` ON `force_push_events` (`team_repo_id`,`created_at`);
 --> statement-breakpoint
 CREATE INDEX `idx_hackathon_requests_requested_by` ON `hackathon_requests` (`requested_by`);
 --> statement-breakpoint
@@ -860,8 +850,6 @@ CREATE INDEX `idx_sponsors_hackathon` ON `hackathon_sponsors` (`hackathon_id`);
 --> statement-breakpoint
 CREATE INDEX `idx_submissions_hackathon_current` ON `submissions` (`hackathon_id`,`is_current`);
 --> statement-breakpoint
-CREATE INDEX `idx_submissions_hackathon_final` ON `submissions` (`hackathon_id`,`is_final`);
---> statement-breakpoint
 CREATE INDEX `idx_submissions_hackathon_status` ON `submissions` (`hackathon_id`,`status`);
 --> statement-breakpoint
 CREATE INDEX `idx_submissions_round_team` ON `submissions` (`round_id`,`team_id`);
@@ -906,7 +894,7 @@ CREATE INDEX `in_app_notifications_created_idx` ON `in_app_notifications` (`crea
 --> statement-breakpoint
 CREATE INDEX `in_app_notifications_user_hackathon_idx` ON `in_app_notifications` (`user_id`,`hackathon_id`);
 --> statement-breakpoint
-CREATE INDEX `in_app_notifications_user_read_idx` ON `in_app_notifications` (`user_id`,`read`,`created_at`);
+CREATE INDEX `in_app_notifications_user_read_idx` ON `in_app_notifications` (`user_id`,`read_at`,`created_at`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `judge_assignments_judge_id_team_id_round_unique` ON `judge_assignments` (`judge_id`,`team_id`,`round`);
 --> statement-breakpoint
@@ -914,11 +902,11 @@ CREATE UNIQUE INDEX `judges_hackathon_id_user_id_unique` ON `judges` (`hackathon
 --> statement-breakpoint
 CREATE UNIQUE INDEX `judges_invite_token_unique` ON `judges` (`invite_token`);
 --> statement-breakpoint
-CREATE UNIQUE INDEX `notification_deliveries_event_user_channel_idx` ON `notification_deliveries` (`event_id`,`user_id`,`channel`);
+CREATE UNIQUE INDEX `notification_deliveries_recipient_type_channel_idx` ON `notification_deliveries` (`recipient_id`,`notification_type`,`channel`);
 --> statement-breakpoint
 CREATE INDEX `notification_deliveries_status_idx` ON `notification_deliveries` (`status`);
 --> statement-breakpoint
-CREATE INDEX `notification_deliveries_user_idx` ON `notification_deliveries` (`user_id`,`created_at`);
+CREATE INDEX `notification_deliveries_recipient_time_idx` ON `notification_deliveries` (`recipient_id`,`created_at`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `notification_idempotency_idempotency_key_unique` ON `notification_idempotency` (`idempotency_key`);
 --> statement-breakpoint
@@ -949,8 +937,6 @@ CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);
 CREATE UNIQUE INDEX `submissions_delivery_id_unique` ON `submissions` (`delivery_id`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `submissions_team_id_tag_name_unique` ON `submissions` (`team_id`,`tag_name`);
---> statement-breakpoint
-CREATE UNIQUE INDEX `submissions_webhook_delivery_id_unique` ON `submissions` (`webhook_delivery_id`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `team_invites_invite_token_unique` ON `team_invites` (`invite_token`);
 --> statement-breakpoint
@@ -990,17 +976,9 @@ CREATE UNIQUE INDEX `users_github_id_unique` ON `users` (`github_id`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `users_google_id_unique` ON `users` (`google_id`);
 --> statement-breakpoint
-CREATE UNIQUE INDEX `webhook_deliveries_delivery_id_unique` ON `webhook_deliveries` (`delivery_id`);
---> statement-breakpoint
 CREATE UNIQUE INDEX `webhook_deliveries_github_delivery_id_unique` ON `webhook_deliveries` (`github_delivery_id`);
 --> statement-breakpoint
-CREATE INDEX `webhook_deliveries_hackathon_idx` ON `webhook_deliveries` (`hackathon_id`,`received_at`);
---> statement-breakpoint
-CREATE INDEX `webhook_deliveries_repo_idx` ON `webhook_deliveries` (`repo_full_name`);
---> statement-breakpoint
 CREATE INDEX `webhook_deliveries_status_idx` ON `webhook_deliveries` (`status`);
---> statement-breakpoint
-CREATE UNIQUE INDEX `workspace_invites_code_unique` ON `workspace_invites` (`code`);
 --> statement-breakpoint
 CREATE INDEX `workspace_invites_email_status_idx` ON `workspace_invites` (`email`,`status`);
 --> statement-breakpoint
