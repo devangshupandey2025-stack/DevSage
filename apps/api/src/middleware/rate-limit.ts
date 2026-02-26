@@ -8,6 +8,9 @@ interface RateLimitConfig {
 
 const RATE_LIMITS: Record<string, RateLimitConfig> = {
   auth: { max: 10, windowSeconds: 60 },
+  api: { max: 100, windowSeconds: 60 },
+  webhook: { max: 200, windowSeconds: 60 },
+  admin: { max: 50, windowSeconds: 60 },
 };
 
 export function rateLimitMiddleware(tier: string): MiddlewareHandler<AppEnv> {

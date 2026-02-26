@@ -18,7 +18,7 @@ export type SubmissionStatus = z.infer<typeof submissionStatusSchema>;
 export const judgeInviteStatusSchema = z.enum(['pending', 'accepted', 'declined']);
 export type JudgeInviteStatus = z.infer<typeof judgeInviteStatusSchema>;
 
-export const teamMemberRoleSchema = z.enum(['team_lead', 'team_member']);
+export const teamMemberRoleSchema = z.enum(['leader', 'member']);
 export type TeamMemberRole = z.infer<typeof teamMemberRoleSchema>;
 
 export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member']);

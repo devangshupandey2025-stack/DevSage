@@ -173,26 +173,26 @@ VALUES (
 -- WORKSPACE MEMBERS
 -- ============================================================
 
--- Srijan → workspace_owner
+-- Srijan → owner
 INSERT OR IGNORE INTO `workspace_members` (`id`, `workspace_id`, `user_id`, `role`, `invited_by`, `created_at`, `updated_at`)
 VALUES (
   'wm-seed-0000-0000-000000000001',
   'ws-seed-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000001',
-  'workspace_owner',
+  'owner',
   NULL,
   '2026-02-16T00:00:00.000Z',
   '2026-02-16T00:00:00.000Z'
 );
 --> statement-breakpoint
 
--- organizer@devsage.org → workspace_member
+-- organizer@devsage.org → member
 INSERT OR IGNORE INTO `workspace_members` (`id`, `workspace_id`, `user_id`, `role`, `invited_by`, `created_at`, `updated_at`)
 VALUES (
   'wm-seed-0000-0000-000000000003',
   'ws-seed-0000-0000-000000000001',
   'seed-0000-0000-0000-000000000003',
-  'workspace_member',
+  'member',
   'seed-0000-0000-0000-000000000001',
   '2026-02-16T00:00:00.000Z',
   '2026-02-16T00:00:00.000Z'

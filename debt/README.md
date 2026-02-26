@@ -1,22 +1,49 @@
-# DevSage — Technical Debt & Plan Gap Registry
+# DevSage — Technical Debt & Audit Registry
 
-**Generated:** 2026-02-25  
-**Audit scope:** `plan/` role documents vs actual implementation across all packages
+**Last audited:** 2026-02-26
+**Scope:** Full backend, CI/CD, database, security, performance
 
-## Summary
+## Documents
 
-| Category | Count | Severity |
-|----------|-------|----------|
-| Plan vs Implementation Gaps | 8 | 🔴 3 Critical, 🟡 3 Medium, 🟢 2 Low |
-| Technical Debt | 12 | 🔴 2 Critical, 🟡 5 Medium, 🟢 5 Low |
-| Missing Tests | 6 | 🟡 Medium |
-| Stale / Misplaced Files | 2 | 🟢 Low |
+| Document | Focus | Key Findings |
+|----------|-------|-------------|
+| [`COMPREHENSIVE-DEBT-AUDIT.md`](COMPREHENSIVE-DEBT-AUDIT.md) | Master audit (292 items) | Source document for all fixes — 6 parts covering API, web, platform, packages, CI/CD |
+| [`backend-architecture-critique.md`](backend-architecture-critique.md) | Architecture | 262 raw SQL calls, 100% dead packages/shared, fat controllers, no service layer |
+| [`security-audit.md`](security-audit.md) | Security | 29 findings (2 CRITICAL, 5 HIGH) — input validation, CSRF, rate limiting |
+| [`performance-audit.md`](performance-audit.md) | Performance | Missing indexes, N+1 queries, unbounded SELECTs, caching gaps |
+| [`code-quality-audit.md`](code-quality-audit.md) | Code quality | Type safety theater (`as` casts), duplication, testing gaps, 25 pre-existing test failures |
+| [`data-integrity-audit.md`](data-integrity-audit.md) | Database | 7 dead tables, 25 FK orphan risks, three-schema disagreement, role value mismatches |
+| [`ci-cd-audit.md`](ci-cd-audit.md) | CI/CD | No Dependabot, no coverage enforcement, no deploy previews, script injection (fixed) |
 
-## Documents in this folder
+## Severity Summary
 
-| File | Contents |
-|------|----------|
-| `plan-gaps.md` | Features described in `plan/` role docs that are missing or incomplete in code |
-| `technical-debt.md` | Code quality issues, incomplete implementations, architectural concerns |
-| `missing-tests.md` | Untested routes, packages without test suites, config issues |
-| `cleanup.md` | Stale files, debug logging, misplaced code to clean up |
+| Severity | Count | Status |
+|----------|-------|--------|
+| CRITICAL | ~15 | Most fixed in audit pass (CSPRNG OTP, script injection, cache auth bypass) |
+| HIGH | ~30 | Partially addressed (cascade deletion, column mismatches, quality gates) |
+| MEDIUM | ~80 | Documented, prioritized for future sprints |
+| LOW | ~50+ | Tracked for incremental improvement |
+
+## What Was Fixed (2026-02-26 Audit Pass)
+
+- ✅ `Math.random()` OTP → CSPRNG (`crypto.getRandomValues`)
+- ✅ Max password length (128 chars)
+- ✅ Cache middleware auth bypass
+- ✅ Account deletion cascade (FK cleanup)
+- ✅ Judge-portal column mismatches (3 fixes)
+- ✅ Hackathon route deduplication
+- ✅ Cron cascade failure isolation
+- ✅ CI/CD quality gates (typecheck + lint + test before deploy)
+- ✅ Script injection in deploy-hackathon-site.yml
+- ✅ Turbo pinned from `"latest"` to `"^2.5.0"`
+- ✅ Dual lockfile removed (package-lock.json)
+- ✅ Seed data role alignment
+- ✅ Zod schema alignment with DB columns
+- ✅ Schema timestamp defaults
+
+## Reading Order
+
+1. Start with `COMPREHENSIVE-DEBT-AUDIT.md` for the full item list
+2. Read `security-audit.md` for prioritized security remediation
+3. Read `backend-architecture-critique.md` for architectural decisions
+4. Remaining docs as needed per work area

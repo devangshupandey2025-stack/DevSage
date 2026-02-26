@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
@@ -7,15 +7,14 @@ import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { getHackathonDOStub } from '../lib/do-client.js';
-import { VALID_TRANSITIONS } from '../lib/constants.js';
 
-const hackathons = new Hono<AppEnv>();
+const hackathons= new Hono<AppEnv>();
 
-// Create hackathon (workspaceId in body — matches frontend)
-hackathons.post('/', authMiddleware, async (c) => {
+// Shared handler for hackathon creation (used by both URL patterns)
+const createHackathonHandler = async (c: Context<AppEnv>) => {
   const user = c.get('user')!;
   const raw = await c.req.json<Record<string, unknown>>();
-  const workspaceId = (raw.workspaceId ?? raw.workspace_id) as string;
+  const workspaceId = (c.req.param('workspaceId') ?? raw.workspaceId ?? raw.workspace_id) as string;
   if (!workspaceId) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', 'workspaceId is required');
   }
@@ -129,108 +128,13 @@ hackathons.post('/', authMiddleware, async (c) => {
 
   const created = await c.env.DB.prepare('SELECT * FROM hackathons WHERE id = ?').bind(id).first();
   return successResponse(c, created, { status: 201 });
-});
+};
 
-// Create hackathon under a workspace (legacy URL)
-hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, async (c) => {
-  const user = c.get('user')!;
-  const workspaceId = c.req.param('workspaceId');
+// Create hackathon (workspaceId in body — matches frontend)
+hackathons.post('/', authMiddleware, createHackathonHandler);
 
-  const workspaceMember = await c.env.DB.prepare(
-    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1',
-  ).bind(workspaceId, user.id).first<{ role: string }>();
-  if (!workspaceMember || !['owner', 'admin'].includes(workspaceMember.role)) {
-    return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin of this workspace');
-  }
-
-  const body = await c.req.json<{
-    title: string; slug: string; tagline?: string; description?: string; rules_md?: string;
-    starts_at?: string; judging_starts?: string; judging_ends?: string;
-    max_team_size?: number; min_team_size?: number; max_teams?: number;
-    submission_tag_pattern?: string; allow_resubmission?: number;
-    allow_registration_during_active?: number; notify_all_on_deadline?: number;
-    show_judge_comments_to_participants?: number; registration_mode?: string;
-    allowed_email_domains?: string; require_repo?: number; timezone?: string;
-    tracks?: unknown[]; prizes?: unknown[];
-    settings?: Record<string, unknown>; template_id?: string;
-  }>();
-
-  if (!body.title || !body.slug) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and slug are required');
-  }
-
-  // Check slug uniqueness
-  const existingSlug = await c.env.DB.prepare(
-    'SELECT id FROM hackathons WHERE slug = ?'
-  ).bind(body.slug).first();
-
-  if (existingSlug) {
-    return errorResponse(c, 409, 'SLUG_TAKEN', 'This slug is already in use');
-  }
-
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  // Apply template if provided
-  let settings = body.settings ? JSON.stringify(body.settings) : '{}';
-  let tracks = body.tracks ? JSON.stringify(body.tracks) : '[]';
-  let prizes = body.prizes ? JSON.stringify(body.prizes) : '[]';
-  if (body.template_id) {
-    const template = await c.env.DB.prepare(
-      'SELECT settings, tracks, rounds, rubric FROM hackathon_templates WHERE id = ?'
-    ).bind(body.template_id).first<{
-      settings: string; tracks: string; rounds: string; rubric: string;
-    }>();
-    if (template) {
-      settings = template.settings;
-      tracks = template.tracks ?? tracks;
-      // TODO: Apply rounds, rubric from template
-    }
-  }
-
-  await c.env.DB.prepare(
-    `INSERT INTO hackathons (id, workspace_id, slug, title, tagline, description, rules_md, status, starts_at, judging_starts, judging_ends, min_team_size, max_team_size, max_teams, submission_tag_pattern, allow_resubmission, allow_registration_during_active, notify_all_on_deadline, show_judge_comments_to_participants, registration_mode, allowed_email_domains, require_repo, timezone, template_id, tracks, prizes, settings, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    id, workspaceId, body.slug, body.title, body.tagline ?? null,
-    body.description ?? null, body.rules_md ?? null,
-    body.starts_at ?? null, body.judging_starts ?? null, body.judging_ends ?? null,
-    body.min_team_size ?? 1, body.max_team_size ?? 5, body.max_teams ?? null,
-    body.submission_tag_pattern ?? 'submission_v%', body.allow_resubmission ?? 0,
-    body.allow_registration_during_active ?? 0, body.notify_all_on_deadline ?? 0,
-    body.show_judge_comments_to_participants ?? 0, body.registration_mode ?? 'open',
-    body.allowed_email_domains ?? '[]', body.require_repo ?? 1, body.timezone ?? 'UTC',
-    body.template_id ?? null, tracks, prizes, settings,
-    user.id, now, now
-  ).run();
-
-  // Add creator as organizer
-  await c.env.DB.prepare(
-    'INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(crypto.randomUUID(), id, user.id, 'organizer', now).run();
-
-  // Initialize DO
-  const stub = getHackathonDOStub(c.env.HACKATHON_SM, id);
-  await stub.fetch(new Request('http://do/initialize', {
-    method: 'POST',
-    body: JSON.stringify({ hackathon_id: id, status: 'draft' }),
-  }));
-
-  c.executionCtx.waitUntil(
-    insertAuditEvent(c.env.DB, {
-      hackathon_id: id,
-      actor_id: user.id,
-      actor_type: 'user',
-      action: 'hackathon.created',
-      entity_type: 'hackathon',
-      entity_id: id,
-      details: { title: body.title, slug: body.slug },
-    })
-  );
-
-  const created = await c.env.DB.prepare('SELECT * FROM hackathons WHERE id = ?').bind(id).first();
-  return successResponse(c, created, { status: 201 });
-});
+// Create hackathon under a workspace (legacy URL — delegates to primary handler)
+hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, createHackathonHandler);
 
 // List hackathons (public)
 hackathons.get('/', async (c) => {

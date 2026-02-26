@@ -12,6 +12,11 @@ export function kvCache(ttlSeconds: number = 30): MiddlewareHandler<AppEnv> {
     // Only cache GET requests
     if (c.req.method !== 'GET') return next();
 
+    // Skip caching for authenticated requests to prevent serving one user's data to another
+    const hasCookie = c.req.header('cookie')?.includes('access_token');
+    const hasBearer = c.req.header('authorization')?.startsWith('Bearer ');
+    if (hasCookie || hasBearer) return next();
+
     const cacheKey = `cache:${c.req.url}`;
 
     // Try KV cache

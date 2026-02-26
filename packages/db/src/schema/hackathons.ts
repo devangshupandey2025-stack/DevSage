@@ -32,8 +32,8 @@ export const hackathons = sqliteTable('hackathons', {
   prizes: text('prizes').notNull().default('[]'),
   settings: text('settings').notNull().default('{}'),
   created_by: text('created_by').notNull().references(() => users.id),
-  created_at: text('created_at').notNull(),
-  updated_at: text('updated_at').notNull(),
+  created_at: text('created_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  updated_at: text('updated_at').notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (table) => ({
   workspaceIdx: index('idx_hackathons_workspace').on(table.workspace_id),
   statusIdx: index('idx_hackathons_status').on(table.status),

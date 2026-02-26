@@ -30,7 +30,6 @@ announcements.get('/', async (c) => {
 announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const user = c.get('user');
-  const role = c.get('role');
   
   const body = await c.req.json<{
     title: string;

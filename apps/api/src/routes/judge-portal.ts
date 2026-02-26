@@ -28,9 +28,9 @@ judgePortal.get('/hackathons', async (c) => {
       h.slug,
       h.status,
       h.tagline,
-      h.start_date,
-      h.end_date,
-      h.judging_deadline,
+      h.starts_at,
+      h.judging_starts,
+      h.judging_ends,
       j.id AS judge_id,
       j.track_id,
       (
@@ -41,12 +41,12 @@ judgePortal.get('/hackathons', async (c) => {
       (
         SELECT COUNT(*)
         FROM judge_assignments ja
-        WHERE ja.judge_id = j.id AND ja.status = 'completed'
+        WHERE ja.judge_id = j.id AND ja.status = 'scored'
       ) AS completed_assignments
     FROM judges j
     JOIN hackathons h ON h.id = j.hackathon_id
     WHERE j.user_id = ? AND j.invite_status = 'accepted'
-    ORDER BY h.end_date DESC
+    ORDER BY h.judging_ends DESC
   `)
     .bind(user.id)
     .all();
@@ -57,9 +57,9 @@ judgePortal.get('/hackathons', async (c) => {
     slug: row.slug,
     status: row.status,
     tagline: row.tagline,
-    start_date: row.start_date,
-    end_date: row.end_date,
-    judging_deadline: row.judging_deadline,
+    start_date: row.starts_at,
+    end_date: row.judging_starts,
+    judging_deadline: row.judging_ends,
     judge_id: row.judge_id,
     track_id: row.track_id,
     total_assignments: row.total_assignments ?? 0,

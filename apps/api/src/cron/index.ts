@@ -13,12 +13,18 @@ export async function cronHandler(
   env: CronEnv,
   ctx: ExecutionContext
 ): Promise<void> {
-  try {
-    await checkSubmissionDeadlines(env);
-    await sendDeadlineReminders(env);
-    await backfillAuditHashes(env.DB, 100);
-  } catch (err) {
-    console.error('Cron handler error:', err instanceof Error ? err.message : err);
+  const tasks: Array<{ name: string; fn: () => Promise<void> }> = [
+    { name: 'checkSubmissionDeadlines', fn: () => checkSubmissionDeadlines(env) },
+    { name: 'sendDeadlineReminders', fn: () => sendDeadlineReminders(env) },
+    { name: 'backfillAuditHashes', fn: () => backfillAuditHashes(env.DB, 100) },
+  ];
+
+  for (const task of tasks) {
+    try {
+      await task.fn();
+    } catch (err) {
+      console.error(`Cron task ${task.name} failed:`, err instanceof Error ? err.message : err);
+    }
   }
 }
 

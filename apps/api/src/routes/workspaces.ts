@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types/env.js';
-import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
+import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';

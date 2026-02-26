@@ -41,6 +41,7 @@ auth.use('/*', rateLimitMiddleware('auth'));
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
 
 type AppOrigin = 'participant' | 'platform' | 'admin' | 'judge';
 
@@ -148,6 +149,9 @@ auth.post('/register', async (c) => {
   }
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
   }
 
   const existing = await c.env.DB.prepare(
@@ -548,7 +552,16 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
 
   await revokeAllUserTokens(c.env.DB, user.id);
   clearAuthCookies(c);
-  await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
+
+  // Nullify non-cascading FK references before deleting user
+  const now = new Date().toISOString();
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE workspaces SET created_by = ? WHERE created_by = ?').bind('deleted-user', user.id),
+    c.env.DB.prepare('UPDATE hackathons SET created_by = ? WHERE created_by = ?').bind('deleted-user', user.id),
+    c.env.DB.prepare('DELETE FROM scores WHERE judge_id IN (SELECT id FROM judges WHERE user_id = ?)').bind(user.id),
+    c.env.DB.prepare('DELETE FROM judge_assignments WHERE judge_id IN (SELECT id FROM judges WHERE user_id = ?)').bind(user.id),
+    c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
+  ]);
 
   c.executionCtx.waitUntil(
     insertAuditEvent(c.env.DB, {
@@ -625,6 +638,9 @@ auth.post('/reset-password', async (c) => {
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
   }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
+  }
 
   const stored = await c.env.KV.get(`pwd_reset:${token}`);
   if (!stored) {
@@ -667,6 +683,9 @@ auth.post('/change-password', authMiddleware, async (c) => {
   }
   if (body.new_password.length < MIN_PASSWORD_LENGTH) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+  if (body.new_password.length > MAX_PASSWORD_LENGTH) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
   }
 
   const userRecord = await c.env.DB.prepare(
@@ -712,8 +731,10 @@ auth.post('/send-verification', authMiddleware, async (c) => {
     return successResponse(c, { message: 'Email already verified' });
   }
 
-  // Generate 6-digit OTP
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  // Generate 6-digit OTP using CSPRNG
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  const otp = String(100000 + (buf[0] % 900000));
 
   // Store OTP in KV with 10 min TTL
   await c.env.KV.put(`email_otp:${user.id}`, JSON.stringify({

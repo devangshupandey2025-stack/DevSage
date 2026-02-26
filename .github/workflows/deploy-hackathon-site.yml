@@ -41,27 +41,22 @@ jobs:
 
       - name: Generate hackathon site
         run: |
-          CONFIG=$(echo '{
-            "slug": "${{ inputs.slug }}",
-            "title": "${{ inputs.title }}",
-            "workspaceSlug": "${{ inputs.workspace_slug }}",
-            "description": "${{ inputs.description }}",
-            "accentColor": "${{ inputs.accent_color }}",
-            "apiOrigin": "https://api.devsage.org"
-          }' | base64 -w 0)
-          node scripts/generate-hackathon-site.js --config "$CONFIG"
+          node scripts/generate-hackathon-site.js --config "$CONFIG_B64"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIG_B64: ${{ toJSON(inputs) }}
 
       - name: Summary
         run: |
-          DOMAIN="${{ inputs.slug }}.${{ inputs.workspace_slug && format('{0}.', inputs.workspace_slug) || 'hackathon.' }}devsage.org"
           echo "## 🚀 Hackathon Site Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Title** | ${{ inputs.title }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Slug** | ${{ inputs.slug }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Domain** | https://${DOMAIN} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Workers URL** | https://hackathon-${{ inputs.slug }}.devsage-org.workers.dev |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Title** | ${INPUT_TITLE} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Slug** | ${INPUT_SLUG} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Domain** | https://${INPUT_SLUG}.hackathon.devsage.org |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workers URL** | https://hackathon-${INPUT_SLUG}.devsage-org.workers.dev |" >> $GITHUB_STEP_SUMMARY
+        env:
+          INPUT_SLUG: ${{ inputs.slug }}
+          INPUT_TITLE: ${{ inputs.title }}
