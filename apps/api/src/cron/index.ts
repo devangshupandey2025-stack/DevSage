@@ -16,7 +16,7 @@ export async function cronHandler(
   const tasks: Array<{ name: string; fn: () => Promise<void> }> = [
     { name: 'checkSubmissionDeadlines', fn: () => checkSubmissionDeadlines(env) },
     { name: 'sendDeadlineReminders', fn: () => sendDeadlineReminders(env) },
-    { name: 'backfillAuditHashes', fn: () => backfillAuditHashes(env.DB, 100) },
+    { name: 'backfillAuditHashes', fn: async () => { await backfillAuditHashes(env.DB, 100); } },
   ];
 
   for (const task of tasks) {
