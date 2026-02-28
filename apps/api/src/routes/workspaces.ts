@@ -3,6 +3,14 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { validateBody } from '../lib/validate.js';
+import { createWorkspaceSchema, updateWorkspaceSchema, inviteWorkspaceMemberSchema } from '@devsage/shared';
+import { z } from 'zod';
+
+// Extend shared schema to accept any workspace type string (DB doesn't restrict)
+const createWorkspaceBodySchema = createWorkspaceSchema.extend({
+  type: z.string().min(1),
+});
 
 const workspaces = new Hono<AppEnv>();
 
@@ -16,11 +24,8 @@ async function getWorkspaceRole(c: Context<AppEnv>, workspaceId: string, userId:
 // Create workspace (any authenticated user)
 workspaces.post('/', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ name: string; slug: string; description?: string; type: string }>();
-
-  if (!body.name || !body.slug || !body.type) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name, slug, and type are required');
-  }
+  const body = await validateBody(c, createWorkspaceBodySchema);
+  if (body instanceof Response) return body;
 
   const existing = await c.env.DB.prepare('SELECT id FROM workspaces WHERE slug = ?').bind(body.slug).first();
   if (existing) return errorResponse(c, 409, 'SLUG_TAKEN', 'Slug already in use');
@@ -31,7 +36,7 @@ workspaces.post('/', authMiddleware, async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO workspaces (id, name, slug, description, type, created_by, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, body.name, body.slug, body.description ?? '', body.type ?? 'club', user.id, now, now).run();
+  ).bind(id, body.name, body.slug, body.description ?? '', body.type, user.id, now, now).run();
 
   // Add creator as owner
   await c.env.DB.prepare(
@@ -106,13 +111,13 @@ workspaces.patch('/:workspaceId', authMiddleware, async (c) => {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
-  const body = await c.req.json<Record<string, unknown>>();
-  const allowedFields = ['name', 'description'];
+  const body = await validateBody(c, updateWorkspaceSchema);
+  if (body instanceof Response) return body;
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  for (const field of allowedFields) {
-    if (field in body) { updates.push(`${field} = ?`); values.push(body[field]); }
+  for (const [field, value] of Object.entries(body)) {
+    if (value !== undefined) { updates.push(`${field} = ?`); values.push(value); }
   }
   if (updates.length === 0) return errorResponse(c, 400, 'VALIDATION_ERROR', 'No fields to update');
 
@@ -150,8 +155,8 @@ workspaces.post('/:workspaceId/invites', authMiddleware, async (c) => {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin');
   }
 
-  const body = await c.req.json<{ email: string; role: string }>();
-  if (!body.email || !body.role) return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and role required');
+  const body = await validateBody(c, inviteWorkspaceMemberSchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();

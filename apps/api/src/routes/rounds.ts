@@ -4,6 +4,32 @@ import { successResponse, errorResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const createRoundBodySchema = z.object({
+  name: z.string().min(1).max(200),
+  round_number: z.number().int().min(1),
+  type: z.string().optional(),
+  submission_deadline: z.string().optional(),
+});
+
+const updateRoundBodySchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  type: z.string().optional(),
+  status: z.string().optional(),
+  submission_deadline: z.string().nullable().optional(),
+  started_at: z.string().nullable().optional(),
+  completed_at: z.string().nullable().optional(),
+});
+
+const initializeRoundSchema = z.object({
+  is_initialized: z.boolean(),
+});
+
+const advanceTeamsSchema = z.object({
+  advancing_team_ids: z.array(z.string()).min(1),
+});
 
 const rounds = new Hono<AppEnv>();
 rounds.use('/*', hackathonContext);
@@ -11,14 +37,8 @@ rounds.use('/*', hackathonContext);
 // Create round
 rounds.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{
-    name: string; round_number: number; type?: string;
-    submission_deadline?: string;
-  }>();
-
-  if (!body.name || !body.round_number) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name and round_number required');
-  }
+  const body = await validateBody(c, createRoundBodySchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -46,16 +66,15 @@ rounds.get('/', async (c) => {
 rounds.patch('/:roundId', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const roundId = c.req.param('roundId');
-  const body = await c.req.json<Record<string, unknown>>();
-
-  const allowedFields = ['name', 'type', 'status', 'submission_deadline', 'started_at', 'completed_at'];
+  const body = await validateBody(c, updateRoundBodySchema);
+  if (body instanceof Response) return body;
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  for (const field of allowedFields) {
-    if (field in body) {
+  for (const [field, value] of Object.entries(body)) {
+    if (value !== undefined) {
       updates.push(`${field} = ?`);
-      values.push(body[field]);
+      values.push(value);
     }
   }
 
@@ -80,7 +99,8 @@ rounds.patch('/:roundId', authMiddleware, requireRole('co_organizer'), async (c)
 rounds.patch('/:roundId/initialize', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const roundId = c.req.param('roundId');
-  const body = await c.req.json<{ is_initialized: boolean }>();
+  const body = await validateBody(c, initializeRoundSchema);
+  if (body instanceof Response) return body;
 
   const round = await c.env.DB.prepare(
     'SELECT * FROM hackathon_rounds WHERE id = ? AND hackathon_id = ?'
@@ -141,11 +161,8 @@ rounds.get('/:roundId/results', async (c) => {
 rounds.post('/:roundId/advance', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const roundId = c.req.param('roundId');
-  const body = await c.req.json<{ advancing_team_ids: string[] }>();
-
-  if (!body.advancing_team_ids || !Array.isArray(body.advancing_team_ids)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'advancing_team_ids array required');
-  }
+  const body = await validateBody(c, advanceTeamsSchema);
+  if (body instanceof Response) return body;
 
   // Verify this is an elimination round
   const round = await c.env.DB.prepare(

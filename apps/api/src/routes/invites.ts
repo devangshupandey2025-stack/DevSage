@@ -13,6 +13,13 @@ import {
   setAccessTokenCookie,
   setRefreshTokenCookie,
 } from '../lib/cookies.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const judgeInviteAcceptSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  password: z.string().min(8).max(128).optional(),
+});
 
 const invites = new Hono<AppEnv>();
 
@@ -170,10 +177,8 @@ invites.get('/judge/token/:token', async (c) => {
 
 invites.post('/judge/token/:token/accept', async (c) => {
   const token = c.req.param('token');
-  const body = await c.req.json<{
-    name?: string;
-    password?: string;
-  }>();
+  const body = await validateBody(c, judgeInviteAcceptSchema);
+  if (body instanceof Response) return body;
 
   const invite = await c.env.DB.prepare(
     `SELECT j.id, j.invite_status, j.email, j.user_id, j.hackathon_id

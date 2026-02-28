@@ -5,6 +5,8 @@ import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { validateBody } from '../lib/validate.js';
+import { addOrganizerSchema } from '@devsage/shared';
 
 const organizers = new Hono<AppEnv>();
 organizers.use('/*', hackathonContext);
@@ -25,12 +27,8 @@ organizers.get('/', authMiddleware, requireRole('co_organizer'), async (c) => {
 organizers.post('/', authMiddleware, requireRole('organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ user_id: string; role: string }>();
-
-  if (!body.user_id || !body.role) return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_id and role required');
-  if (!['organizer', 'co_organizer'].includes(body.role)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Role must be organizer or co_organizer');
-  }
+  const body = await validateBody(c, addOrganizerSchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   try {

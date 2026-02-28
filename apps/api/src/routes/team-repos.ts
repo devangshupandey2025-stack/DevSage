@@ -4,6 +4,8 @@ import { successResponse, errorResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
+import { validateBody } from '../lib/validate.js';
+import { linkRepoSchema } from '@devsage/shared';
 
 const teamRepos = new Hono<AppEnv>();
 teamRepos.use('/*', hackathonContext);
@@ -35,10 +37,8 @@ teamRepos.post('/:teamId/repo', authMiddleware, async (c) => {
     return errorResponse(c, 403, 'FORBIDDEN', 'Only team lead can link a repo');
   }
 
-  const body = await c.req.json<{ github_repo_url: string }>();
-  if (!body.github_repo_url) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'github_repo_url is required');
-  }
+  const body = await validateBody(c, linkRepoSchema);
+  if (body instanceof Response) return body;
 
   // Parse URL
   const match = body.github_repo_url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/);

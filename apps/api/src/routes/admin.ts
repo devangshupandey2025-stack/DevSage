@@ -4,6 +4,28 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
 import { backfillAuditHashes, insertAuditEvent } from '../lib/audit.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const addPlatformAdminSchema = z.object({
+  user_id: z.string().uuid(),
+});
+
+const adminInitializeRoundSchema = z.object({
+  is_initialized: z.boolean(),
+});
+
+const createPlatformInviteSchema = z.object({
+  email: z.string().email(),
+});
+
+const adminCreateWorkspaceSchema = z.object({
+  name: z.string().min(1).max(200),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+  type: z.string().min(1),
+  description: z.string().optional(),
+  owner_email: z.string().email(),
+});
 
 const admin = new Hono<AppEnv>();
 admin.use('/*', authMiddleware, requirePlatformAdmin);
@@ -34,8 +56,8 @@ admin.get('/hackathons', async (c) => {
 // Add platform admin
 admin.post('/admins', async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ user_id: string }>();
-  if (!body.user_id) return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_id required');
+  const body = await validateBody(c, addPlatformAdminSchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   try {
@@ -114,7 +136,8 @@ admin.get('/hackathons/:hackathonId/rounds', async (c) => {
 admin.patch('/hackathons/:hackathonId/rounds/:roundId/initialize', async (c) => {
   const hackathonId = c.req.param('hackathonId');
   const roundId = c.req.param('roundId');
-  const body = await c.req.json<{ is_initialized: boolean }>();
+  const body = await validateBody(c, adminInitializeRoundSchema);
+  if (body instanceof Response) return body;
 
   // Verify round belongs to this hackathon
   const round = await c.env.DB.prepare(
@@ -156,8 +179,8 @@ admin.get('/invites', async (c) => {
 
 admin.post('/invites', async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ email: string }>();
-  if (!body.email) return errorResponse(c, 400, 'VALIDATION_ERROR', 'email required');
+  const body = await validateBody(c, createPlatformInviteSchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   const invite_code = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
@@ -196,17 +219,8 @@ admin.get('/workspaces', async (c) => {
 // Create workspace (admin-only) + invite owner
 admin.post('/workspaces', async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{
-    name: string;
-    slug: string;
-    type: string;
-    description?: string;
-    owner_email: string;
-  }>();
-
-  if (!body.name || !body.slug || !body.type || !body.owner_email) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name, slug, type, and owner_email are required');
-  }
+  const body = await validateBody(c, adminCreateWorkspaceSchema);
+  if (body instanceof Response) return body;
 
   const existing = await c.env.DB.prepare('SELECT id FROM workspaces WHERE slug = ?').bind(body.slug).first();
   if (existing) return errorResponse(c, 409, 'SLUG_TAKEN', 'Slug already in use');

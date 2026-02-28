@@ -4,6 +4,20 @@ import { successResponse, errorResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const createAnnouncementSchema = z.object({
+  title: z.string().min(1).max(200),
+  content: z.string().min(1),
+  pinned: z.boolean().optional(),
+});
+
+const updateAnnouncementSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  content: z.string().min(1).optional(),
+  pinned: z.boolean().optional(),
+});
 
 const announcements = new Hono<AppEnv>();
 announcements.use('/*', hackathonContext);
@@ -31,15 +45,8 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
   const hackathon = c.get('hackathon')!;
   const user = c.get('user');
   
-  const body = await c.req.json<{
-    title: string;
-    content: string;
-    pinned?: boolean;
-  }>();
-
-  if (!body.title || !body.content) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and content are required');
-  }
+  const body = await validateBody(c, createAnnouncementSchema);
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -61,11 +68,8 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
 // Update announcement (organizer+)
 announcements.patch('/:announcementId', authMiddleware, requireRole('co_organizer'), async (c) => {
   const announcementId = c.req.param('announcementId');
-  const body = await c.req.json<{
-    title?: string;
-    content?: string;
-    pinned?: boolean;
-  }>();
+  const body = await validateBody(c, updateAnnouncementSchema);
+  if (body instanceof Response) return body;
 
   const updates: string[] = [];
   const values: unknown[] = [];

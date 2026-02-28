@@ -4,6 +4,29 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { hackathonContext } from '../middleware/hackathon.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { insertAuditEvent } from '../lib/audit.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const analyzeRepoSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+});
+
+const aiReviewSchema = z.object({
+  analysis: z.record(z.unknown()),
+});
+
+const createSubmissionSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().optional(),
+  repo_url: z.string().min(1),
+  demo_url: z.string().optional(),
+  video_url: z.string().optional(),
+  round_id: z.string().optional(),
+  analysis_json: z.string().optional(),
+  ai_review_json: z.string().optional(),
+  ai_score: z.number().optional(),
+});
 
 const submissions = new Hono<AppEnv>();
 submissions.use('/*', hackathonContext);
@@ -56,8 +79,9 @@ submissions.get('/github/repos', authMiddleware, async (c) => {
 
 // ─── Bot: Analyze a GitHub repo ─────────────────────────────
 submissions.post('/github/analyze', authMiddleware, async (c) => {
-  const { owner, repo } = await c.req.json<{ owner: string; repo: string }>();
-  if (!owner || !repo) return errorResponse(c, 400, 'VALIDATION', 'owner and repo are required');
+  const body = await validateBody(c, analyzeRepoSchema);
+  if (body instanceof Response) return body;
+  const { owner, repo } = body;
 
   const ghHeaders = {
     'Accept': 'application/vnd.github.v3+json',
@@ -182,8 +206,9 @@ submissions.post('/github/ai-review', authMiddleware, async (c) => {
   const geminiKey = c.env.GEMINI_API_KEY;
   if (!geminiKey) return errorResponse(c, 503, 'AI_UNAVAILABLE', 'AI review is not configured yet');
 
-  const { analysis } = await c.req.json<{ analysis: Record<string, unknown> }>();
-  if (!analysis) return errorResponse(c, 400, 'VALIDATION', 'analysis payload is required');
+  const body = await validateBody(c, aiReviewSchema);
+  if (body instanceof Response) return body;
+  const { analysis } = body;
 
   const prompt = `You are DevSage Bot, an AI code reviewer for hackathon projects. Analyze this GitHub repository and provide a concise, helpful review.
 
@@ -376,21 +401,8 @@ submissions.post('/', authMiddleware, async (c) => {
     return errorResponse(c, 403, 'TEAM_ELIMINATED', 'Eliminated teams cannot submit');
   }
 
-  const body = await c.req.json<{
-    title: string;
-    description: string;
-    repo_url: string;
-    demo_url?: string;
-    video_url?: string;
-    round_id?: string;
-    analysis_json?: string;
-    ai_review_json?: string;
-    ai_score?: number;
-  }>();
-
-  if (!body.title || !body.repo_url) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and repo URL are required');
-  }
+  const body = await validateBody(c, createSubmissionSchema);
+  if (body instanceof Response) return body;
 
   // Check if there are any initialized rounds — if so, a round_id is required
   // and submissions are only allowed against initialized rounds

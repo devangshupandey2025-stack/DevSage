@@ -3,6 +3,38 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
+import { validateBody } from '../lib/validate.js';
+import { z } from 'zod';
+
+const createHackathonRequestSchema = z.object({
+  workspace_id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  description: z.string().optional(),
+  starts_at: z.string().optional(),
+  ends_at: z.string().optional(),
+  num_events: z.number().int().positive().optional(),
+  expected_participants: z.number().int().positive().optional(),
+  team_min_size: z.number().int().min(1).optional(),
+  team_max_size: z.number().int().min(1).optional(),
+  additional_details: z.string().optional(),
+});
+
+const updateHackathonRequestStatusSchema = z.object({
+  status: z.enum(['submitted', 'under_review', 'approved', 'rejected', 'changes_requested', 'building', 'ready']),
+  admin_notes: z.string().optional(),
+});
+
+const resubmitHackathonRequestSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().optional(),
+  starts_at: z.string().optional(),
+  ends_at: z.string().optional(),
+  num_events: z.number().int().positive().optional(),
+  expected_participants: z.number().int().positive().optional(),
+  team_min_size: z.number().int().min(1).optional(),
+  team_max_size: z.number().int().min(1).optional(),
+  additional_details: z.string().optional(),
+});
 
 const hackathonRequests = new Hono<AppEnv>();
 
@@ -11,22 +43,8 @@ const hackathonRequests = new Hono<AppEnv>();
 // Create a hackathon request
 hackathonRequests.post('/', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{
-    workspace_id: string;
-    title: string;
-    description?: string;
-    starts_at?: string;
-    ends_at?: string;
-    num_events?: number;
-    expected_participants?: number;
-    team_min_size?: number;
-    team_max_size?: number;
-    additional_details?: string;
-  }>();
-
-  if (!body.workspace_id || !body.title) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'workspace_id and title are required');
-  }
+  const body = await validateBody(c, createHackathonRequestSchema);
+  if (body instanceof Response) return body;
 
   // Verify user is a member of the workspace
   const membership = await c.env.DB.prepare(
@@ -149,15 +167,8 @@ hackathonRequests.get('/admin/all', authMiddleware, requirePlatformAdmin, async 
 // Update hackathon request status (admin only)
 hackathonRequests.patch('/admin/:id', authMiddleware, requirePlatformAdmin, async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{
-    status: string;
-    admin_notes?: string;
-  }>();
-
-  const validStatuses = ['submitted', 'under_review', 'approved', 'rejected', 'changes_requested', 'building', 'ready'];
-  if (!validStatuses.includes(body.status)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `status must be one of: ${validStatuses.join(', ')}`);
-  }
+  const body = await validateBody(c, updateHackathonRequestStatusSchema);
+  if (body instanceof Response) return body;
 
   const existing = await c.env.DB.prepare('SELECT * FROM hackathon_requests WHERE id = ?').bind(id).first<Record<string, unknown>>();
   if (!existing) return errorResponse(c, 404, 'NOT_FOUND', 'Request not found');
@@ -253,17 +264,8 @@ hackathonRequests.put('/:id/resubmit', authMiddleware, async (c) => {
     return errorResponse(c, 400, 'INVALID_STATE', 'Only requests with changes_requested status can be resubmitted');
   }
 
-  const body = await c.req.json<{
-    title?: string;
-    description?: string;
-    starts_at?: string;
-    ends_at?: string;
-    num_events?: number;
-    expected_participants?: number;
-    team_min_size?: number;
-    team_max_size?: number;
-    additional_details?: string;
-  }>();
+  const body = await validateBody(c, resubmitHackathonRequestSchema);
+  if (body instanceof Response) return body;
 
   const now = new Date().toISOString();
   const history = JSON.parse((existing.status_history as string) || '[]');
