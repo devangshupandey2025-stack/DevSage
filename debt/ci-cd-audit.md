@@ -328,7 +328,7 @@ The `quality-gate` job runs `pnpm test` which executes `turbo run test` across a
 - Test quarantine system
 - Flaky test tracking or reporting
 
-The project has **~25 pre-existing test failures** (documented in `debt/missing-tests.md`). These are not flaky — they are genuinely broken tests that may block the quality gate if they fail in CI. The `--passWithNoTests` flag on frontend apps masks this for those packages, but API test failures will block deploys.
+~~The project has **~25 pre-existing test failures**~~ ✅ **All 25 test failures have been resolved** (as of 2026-02-28). All 24 test files pass (223 tests, 0 failures). The `--passWithNoTests` flag on frontend apps remains since those packages still have zero test files.
 
 ### 6.4 Coverage Reporting
 

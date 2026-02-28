@@ -50,7 +50,7 @@ apps/platform/     → @devsage/platform — platform.devsage.org (port 5174) �
 apps/admin/        → @devsage/admin    — shikdd.devsage.org (port 5175) — platform admin panel
 apps/judge/        → @devsage/judge    — judge.devsage.org — judge scoring portal
 packages/config/   → @devsage/config   — Shared tsconfig (base/react/worker) + ESLint flat config (ESLint 9+)
-packages/db/       → @devsage/db       — Drizzle ORM schemas (46 files) + D1 migrations (3 SQL files)
+packages/db/       → @devsage/db       — Drizzle ORM schemas (46 files) + D1 migrations (2 SQL files)
 packages/shared/   → @devsage/shared   — Zod schemas (26 files), types, constants — ⚠️ dead code: zero runtime imports
 ```
 
@@ -101,7 +101,7 @@ Frontend auth flow (web/platform/admin/judge):
 
 ### Database (`packages/db`)
 
-- Drizzle ORM with `sqliteTable()` for Cloudflare D1 (46 schema files, 3 migration files)
+- Drizzle ORM with `sqliteTable()` for Cloudflare D1 (46 schema files, 2 migration files)
 - D1 quirks: FKs always ON, booleans are `integer` (0/1), max 100 bound params, JSON stored as TEXT
 - Primary keys: `text('id')` with UUIDs (`crypto.randomUUID()`)
 - Timestamps: `text` columns with `sql\`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))\`` defaults
@@ -113,7 +113,7 @@ Frontend auth flow (web/platform/admin/judge):
 - **API tests**: `@cloudflare/vitest-pool-workers` — runs in Workers runtime with real D1/KV/DO bindings. `singleWorker: true`. Tests in `apps/api/src/__tests__/*.test.ts` (24 files)
 - **Frontend tests**: jsdom + `@testing-library/react` — ⚠️ zero test files exist across all 4 apps
 - **Test pattern**: Integration-first, minimal mocking, inline test helpers (`src/__tests__/helpers.ts`)
-- **Current**: 198 passing, 25 pre-existing failures (e2e-lifecycle, team-repos, workspaces)
+- **Current**: 223 passing, 0 failures
 
 ## Dev Environment
 

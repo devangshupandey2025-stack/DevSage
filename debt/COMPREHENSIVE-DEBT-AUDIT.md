@@ -26,8 +26,8 @@
 | 1 | CRITICAL | CI/CD | **Deploy workflow has ZERO quality gates** — no test/lint/typecheck before production deploy | `.github/workflows/deploy.yml` |
 | 2 | CRITICAL | CI/CD | **GitHub Actions script injection vulnerability** — user inputs interpolated directly in shell | `.github/workflows/deploy-hackathon-site.yml:43-52` |
 | 3 | CRITICAL | API | **OTP generated with `Math.random()`** instead of CSPRNG | `apps/api/src/routes/auth.ts:716` |
-| 4 | CRITICAL | Packages | **Seed SQL references nonexistent columns** — fresh deploy will fail | `packages/db/migrations/0001_seed.sql` |
-| 5 | CRITICAL | Packages | **Migration `0002` not registered in journal** — `password_must_change` column never applied | `packages/db/migrations/0002_add_password_must_change.sql` |
+| 4 | ~~CRITICAL~~ | Packages | ~~**Seed SQL references nonexistent columns** — fresh deploy will fail~~ ✅ Fixed | `packages/db/migrations/0001_seed.sql` |
+| 5 | ~~CRITICAL~~ | Packages | ~~**Migration `0002` not registered in journal** — `password_must_change` column never applied~~ ✅ Fixed — consolidated to 2 migrations | `packages/db/migrations/` |
 | 6 | CRITICAL | Packages | **`@devsage/shared` is 100% dead code** — zero imports across entire monorepo | `packages/shared/src/` (all files) |
 | 7 | CRITICAL | Packages | **`@devsage/db` Drizzle ORM unused** — API uses 268 raw SQL `prepare()` calls | `packages/db/src/client.ts` |
 | 8 | CRITICAL | Packages | **Zod schema field names don't match DB columns** — `name` vs `title`, `start_date` vs `starts_at` | `packages/shared/src/schemas/hackathon.ts` |
@@ -36,7 +36,7 @@
 | 11 | CRITICAL | All FE | **Zero test files across all 4 frontend apps** | `apps/web/`, `platform/`, `admin/`, `judge/` |
 | 12 | CRITICAL | Platform | **Analytics page shows entirely fabricated data** to production users | `apps/platform/src/pages/analytics.tsx` |
 | 13 | CRITICAL | Web | **Custom cursor force-disables native cursor for ALL users** — major a11y violation | `apps/web/src/components/custom-cursor.tsx` |
-| 14 | HIGH | API | **Queue handlers query nonexistent columns** — webhook pipeline completely broken | `apps/api/src/queue/push-handler.ts` et al. |
+| 14 | ~~HIGH~~ | API | ~~**Queue handlers query nonexistent columns** — webhook pipeline completely broken~~ ✅ Fixed — now use `repo_full_name` | `apps/api/src/queue/push-handler.ts` et al. |
 | 15 | HIGH | API | **No Zod validation on any API route** — all input uses unsafe `as string` casts | All `apps/api/src/routes/*.ts` |
 | 16 | HIGH | API | **6 DB queries per authenticated request** in auth middleware | `apps/api/src/middleware/auth.ts:54-98` |
 | 17 | HIGH | API | **Account deletion doesn't cascade** — orphaned data in 15+ tables, GDPR risk | `apps/api/src/routes/auth.ts:551` |
@@ -120,7 +120,7 @@
 | API-031 | `routes/webhooks.ts` | 32,48 | LOW | Webhook bypasses `{ ok, data }` response envelope. |
 | API-032 | `routes/audit.ts` | 11 | LOW | `hackathonContext` placed BEFORE `authMiddleware` — inconsistent ordering. |
 | API-033 | Multiple | — | LOW | Inconsistent error response patterns (envelope vs raw JSON). |
-| API-034 | Queue handlers | — | HIGH | **Query `github_owner`/`github_repo` columns that don't exist** — webhook pipeline broken. |
+| API-034 | Queue handlers | — | ~~HIGH~~ | ~~**Query `github_owner`/`github_repo` columns that don't exist** — webhook pipeline broken.~~ ✅ Fixed |
 
 ### 1.9 Missing Features (3)
 
@@ -586,9 +586,9 @@
 2. Add quality gates to deploy workflow (ROOT-006)
 3. Fix secret scan branch (ROOT-005)
 4. Replace `Math.random()` OTP with CSPRNG (API-011)
-5. Fix queue handler column queries (API-034)
-6. Register migration 0002 in journal (PKG-035)
-7. Fix seed SQL column references (PKG-036)
+5. ~~Fix queue handler column queries (API-034)~~ ✅ Fixed
+6. ~~Register migration 0002 in journal (PKG-035)~~ ✅ Fixed — consolidated to 2 migrations
+7. ~~Fix seed SQL column references (PKG-036)~~ ✅ Fixed
 8. Delete `package-lock.json` (ROOT-001)
 9. Pin turbo version (ROOT-002)
 10. Fill legal document placeholders (ROOT-019, ROOT-020)

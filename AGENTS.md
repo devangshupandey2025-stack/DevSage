@@ -22,7 +22,7 @@ DevSage/
 │   └── judge/        # judge.devsage.org — Judge scoring portal (8 pages)
 ├── packages/
 │   ├── config/       # Shared tsconfig (base/react/worker) + ESLint flat config (ESLint 9+)
-│   ├── db/           # Drizzle ORM schemas (46 files) + D1 migrations (3 SQL files)
+│   ├── db/           # Drizzle ORM schemas (46 files) + D1 migrations (2 SQL files)
 │   └── shared/       # Zod schemas (26 files), types, constants — ⚠️ DEAD CODE: zero imports at runtime
 ├── debt/             # Technical debt registry — 7 audit documents from 2026-02-26 audit
 ├── plan/             # Feature specifications — 8 cross-functional docs + 5 role specs + 9-part implementation guide
@@ -41,7 +41,7 @@ DevSage/
 | `services/` | 4 | email, github, judging-service, smtp |
 | `cron/` | 1 | index (hourly: deadline transitions, reminders, audit backfill) |
 | `durable-objects/` | 1 | hackathon-state-machine (SQLite-backed, 5-state lifecycle) |
-| `__tests__/` | 24 | Integration tests, 198 passing / 25 pre-existing failures |
+| `__tests__/` | 24 | Integration tests, 223 passing / 0 failures |
 
 ## WHERE TO LOOK
 
@@ -149,9 +149,9 @@ packages/config → (standalone)
 | `packages/shared` is 100% dead code (26 Zod schemas, zero imports) | HIGH | `packages/shared/` |
 | No request validation on any API endpoint | CRITICAL | All route files |
 | No CSRF protection on cookie-based auth | HIGH | `middleware/auth.ts` |
-| 25 pre-existing test failures on main | MEDIUM | e2e-lifecycle, team-repos, workspaces |
+| ~~25 pre-existing test failures on main~~ | ~~MEDIUM~~ | ✅ Fixed — all 223 tests passing |
 | DO UPDATE without WHERE clause | HIGH | `hackathon-state-machine.ts:156,260` |
-| Queue handlers reference nonexistent columns | HIGH | `queue/push-handler.ts`, `installation-handler.ts` |
+| Queue handlers reference nonexistent columns | ~~HIGH~~ | ✅ Fixed — `push-handler.ts`, `installation-handler.ts` now use `repo_full_name` |
 | No frontend tests (0 across all 4 apps) | MEDIUM | `apps/web,platform,admin,judge` |
 
 Full details: `debt/backend-architecture-critique.md`, `debt/security-audit.md`, `debt/data-integrity-audit.md`
@@ -186,7 +186,7 @@ pnpm --filter @devsage/db run generate
 - **API tests**: `@cloudflare/vitest-pool-workers` — real Workers runtime with D1/KV/DO bindings. `singleWorker: true`
 - **Frontend tests**: jsdom + `@testing-library/react` (⚠️ zero test files exist across all 4 frontend apps)
 - **Pattern**: `src/__tests__/**/*.test.ts`, integration-first, minimal mocking
-- **Current**: 24 test files, 198 passing, 25 pre-existing failures (e2e-lifecycle, team-repos, workspaces)
+- **Current**: 24 test files, 223 passing, 0 failures
 - **No E2E**: No Playwright in CI
 
 ## SECRETS / SECURITY

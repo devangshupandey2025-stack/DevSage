@@ -392,7 +392,7 @@ These `CREATE INDEX` statements either fail silently or the table was ALTERed ou
 ```
 
 - Journal version is "7" but entries use version "6" — minor inconsistency 🟢
-- Only 3 migrations registered, but the test helpers schema has ~15+ additional columns that must have been added via untracked DDL 🔴
+- ~~Only 3 migrations registered, but the test helpers schema has ~15+ additional columns that must have been added via untracked DDL~~ ✅ Consolidated to 2 migrations (0000_schema.sql + 0001_seed.sql) with all columns included
 
 ### 7.2 Migration SQL Quality Issues 🟠
 

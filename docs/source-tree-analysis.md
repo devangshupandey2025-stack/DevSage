@@ -166,7 +166,7 @@ DevSage/                                    # Monorepo root (Turborepo + pnpm)
 │   │   ├── src/
 │   │   │   ├── index.ts                   # DB exports
 │   │   │   ├── client.ts                 # createDb() D1 client factory
-│   │   │   └── schema/                   # 36 tables across domain files
+│   │   │   └── schema/                   # 46 schema files across domain modules
 │   │   │       └── index.ts              # Schema barrel export
 │   │   ├── migrations/                    # D1 SQL migrations
 │   │   └── package.json

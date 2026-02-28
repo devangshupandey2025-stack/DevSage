@@ -57,7 +57,7 @@ DevSage/                          # Monorepo root
 │   └── web/                      # devsage.org — Main participant website
 ├── packages/
 │   ├── config/                   # Shared tsconfig + ESLint flat config
-│   ├── db/                       # Drizzle ORM schemas (~36 tables) + D1 migrations
+│   ├── db/                       # Drizzle ORM schemas (46 files) + D1 migrations
 │   └── shared/                   # Zod schemas, types, constants (only dep: zod)
 ├── docs/                         # Project documentation
 ├── scripts/                      # Build/deploy scripts
