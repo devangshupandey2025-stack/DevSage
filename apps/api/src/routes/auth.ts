@@ -1,4 +1,6 @@
 import { Hono, type Context } from 'hono';
+import { z } from 'zod';
+import { registerRequestSchema, loginRequestSchema } from '@devsage/shared';
 import type { AppEnv } from '../types/env.js';
 import { signJWT, verifyJWT } from '../lib/jwt.js';
 import {
@@ -35,6 +37,7 @@ import {
   type OAuthStateRecord,
 } from '../lib/oauth.js';
 import { callbackUrl, linkGoogleToUser, upsertGitHubUser, type UserIdentity } from '../lib/user-service.js';
+import { validateBody } from '../lib/validate.js';
 
 const auth = new Hono<AppEnv>();
 auth.use('/*', rateLimitMiddleware('auth'));
@@ -136,23 +139,14 @@ async function handleOAuthSuccess(
 }
 
 auth.post('/register', async (c) => {
-  const body = await c.req.json<{ email?: string; name?: string; password?: string }>();
-  const email = body.email?.trim().toLowerCase();
-  const name = body.name?.trim();
+  const registerSchema = registerRequestSchema.extend({
+    password: z.string().min(8).max(128),
+  });
+  const body = await validateBody(c, registerSchema);
+  if (body instanceof Response) return body;
+  const email = body.email.trim().toLowerCase();
+  const name = body.name.trim();
   const password = body.password;
-
-  if (!email || !EMAIL_REGEX.test(email)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Valid email is required');
-  }
-  if (!name) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name is required');
-  }
-  if (!password || password.length < MIN_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  }
-  if (password.length > MAX_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
-  }
 
   const existing = await c.env.DB.prepare(
     'SELECT id FROM users WHERE email = ? LIMIT 1',
@@ -186,13 +180,10 @@ auth.post('/register', async (c) => {
 });
 
 auth.post('/login', async (c) => {
-  const body = await c.req.json<{ email?: string; password?: string }>();
-  const email = body.email?.trim().toLowerCase();
+  const body = await validateBody(c, loginRequestSchema);
+  if (body instanceof Response) return body;
+  const email = body.email.trim().toLowerCase();
   const password = body.password;
-
-  if (!email || !password) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Email and password are required');
-  }
 
   const user = await c.env.DB.prepare(
     `SELECT id, email, name, password_hash, avatar_url, github_id, github_username, password_must_change
@@ -528,10 +519,9 @@ auth.post('/delete-account', authMiddleware, async (c) => {
 
 auth.post('/delete-account/confirm', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ confirmation_token?: string }>();
-  if (!body.confirmation_token) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Confirmation token required');
-  }
+  const deleteConfirmSchema = z.object({ confirmation_token: z.string().min(1) });
+  const body = await validateBody(c, deleteConfirmSchema);
+  if (body instanceof Response) return body;
 
   const request = await c.env.DB.prepare(
     `SELECT id
@@ -579,12 +569,10 @@ auth.post('/delete-account/confirm', authMiddleware, async (c) => {
 // ── Password Reset ─────────────────────────────────────────────────
 
 auth.post('/forgot-password', async (c) => {
-  const body = await c.req.json<{ email?: string }>();
-  const email = body.email?.trim().toLowerCase();
-
-  if (!email || !EMAIL_REGEX.test(email)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Valid email is required');
-  }
+  const forgotPasswordSchema = z.object({ email: z.string().email() });
+  const body = await validateBody(c, forgotPasswordSchema);
+  if (body instanceof Response) return body;
+  const email = body.email.trim().toLowerCase();
 
   // Always return success to prevent email enumeration
   const user = await c.env.DB.prepare(
@@ -629,18 +617,10 @@ auth.post('/forgot-password', async (c) => {
 });
 
 auth.post('/reset-password', async (c) => {
-  const body = await c.req.json<{ token?: string; password?: string }>();
+  const resetPasswordSchema = z.object({ token: z.string().min(1), password: z.string().min(8).max(128) });
+  const body = await validateBody(c, resetPasswordSchema);
+  if (body instanceof Response) return body;
   const { token, password } = body;
-
-  if (!token) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Reset token is required');
-  }
-  if (!password || password.length < MIN_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  }
-  if (password.length > MAX_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
-  }
 
   const stored = await c.env.KV.get(`pwd_reset:${token}`);
   if (!stored) {
@@ -676,17 +656,9 @@ auth.post('/reset-password', async (c) => {
 // ── Forced Password Change (for judge temp credentials) ────────────
 auth.post('/change-password', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ current_password: string; new_password: string }>();
-
-  if (!body.current_password || !body.new_password) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'current_password and new_password are required');
-  }
-  if (body.new_password.length < MIN_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  }
-  if (body.new_password.length > MAX_PASSWORD_LENGTH) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
-  }
+  const changePasswordSchema = z.object({ current_password: z.string().min(1), new_password: z.string().min(8).max(128) });
+  const body = await validateBody(c, changePasswordSchema);
+  if (body instanceof Response) return body;
 
   const userRecord = await c.env.DB.prepare(
     'SELECT password_hash FROM users WHERE id = ?'
@@ -768,10 +740,12 @@ auth.post('/send-verification', authMiddleware, async (c) => {
 
 auth.post('/verify-email', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.json<{ otp?: string }>();
-  const otp = body.otp?.trim();
+  const verifyEmailSchema = z.object({ otp: z.string().min(1) });
+  const body = await validateBody(c, verifyEmailSchema);
+  if (body instanceof Response) return body;
+  const otp = body.otp.trim();
 
-  if (!otp || otp.length !== 6) {
+  if (otp.length !== 6) {
     return errorResponse(c, 400, 'VALIDATION_ERROR', 'A 6-digit verification code is required');
   }
 

@@ -23,15 +23,15 @@
 
 | # | Severity | Area | Description | File(s) |
 |---|----------|------|-------------|---------|
-| 1 | CRITICAL | CI/CD | **Deploy workflow has ZERO quality gates** — no test/lint/typecheck before production deploy | `.github/workflows/deploy.yml` |
-| 2 | CRITICAL | CI/CD | **GitHub Actions script injection vulnerability** — user inputs interpolated directly in shell | `.github/workflows/deploy-hackathon-site.yml:43-52` |
-| 3 | CRITICAL | API | **OTP generated with `Math.random()`** instead of CSPRNG | `apps/api/src/routes/auth.ts:716` |
+| 1 | ~~CRITICAL~~ | CI/CD | ~~**Deploy workflow has ZERO quality gates** — no test/lint/typecheck before production deploy~~ ✅ Fixed | `.github/workflows/deploy.yml` |
+| 2 | ~~CRITICAL~~ | CI/CD | ~~**GitHub Actions script injection vulnerability** — user inputs interpolated directly in shell~~ ✅ Fixed | `.github/workflows/deploy-hackathon-site.yml` |
+| 3 | ~~CRITICAL~~ | API | ~~**OTP generated with `Math.random()`** instead of CSPRNG~~ ✅ Fixed — uses `crypto.getRandomValues()` | `apps/api/src/routes/auth.ts` |
 | 4 | ~~CRITICAL~~ | Packages | ~~**Seed SQL references nonexistent columns** — fresh deploy will fail~~ ✅ Fixed | `packages/db/migrations/0001_seed.sql` |
 | 5 | ~~CRITICAL~~ | Packages | ~~**Migration `0002` not registered in journal** — `password_must_change` column never applied~~ ✅ Fixed — consolidated to 2 migrations | `packages/db/migrations/` |
 | 6 | CRITICAL | Packages | **`@devsage/shared` is 100% dead code** — zero imports across entire monorepo | `packages/shared/src/` (all files) |
 | 7 | CRITICAL | Packages | **`@devsage/db` Drizzle ORM unused** — API uses 268 raw SQL `prepare()` calls | `packages/db/src/client.ts` |
-| 8 | CRITICAL | Packages | **Zod schema field names don't match DB columns** — `name` vs `title`, `start_date` vs `starts_at` | `packages/shared/src/schemas/hackathon.ts` |
-| 9 | CRITICAL | Root | **Dual lock files** — both `package-lock.json` (npm) and `pnpm-lock.yaml` exist | Root directory |
+| 8 | ~~CRITICAL~~ | Packages | ~~**Zod schema field names don't match DB columns**~~ ✅ Fixed — aligned in audit pass | `packages/shared/src/schemas/hackathon.ts` |
+| 9 | ~~CRITICAL~~ | Root | ~~**Dual lock files**~~ ✅ Fixed — `package-lock.json` removed | Root directory |
 | 10 | CRITICAL | Web | **Auth system documented but not implemented** — no AuthProvider, no credentials, no refresh | `apps/web/` (missing files) |
 | 11 | CRITICAL | All FE | **Zero test files across all 4 frontend apps** | `apps/web/`, `platform/`, `admin/`, `judge/` |
 | 12 | CRITICAL | Platform | **Analytics page shows entirely fabricated data** to production users | `apps/platform/src/pages/analytics.tsx` |
@@ -39,9 +39,9 @@
 | 14 | ~~HIGH~~ | API | ~~**Queue handlers query nonexistent columns** — webhook pipeline completely broken~~ ✅ Fixed — now use `repo_full_name` | `apps/api/src/queue/push-handler.ts` et al. |
 | 15 | HIGH | API | **No Zod validation on any API route** — all input uses unsafe `as string` casts | All `apps/api/src/routes/*.ts` |
 | 16 | HIGH | API | **6 DB queries per authenticated request** in auth middleware | `apps/api/src/middleware/auth.ts:54-98` |
-| 17 | HIGH | API | **Account deletion doesn't cascade** — orphaned data in 15+ tables, GDPR risk | `apps/api/src/routes/auth.ts:551` |
-| 18 | HIGH | CI/CD | **Secret scan targets `master` branch**, not `main` | `.github/workflows/secret-scan.yml:8` |
-| 19 | HIGH | Root | **Unpinned `turbo: "latest"`** — can break builds on any install | `package.json:55` |
+| 17 | ~~HIGH~~ | API | ~~**Account deletion doesn't cascade**~~ ✅ Fixed — FK cleanup added | `apps/api/src/routes/auth.ts` |
+| 18 | ~~HIGH~~ | CI/CD | ~~**Secret scan targets `master` branch**~~ ✅ Fixed — now targets `main` | `.github/workflows/secret-scan.yml` |
+| 19 | ~~HIGH~~ | Root | ~~**Unpinned `turbo: "latest"`**~~ ✅ Fixed — pinned to `^2.5.0` | `package.json:55` |
 | 20 | HIGH | Legal | **Privacy policy and Terms have `[Insert Contact Email]` placeholders** | `PRIVACY_POLICY.md`, `Terms_conditions.md` |
 
 ---

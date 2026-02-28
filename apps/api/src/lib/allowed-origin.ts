@@ -29,8 +29,8 @@ export function getAllowedOrigins(env: OriginEnv): (origin: string) => boolean {
     const withPlaceholder = raw.replace('*', placeholder);
     // 2. Escape all regex special chars
     const escaped = withPlaceholder.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    // 3. Replace placeholder with a regex character class
-    const regexStr = escaped.replace(placeholder, '[a-z0-9.-]+');
+    // 3. Replace placeholder with a regex character class (no dots — single subdomain level)
+    const regexStr = escaped.replace(placeholder, '[a-z0-9-]+');
     patterns.push(new RegExp(`^${regexStr}$`, 'i'));
   }
 

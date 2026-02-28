@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import { z } from 'zod';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { insertAuditEvent } from '../lib/audit.js';
@@ -7,55 +8,32 @@ import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { getHackathonDOStub } from '../lib/do-client.js';
+import { validateBody } from '../lib/validate.js';
+import { createHackathonSchema, updateHackathonSchema, transitionHackathonSchema } from '@devsage/shared';
+
+// workspace_id can come from URL params, so it's optional in the body
+const createHackathonBodySchema = createHackathonSchema.extend({
+  workspace_id: z.string().uuid().optional(),
+});
 
 const hackathons= new Hono<AppEnv>();
 
 // Shared handler for hackathon creation (used by both URL patterns)
 const createHackathonHandler = async (c: Context<AppEnv>) => {
   const user = c.get('user')!;
-  const raw = await c.req.json<Record<string, unknown>>();
-  const workspaceId = (c.req.param('workspaceId') ?? raw.workspaceId ?? raw.workspace_id) as string;
-  if (!workspaceId) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'workspaceId is required');
-  }
+  const body = await validateBody(c, createHackathonBodySchema);
+  if (body instanceof Response) return body;
 
-  // Normalize camelCase → snake_case
-  const body = {
-    title: raw.title as string,
-    slug: raw.slug as string,
-    tagline: raw.tagline as string | undefined,
-    description: raw.description as string | undefined,
-    rules_md: (raw.rules_md ?? raw.rulesMd) as string | undefined,
-    starts_at: (raw.starts_at ?? raw.startsAt) as string | undefined,
-    judging_starts: (raw.judging_starts ?? raw.judgingStarts) as string | undefined,
-    judging_ends: (raw.judging_ends ?? raw.judgingEnds) as string | undefined,
-    max_team_size: (raw.max_team_size ?? raw.maxTeamSize) as number | undefined,
-    min_team_size: (raw.min_team_size ?? raw.minTeamSize) as number | undefined,
-    max_teams: (raw.max_teams ?? raw.maxTeams) as number | undefined,
-    submission_tag_pattern: (raw.submission_tag_pattern ?? raw.submissionTagPattern) as string | undefined,
-    allow_resubmission: (raw.allow_resubmission ?? raw.allowResubmission) as number | undefined,
-    allow_registration_during_active: (raw.allow_registration_during_active ?? raw.allowRegistrationDuringActive) as number | undefined,
-    notify_all_on_deadline: (raw.notify_all_on_deadline ?? raw.notifyAllOnDeadline) as number | undefined,
-    show_judge_comments_to_participants: (raw.show_judge_comments_to_participants ?? raw.showJudgeCommentsToParticipants) as number | undefined,
-    registration_mode: (raw.registration_mode ?? raw.registrationMode) as string | undefined,
-    allowed_email_domains: (raw.allowed_email_domains ?? raw.allowedEmailDomains) as string | undefined,
-    require_repo: (raw.require_repo ?? raw.requireRepo) as number | undefined,
-    timezone: raw.timezone as string | undefined,
-    tracks: raw.tracks as unknown[] | undefined,
-    prizes: raw.prizes as unknown[] | undefined,
-    settings: raw.settings as Record<string, unknown> | undefined,
-    template_id: (raw.template_id ?? raw.templateId) as string | undefined,
-  };
+  const workspaceId = c.req.param('workspaceId') ?? body.workspace_id;
+  if (!workspaceId) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'workspace_id is required');
+  }
 
   const workspaceMember = await c.env.DB.prepare(
     'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1',
   ).bind(workspaceId, user.id).first<{ role: string }>();
   if (!workspaceMember || !['owner', 'admin'].includes(workspaceMember.role)) {
     return errorResponse(c, 403, 'FORBIDDEN', 'Must be owner or admin of this workspace');
-  }
-
-  if (!body.title || !body.slug) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Title and slug are required');
   }
 
   // Check slug uniqueness
@@ -184,23 +162,17 @@ hackathons.get('/:slug', hackathonContext, async (c) => {
 hackathons.patch('/:slug', authMiddleware, hackathonContext, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<Record<string, unknown>>();
+  const body = await validateBody(c, updateHackathonSchema);
+  if (body instanceof Response) return body;
 
-  const allowedFields = [
-    'title', 'tagline', 'description', 'rules_md', 'starts_at', 'judging_starts', 'judging_ends',
-    'min_team_size', 'max_team_size', 'max_teams', 'submission_tag_pattern',
-    'allow_resubmission', 'allow_registration_during_active', 'notify_all_on_deadline',
-    'show_judge_comments_to_participants', 'registration_mode', 'allowed_email_domains',
-    'require_repo', 'timezone', 'tracks', 'prizes', 'settings',
-  ];
   const jsonFields = new Set(['settings', 'tracks', 'prizes']);
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  for (const field of allowedFields) {
-    if (field in body) {
+  for (const [field, value] of Object.entries(body)) {
+    if (value !== undefined) {
       updates.push(`${field} = ?`);
-      values.push(jsonFields.has(field) ? JSON.stringify(body[field]) : body[field]);
+      values.push(jsonFields.has(field) ? JSON.stringify(value) : value);
     }
   }
 
@@ -236,11 +208,8 @@ hackathons.patch('/:slug', authMiddleware, hackathonContext, requireRole('co_org
 hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRole('organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ target_status: string; version: number }>();
-
-  if (!body.target_status || body.version === undefined) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'target_status and version are required');
-  }
+  const body = await validateBody(c, transitionHackathonSchema);
+  if (body instanceof Response) return body;
 
   // Get submission_deadline from the active round for alarm setup
   const activeRound = await c.env.DB.prepare(

@@ -9,6 +9,9 @@ import { assignSubmissionsRoundRobin, computeLeaderboard } from '../services/jud
 import { hashPassword } from '../lib/password.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { KV_TTL } from '../lib/constants.js';
+import { validateBody } from '../lib/validate.js';
+import { createRubricCriterionSchema, updateRubricCriterionSchema } from '@devsage/shared';
+import { z } from 'zod';
 
 const judging = new Hono<AppEnv>();
 judging.use('/*', hackathonContext);
@@ -19,14 +22,8 @@ judging.use('/*', hackathonContext);
 judging.post('/rubric', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{
-    name: string; description?: string; max_score?: number;
-    weight: number; track_id?: string | null; sort_order?: number; round?: number;
-  }>();
-
-  if (!body.name || body.weight === undefined) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name and weight are required');
-  }
+  const body = await validateBody(c, createRubricCriterionSchema.extend({ weight: z.number(), round: z.number().int().min(1).optional() }));
+  if (body instanceof Response) return body;
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -60,14 +57,16 @@ judging.get('/rubric', async (c) => {
 judging.patch('/rubric/:criterionId', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const criterionId = c.req.param('criterionId');
-  const body = await c.req.json<Record<string, unknown>>();
+  const body = await validateBody(c, updateRubricCriterionSchema.extend({ weight: z.number().optional(), round: z.number().int().min(1).optional() }));
+  if (body instanceof Response) return body;
+  const bodyRecord = body as Record<string, unknown>;
 
   const allowedFields = ['name', 'description', 'max_score', 'weight', 'track_id', 'sort_order', 'round'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
   for (const field of allowedFields) {
-    if (field in body) { updates.push(`${field} = ?`); values.push(body[field]); }
+    if (field in bodyRecord) { updates.push(`${field} = ?`); values.push(bodyRecord[field]); }
   }
 
   if (updates.length === 0) return errorResponse(c, 400, 'VALIDATION_ERROR', 'No fields to update');
@@ -97,11 +96,12 @@ function generateInviteToken(): string {
 judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ email?: string; user_id?: string; track_id?: string | null }>();
-
-  if (!body.email && !body.user_id) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'email or user_id is required');
-  }
+  const body = await validateBody(c, z.object({
+    email: z.string().email().optional(),
+    user_id: z.string().min(1).optional(),
+    track_id: z.string().min(1).nullable().optional(),
+  }).refine(d => d.email || d.user_id, { message: 'email or user_id is required' }));
+  if (body instanceof Response) return body;
 
   const email = body.email?.trim().toLowerCase();
   let targetUserId: string | null = body.user_id ?? null;
@@ -182,11 +182,10 @@ judging.post('/judges', authMiddleware, requireRole('co_organizer'), async (c) =
 judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ user_ids: string[] }>();
-
-  if (!body.user_ids || body.user_ids.length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'user_ids array is required');
-  }
+  const body = await validateBody(c, z.object({
+    user_ids: z.array(z.string().min(1)).min(1),
+  }));
+  if (body instanceof Response) return body;
 
   const results: Array<{ user_id: string; status: string }> = [];
   const now = new Date().toISOString();
@@ -232,24 +231,15 @@ judging.delete('/judges/:judgeId', authMiddleware, requireRole('co_organizer'), 
 judging.post('/judges/create-account', authMiddleware, requireRole('co_organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{
-    email: string; name: string; temp_password: string; track_id?: string | null;
-  }>();
-
-  if (!body.email || !body.name || !body.temp_password) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'email, name, and temp_password are required');
-  }
-  if (body.temp_password.length < 8) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Password must be at least 8 characters');
-  }
-  if (body.name.length > 200) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Name too long (max 200 characters)');
-  }
+  const body = await validateBody(c, z.object({
+    email: z.string().email(),
+    name: z.string().min(1).max(200),
+    temp_password: z.string().min(8).max(128),
+    track_id: z.string().min(1).nullable().optional(),
+  }));
+  if (body instanceof Response) return body;
 
   const email = body.email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Invalid email format');
-  }
   const now = new Date().toISOString();
 
   // Check if user already exists
@@ -306,7 +296,10 @@ judging.post('/judges/create-account', authMiddleware, requireRole('co_organizer
 // Assign judge to a track
 judging.post('/judges/:judgeId/tracks', authMiddleware, requireRole('co_organizer'), async (c) => {
   const judgeId = c.req.param('judgeId');
-  const body = await c.req.json<{ track_id: string | null }>();
+  const body = await validateBody(c, z.object({
+    track_id: z.string().min(1).nullable(),
+  }));
+  if (body instanceof Response) return body;
 
   await c.env.DB.prepare('UPDATE judges SET track_id = ? WHERE id = ?').bind(body.track_id ?? null, judgeId).run();
 
@@ -416,13 +409,16 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireRole('j
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
   const submissionId = c.req.param('submissionId');
-  const body = await c.req.json<{
-    scores: Array<{ criteria_id: string; score: number; comment?: string; assignment_id: string; round?: number }>;
-  }>();
-
-  if (!body.scores || body.scores.length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Scores are required');
-  }
+  const body = await validateBody(c, z.object({
+    scores: z.array(z.object({
+      criteria_id: z.string().min(1),
+      score: z.number().min(0),
+      comment: z.string().max(1000).optional(),
+      assignment_id: z.string().min(1),
+      round: z.number().int().min(1).optional(),
+    })).min(1),
+  }));
+  if (body instanceof Response) return body;
 
   // Get judge record
   const judge = await c.env.DB.prepare(
@@ -529,11 +525,10 @@ judging.post('/assignments/:assignmentId/coi', authMiddleware, requireRole('judg
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
   const assignmentId = c.req.param('assignmentId');
-  const body = await c.req.json<{ reason: string }>();
-
-  if (!body.reason || body.reason.trim().length === 0) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Reason is required');
-  }
+  const body = await validateBody(c, z.object({
+    reason: z.string().trim().min(1),
+  }));
+  if (body instanceof Response) return body;
 
   const judge = await c.env.DB.prepare(
     'SELECT id FROM judges WHERE hackathon_id = ? AND user_id = ? AND invite_status = ?'
@@ -589,11 +584,10 @@ judging.post('/assignments/:assignmentId/reassign', authMiddleware, requireRole(
   const hackathon = c.get('hackathon')!;
   const user = c.get('user')!;
   const assignmentId = c.req.param('assignmentId');
-  const body = await c.req.json<{ new_judge_id: string }>();
-
-  if (!body.new_judge_id) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'new_judge_id is required');
-  }
+  const body = await validateBody(c, z.object({
+    new_judge_id: z.string().min(1),
+  }));
+  if (body instanceof Response) return body;
 
   const assignment = await c.env.DB.prepare(
     "SELECT id, team_id, submission_id, round FROM judge_assignments WHERE id = ? AND hackathon_id = ? AND status = 'conflict'"

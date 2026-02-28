@@ -7,6 +7,8 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { optionalAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { rateLimitMiddleware } from './middleware/rate-limit.js';
+import { csrfProtection } from './middleware/csrf.js';
 
 // Routes
 import hackathons from './routes/hackathons.js';
@@ -36,8 +38,15 @@ const app = new Hono<AppEnv>();
 // Global middleware chain
 app.use('*', corsMiddleware);
 app.use('*', requestIdMiddleware);
+app.use('*', csrfProtection());
 app.use('*', optionalAuth);
 app.onError(errorHandler);
+
+// Rate limiting per route tier
+app.use('/auth/*', rateLimitMiddleware('auth'));
+app.use('/webhooks/*', rateLimitMiddleware('webhook'));
+app.use('/api/v1/admin/*', rateLimitMiddleware('admin'));
+app.use('/api/v1/*', rateLimitMiddleware('api'));
 
 // Root route for health check or info
 app.get('/', (c) => successResponse(c, { message: 'DevSage API running' }));

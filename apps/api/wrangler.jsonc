@@ -92,7 +92,10 @@
     "API_URL": "https://api.devsage.org",
     "EMAIL_FROM": "noreply@devsage.org",
     "HACKATHON_ORIGIN_PATTERN": "https://*.devsage.org",
-    "PAGES_ORIGIN_PATTERN": "https://*.pages.dev",
-    "WORKERS_ORIGIN_PATTERN": "https://*.workers.dev"
+    // Removed *.pages.dev and *.workers.dev wildcards (SEC-002)
+    // Preview deploys should use project-specific patterns if needed:
+    //   "PAGES_ORIGIN_PATTERN": "https://devsage-*.pages.dev"
+    "PAGES_ORIGIN_PATTERN": "",
+    "WORKERS_ORIGIN_PATTERN": ""
   }
 }
