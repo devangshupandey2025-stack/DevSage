@@ -6,8 +6,29 @@ import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { generateInviteCode } from '../lib/utils.js';
+import { validateBody } from '../lib/validate.js';
+import { createTeamSchema, joinTeamSchema, transferLeadershipSchema } from '@devsage/shared';
+import { z } from 'zod';
 
 const teams = new Hono<AppEnv>();
+
+const updateTeamSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  track_id: z.string().uuid().nullable().optional(),
+});
+
+const seedTeamEntrySchema = z.object({
+  team_name: z.string().min(1),
+  leader_email: z.string().email().optional(),
+  member_emails: z.array(z.string().email()).optional(),
+});
+
+const seedTeamsSchema = z.object({
+  mode: z.enum(['full_structure', 'leaders_only', 'participants_only']),
+  teams: z.array(seedTeamEntrySchema).optional(),
+  emails: z.array(z.string().email()).optional(),
+  send_invites: z.boolean().optional(),
+});
 
 async function isHackathonOrganizer(c: Context<AppEnv>, hackathonId: string, userId: string): Promise<boolean> {
   const organizerRole = await c.env.DB.prepare(
@@ -63,10 +84,8 @@ teams.post('/', authMiddleware, async (c) => {
     return errorResponse(c, 409, 'INVALID_STATE', 'Hackathon is not accepting new teams');
   }
 
-  const body = await c.req.json<{ name: string; track_id?: string }>();
-  if (!body.name) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Team name is required');
-  }
+  const body = await validateBody(c, createTeamSchema);
+  if (body instanceof Response) return body;
 
   // Check if user is already on a team in this hackathon
   const existingTeam = await c.env.DB.prepare(`
@@ -174,11 +193,8 @@ teams.get('/:teamId/members', async (c) => {
 teams.post('/join', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ invite_code: string }>();
-
-  if (!body.invite_code) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Invite code is required');
-  }
+  const body = await validateBody(c, joinTeamSchema);
+  if (body instanceof Response) return body;
 
   // Find team by invite code in this hackathon
   const team = await c.env.DB.prepare(
@@ -263,7 +279,8 @@ teams.patch('/:teamId', authMiddleware, async (c) => {
     }
   }
 
-  const body = await c.req.json<{ name?: string; track_id?: string | null }>();
+  const body = await validateBody(c, updateTeamSchema);
+  if (body instanceof Response) return body;
   const updates: string[] = [];
   const values: unknown[] = [];
 
@@ -370,11 +387,8 @@ teams.post('/:teamId/transfer', authMiddleware, async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
   const teamId = c.req.param('teamId');
-  const body = await c.req.json<{ new_leader_id: string }>();
-
-  if (!body.new_leader_id) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'new_leader_id is required');
-  }
+  const body = await validateBody(c, transferLeadershipSchema);
+  if (body instanceof Response) return body;
 
   // Verify current user is team lead
   const isLead = await c.env.DB.prepare(
@@ -456,12 +470,6 @@ teams.post('/:teamId/dissolve', authMiddleware, async (c) => {
 
 // ─── Participant Seeding (Event Lead / Organizer) ────────────────────
 
-interface SeedTeamEntry {
-  team_name: string;
-  leader_email?: string;
-  member_emails?: string[];
-}
-
 // Bulk seed participants: 3 modes
 // Mode 1 (full_structure): { teams: [{ team_name, leader_email, member_emails }] }
 // Mode 2 (leaders_only): { teams: [{ team_name, leader_email }] }
@@ -469,16 +477,8 @@ interface SeedTeamEntry {
 teams.post('/seed', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
   const user = c.get('user')!;
-  const body = await c.req.json<{
-    mode: 'full_structure' | 'leaders_only' | 'participants_only';
-    teams?: SeedTeamEntry[];
-    emails?: string[];
-    send_invites?: boolean;
-  }>();
-
-  if (!body.mode) {
-    return errorResponse(c, 400, 'VALIDATION_ERROR', 'mode is required (full_structure, leaders_only, participants_only)');
-  }
+  const body = await validateBody(c, seedTeamsSchema);
+  if (body instanceof Response) return body;
 
   const now = new Date().toISOString();
   const sendInvites = body.send_invites !== false;

@@ -39,13 +39,13 @@ async function signJWT(payload: Record<string, unknown>, secret: string): Promis
 
 // ── Seed account IDs ──────────────────────────────────────────
 export const SEED = {
-  srijan:       { id: 'seed-0000-0000-0000-000000000001', email: 'srijan.guchhait@gmail.com', name: 'Srijan Guchhait' },
-  admin:        { id: 'seed-0000-0000-0000-000000000002', email: 'admin@devsage.org',          name: 'Platform Admin' },
-  organizer:    { id: 'seed-0000-0000-0000-000000000003', email: 'organizer@devsage.org',      name: 'Test Organizer' },
-  coOrganizer:  { id: 'seed-0000-0000-0000-000000000004', email: 'coorganizer@devsage.org',    name: 'Test Co-Organizer' },
-  judge:        { id: 'seed-0000-0000-0000-000000000005', email: 'judge@devsage.org',          name: 'Test Judge' },
-  lead:         { id: 'seed-0000-0000-0000-000000000006', email: 'lead@devsage.org',           name: 'Test Team Lead' },
-  participant:  { id: 'seed-0000-0000-0000-000000000007', email: 'participant@devsage.org',    name: 'Test Participant' },
+  srijan:       { id: '5eed0000-0000-0000-0000-000000000001', email: 'srijan.guchhait@gmail.com', name: 'Srijan Guchhait' },
+  admin:        { id: '5eed0000-0000-0000-0000-000000000002', email: 'admin@devsage.org',          name: 'Platform Admin' },
+  organizer:    { id: '5eed0000-0000-0000-0000-000000000003', email: 'organizer@devsage.org',      name: 'Test Organizer' },
+  coOrganizer:  { id: '5eed0000-0000-0000-0000-000000000004', email: 'coorganizer@devsage.org',    name: 'Test Co-Organizer' },
+  judge:        { id: '5eed0000-0000-0000-0000-000000000005', email: 'judge@devsage.org',          name: 'Test Judge' },
+  lead:         { id: '5eed0000-0000-0000-0000-000000000006', email: 'lead@devsage.org',           name: 'Test Team Lead' },
+  participant:  { id: '5eed0000-0000-0000-0000-000000000007', email: 'participant@devsage.org',    name: 'Test Participant' },
   workspace:    'ws-seed-0000-0000-000000000001',
   hackathon:    'seed-hack-0000-0000-000000000001',
   hackathonSlug:'seed-hack001',
