@@ -37,7 +37,7 @@
 | 12 | CRITICAL | Platform | **Analytics page shows entirely fabricated data** to production users | `apps/platform/src/pages/analytics.tsx` |
 | 13 | CRITICAL | Web | **Custom cursor force-disables native cursor for ALL users** — major a11y violation | `apps/web/src/components/custom-cursor.tsx` |
 | 14 | ~~HIGH~~ | API | ~~**Queue handlers query nonexistent columns** — webhook pipeline completely broken~~ ✅ Fixed — now use `repo_full_name` | `apps/api/src/queue/push-handler.ts` et al. |
-| 15 | HIGH | API | **No Zod validation on any API route** — all input uses unsafe `as string` casts | All `apps/api/src/routes/*.ts` |
+| 15 | ~~HIGH~~ | API | ~~**No Zod validation on any API route**~~ ✅ Fixed — Zod validation added to all 13 route files (53 endpoints) | All `apps/api/src/routes/*.ts` |
 | 16 | HIGH | API | **6 DB queries per authenticated request** in auth middleware | `apps/api/src/middleware/auth.ts:54-98` |
 | 17 | ~~HIGH~~ | API | ~~**Account deletion doesn't cascade**~~ ✅ Fixed — FK cleanup added | `apps/api/src/routes/auth.ts` |
 | 18 | ~~HIGH~~ | CI/CD | ~~**Secret scan targets `master` branch**~~ ✅ Fixed — now targets `main` | `.github/workflows/secret-scan.yml` |

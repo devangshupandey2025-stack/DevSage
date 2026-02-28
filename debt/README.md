@@ -52,6 +52,16 @@
 - ✅ `workspaces.ts` member query field aliasing fix
 - ✅ `user-flows.md` comprehensive rewrite
 
+## What Was Fixed (2026-02-28 — Security Hardening)
+
+- ✅ Rate limiting wired to all routes (auth/webhook/admin/api tiers) — was built but never applied
+- ✅ CSRF protection middleware added (Origin-based validation on POST/PUT/PATCH)
+- ✅ CORS wildcards removed (`*.pages.dev`, `*.workers.dev`) — only `*.devsage.org` + static origins
+- ✅ Subdomain regex tightened (no dots — single-level only)
+- ✅ Zod input validation added to all 13 route files (53 endpoints total)
+- ✅ `validateBody()` helper created using Zod `safeParse`
+- ✅ `@devsage/shared` schemas now imported by API (no longer dead code for validated routes)
+
 ## Reading Order
 
 1. Start with `COMPREHENSIVE-DEBT-AUDIT.md` for the full item list

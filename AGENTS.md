@@ -147,8 +147,8 @@ packages/config → (standalone)
 |-------|----------|----------|
 | 262 raw SQL `.prepare()` calls — no Drizzle ORM usage | HIGH | All route files |
 | `packages/shared` is 100% dead code (26 Zod schemas, zero imports) | HIGH | `packages/shared/` |
-| No request validation on any API endpoint | CRITICAL | All route files |
-| No CSRF protection on cookie-based auth | HIGH | `middleware/auth.ts` |
+| No request validation on any API endpoint | ~~CRITICAL~~ | ✅ Fixed — Zod validation on all 53 endpoints |
+| ~~No CSRF protection on cookie-based auth~~ | ~~HIGH~~ | ✅ Fixed — Origin-based CSRF middleware |
 | ~~25 pre-existing test failures on main~~ | ~~MEDIUM~~ | ✅ Fixed — all 223 tests passing |
 | DO UPDATE without WHERE clause | HIGH | `hackathon-state-machine.ts:156,260` |
 | Queue handlers reference nonexistent columns | ~~HIGH~~ | ✅ Fixed — `push-handler.ts`, `installation-handler.ts` now use `repo_full_name` |

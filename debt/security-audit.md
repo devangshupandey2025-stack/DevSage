@@ -30,14 +30,13 @@ This audit reviews the DevSage API backend — a Cloudflare Worker handling auth
 
 ## Findings
 
-### SEC-001 — CRITICAL: No Input Validation on Any API Endpoint
+### SEC-001 — ~~CRITICAL~~ ✅ FIXED: Input Validation Added to All API Endpoints
 
-- **Severity:** CRITICAL
-- **Location:** All files in `apps/api/src/routes/` (13 route files, ~72 `c.req.json()` calls)
-- **Status:** Open
+- **Severity:** ~~CRITICAL~~ → Resolved
+- **Location:** All files in `apps/api/src/routes/` (13 route files)
+- **Status:** ✅ Fixed (2026-02-28)
 
-**Description:**  
-Zero Zod schemas are imported or used in any API route handler. All request body parsing uses `c.req.json<T>()` with TypeScript type annotations that provide no runtime validation. The `@devsage/shared` package contains well-defined Zod schemas (`createHackathonSchema`, `updateHackathonSchema`, etc.) but they are never imported by the API.
+**Resolution:** Zod `validateBody()` helper created (`lib/validate.ts`). All 53 body-parsing endpoints now use Zod `safeParse`. Schemas imported from `@devsage/shared` where available, inline `z.object()` for the rest.
 
 Four endpoints accept completely untyped input:
 
@@ -64,14 +63,13 @@ const body = createHackathonSchema.parse(await c.req.json());
 
 ---
 
-### SEC-002 — CRITICAL: CORS Wildcard Patterns Allow Any Cloudflare Project
+### SEC-002 — ~~CRITICAL~~ ✅ FIXED: CORS Wildcard Patterns Removed
 
-- **Severity:** CRITICAL
-- **Location:** `apps/api/wrangler.jsonc:94-96`, `apps/api/src/lib/allowed-origin.ts:28-37`
-- **Status:** Open
+- **Severity:** ~~CRITICAL~~ → Resolved
+- **Location:** `apps/api/wrangler.jsonc`, `apps/api/src/lib/allowed-origin.ts`
+- **Status:** ✅ Fixed (2026-02-28)
 
-**Description:**  
-The CORS origin allowlist includes three wildcard patterns:
+**Resolution:** Removed `*.pages.dev` and `*.workers.dev` wildcards from `wrangler.jsonc`. Only `*.devsage.org` + static origins allowed. Subdomain regex tightened to `[a-z0-9-]+` (no dots — single level only).
 
 ```jsonc
 // wrangler.jsonc L94-96
@@ -137,14 +135,13 @@ Remove the legacy Bearer path or make it perform the same DB-backed role resolut
 
 ---
 
-### SEC-004 — HIGH: No CSRF Protection on State-Changing Endpoints
+### SEC-004 — ~~HIGH~~ ✅ FIXED: CSRF Protection Added
 
-- **Severity:** HIGH
-- **Location:** All mutating routes (`POST`, `PUT`, `PATCH`, `DELETE`) across `apps/api/src/routes/`
-- **Status:** Open
+- **Severity:** ~~HIGH~~ → Resolved
+- **Location:** `apps/api/src/middleware/csrf.ts`, mounted in `src/index.ts`
+- **Status:** ✅ Fixed (2026-02-28)
 
-**Description:**  
-The application uses cookie-based authentication with `SameSite: 'None'` (required for cross-subdomain cookies between `api.devsage.org` and `*.devsage.org` frontends). No CSRF mitigation is implemented:
+**Resolution:** Origin-based CSRF protection middleware added. Validates `Origin` header on POST/PUT/PATCH against `isAllowedOrigin()`. Webhooks exempted (use signature verification). DELETE is automatically covered by CORS preflight.
 
 - No CSRF tokens (double-submit cookie, synchronizer token, or signed double-submit)
 - No `Origin` or `Referer` header validation on state-changing requests
@@ -170,11 +167,13 @@ Additionally consider a custom header requirement (`X-DevSage-Request: 1`) which
 
 ---
 
-### SEC-005 — HIGH: Rate Limiting Only Applied to Auth Routes
+### SEC-005 — ~~HIGH~~ ✅ FIXED: Rate Limiting Applied to All Routes
 
-- **Severity:** HIGH
-- **Location:** `apps/api/src/middleware/rate-limit.ts`, `apps/api/src/index.ts:37-40`
-- **Status:** Partially Fixed (auth tier exists, other tiers defined but not applied)
+- **Severity:** ~~HIGH~~ → Resolved
+- **Location:** `apps/api/src/index.ts`
+- **Status:** ✅ Fixed (2026-02-28)
+
+**Resolution:** Rate limiting middleware wired globally: `/auth/*` → auth tier (10/min), `/webhooks/*` → webhook tier (200/min), `/api/v1/admin/*` → admin tier (50/min), `/api/v1/*` → api tier (100/min).
 
 **Description:**  
 The rate limiter defines four tiers (`auth: 10/min`, `api: 100/min`, `webhook: 200/min`, `admin: 50/min`) but is only applied to auth routes:
