@@ -46,6 +46,9 @@ interface JudgeAssignment {
   team_id: string;
   tag_name: string;
   hackathon_slug: string;
+  round: number;
+  commit_sha: string;
+  assigned_at: string;
 }
 
 interface Notification {

@@ -135,14 +135,35 @@ const Navbar = () => {
             ))}
           </div>
           <div className="hidden lg:flex items-center gap-3">
-            <motion.button
+            <motion.a
+              href="https://platform.devsage.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[13px] font-medium text-white/50 hover:text-white transition-all duration-300 tracking-wide uppercase"
+              whileHover={{ scale: 1.05 }}
+            >
+              Organize
+            </motion.a>
+            <motion.a
+              href="https://app.devsage.org/login"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white/8 border border-white/10 text-white text-sm font-bold px-5 py-2 rounded-full hover:bg-white/15 transition-all"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Sign In
+            </motion.a>
+            <motion.a
+              href="https://app.devsage.org/hackathons"
+              target="_blank"
+              rel="noopener noreferrer"
               className="bg-[#CCFF00] text-black text-sm font-bold px-6 py-2.5 rounded-full hover:bg-white transition-all"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
             >
-              Get in Touch
-            </motion.button>
+              Browse Hackathons
+            </motion.a>
           </div>
 
           <button
@@ -178,6 +199,30 @@ const Navbar = () => {
                     {link.label}
                   </motion.button>
                 ))}
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <motion.a
+                  href="https://app.devsage.org/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xl font-bold text-black/60 hover:text-black transition-colors"
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * navLinks.length + 0.4 }}
+                >
+                  Sign In →
+                </motion.a>
+                <motion.a
+                  href="https://platform.devsage.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xl font-bold text-black/60 hover:text-black transition-colors"
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * navLinks.length + 0.5 }}
+                >
+                  Organize a Hackathon →
+                </motion.a>
+              </div>
             </nav>
           </motion.div>
         )}
@@ -289,15 +334,28 @@ const Hero = () => {
               transition={{ duration: 0.8, delay: 1 }}
               className="flex flex-col gap-4"
             >
-              <motion.button
+              <motion.a
+                href="https://platform.devsage.org"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group bg-[#CCFF00] text-black font-bold px-8 py-4 rounded-full text-lg flex items-center gap-3 hover:bg-white transition-all"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => window.open('https://mail.google.com/mail/?view=cm&fs=1&to=contact@devsage.org&su=Development%20Request', '_blank')}
               >
                 Host with us
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </motion.button>
+              </motion.a>
+              <motion.a
+                href="https://app.devsage.org/hackathons"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group border-2 border-white/20 text-white font-bold px-8 py-4 rounded-full text-lg flex items-center gap-3 hover:border-[#CCFF00]/40 hover:text-[#CCFF00] transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                Browse Hackathons
+                <ArrowUpRight className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </motion.a>
             </motion.div>
 
             {/* Mini stats */}
@@ -1881,6 +1939,31 @@ const Footer = () => {
                   >
                     {item}
                   </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Apps */}
+          <div className="md:col-span-1">
+            <p className="text-white/50 text-xs font-bold uppercase tracking-[0.15em] mb-4">Apps</p>
+            <ul className="space-y-2.5">
+              {[
+                { label: 'Browse Hackathons', href: 'https://app.devsage.org/hackathons' },
+                { label: 'Organizer Dashboard', href: 'https://platform.devsage.org' },
+                { label: 'Judge Portal', href: 'https://judge.devsage.org' },
+                { label: 'Sign In', href: 'https://app.devsage.org/login' },
+              ].map((item) => (
+                <li key={item.label}>
+                  <a
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-white/30 hover:text-[#CCFF00] transition-colors flex items-center gap-1"
+                  >
+                    {item.label}
+                    <ExternalLink className="w-3 h-3 opacity-40" />
+                  </a>
                 </li>
               ))}
             </ul>

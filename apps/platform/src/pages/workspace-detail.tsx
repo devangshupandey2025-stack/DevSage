@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/contexts/auth-context';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Users, Trophy, Mail, Shield, Calendar } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Building, Users, Trophy, Shield, Calendar, Trash2, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 
 interface Member {
   id: string;
@@ -36,8 +46,15 @@ interface WorkspaceDetail {
 
 export function WorkspaceDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [workspace, setWorkspace] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -52,6 +69,48 @@ export function WorkspaceDetailPage() {
     }
     if (slug) load();
   }, [slug]);
+
+  const currentUserRole = workspace?.members.find((m) => m.user_id === user?.id)?.role;
+  const isOwner = currentUserRole === 'owner';
+  const adminMembers = workspace?.members.filter((m) => m.user_id !== user?.id && (m.role === 'admin' || m.role === 'owner')) ?? [];
+
+  async function handleDelete() {
+    if (!workspace) return;
+    setDeleting(true);
+    try {
+      await apiRequest(`/api/v1/workspaces/${workspace.id}`, { method: 'DELETE' });
+      toast.success('Workspace deleted');
+      navigate('/workspaces');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete workspace';
+      toast.error(message);
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }
+
+  async function handleTransfer() {
+    if (!workspace || !transferTargetId) return;
+    setTransferring(true);
+    try {
+      await apiRequest(`/api/v1/workspaces/${workspace.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({ new_owner_id: transferTargetId }),
+      });
+      toast.success('Ownership transferred');
+      // Reload workspace to reflect new roles
+      const res = await apiRequest<{ data: WorkspaceDetail }>(`/api/v1/workspaces/${slug}`);
+      setWorkspace(res.data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to transfer ownership';
+      toast.error(message);
+    } finally {
+      setTransferring(false);
+      setTransferOpen(false);
+      setTransferTargetId('');
+    }
+  }
 
   if (loading) {
     return (
@@ -151,6 +210,124 @@ export function WorkspaceDetailPage() {
           </div>
         )}
       </section>
+      {/* Owner Actions */}
+      {isOwner && (
+        <section>
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" /> Danger Zone
+          </h2>
+          <div className="border border-red-900/50 rounded-xl divide-y divide-red-900/30">
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-white">Transfer Ownership</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Transfer this workspace to another admin member. You will be demoted to admin.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500"
+                onClick={() => setTransferOpen(true)}
+                disabled={adminMembers.length === 0}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />
+                Transfer
+              </Button>
+            </div>
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-white">Delete Workspace</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Permanently delete this workspace. All hackathons must be draft or archived first.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-800 text-red-400 hover:bg-red-950 hover:text-red-300 hover:border-red-700"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="bg-zinc-950 border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="text-white">Delete Workspace</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Are you sure you want to delete <strong className="text-white">{workspace?.name}</strong>? This action cannot be undone. All hackathons must be in draft or archived status.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="border-zinc-700 text-zinc-300">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleting ? 'Deleting…' : 'Delete Workspace'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Ownership Dialog */}
+      <Dialog open={transferOpen} onOpenChange={(open) => { setTransferOpen(open); if (!open) setTransferTargetId(''); }}>
+        <DialogContent className="bg-zinc-950 border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="text-white">Transfer Ownership</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Select a member to become the new owner. You will be demoted to admin.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            {adminMembers.map((m) => (
+              <button
+                key={m.user_id}
+                type="button"
+                onClick={() => setTransferTargetId(m.user_id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-all ${
+                  transferTargetId === m.user_id
+                    ? 'border-[#CCFF00] bg-[#CCFF00]/5'
+                    : 'border-zinc-800 hover:border-zinc-700'
+                }`}
+              >
+                {m.avatar_url ? (
+                  <img src={m.avatar_url} alt="" className="w-8 h-8 rounded-full" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs text-zinc-400">
+                    {(m.name || m.email)?.[0]?.toUpperCase()}
+                  </div>
+                )}
+                <div className="text-left">
+                  <p className="text-sm font-medium text-white">{m.name || m.email}</p>
+                  <p className="text-xs text-zinc-500">{m.email}</p>
+                </div>
+              </button>
+            ))}
+            {adminMembers.length === 0 && (
+              <p className="text-sm text-zinc-500 text-center py-4">No eligible members. Add an admin member first.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setTransferOpen(false); setTransferTargetId(''); }} className="border-zinc-700 text-zinc-300">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTransfer}
+              disabled={transferring || !transferTargetId}
+              className="bg-[#CCFF00] text-black hover:bg-[#b8e600]"
+            >
+              {transferring ? 'Transferring…' : 'Transfer Ownership'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

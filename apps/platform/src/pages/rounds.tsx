@@ -18,6 +18,11 @@ import {
   ZapOff,
   Flag,
   Circle,
+  Timer,
+  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  Save,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -30,6 +35,8 @@ interface Round {
   type: string | null;
   is_initialized: number;
   submission_deadline: string | null;
+  scoring_opens_at: string | null;
+  scoring_closes_at: string | null;
   created_at: string;
 }
 
@@ -84,27 +91,196 @@ function getStatus(status: string) {
   return statusConfig[status as keyof typeof statusConfig] ?? statusConfig.pending;
 }
 
+// ─── Scoring Window Helpers ───────────────────────────────────────────────────
+
+function getScoringWindowStatus(round: Round): { label: string; color: string; bg: string } {
+  if (!round.scoring_opens_at && !round.scoring_closes_at) {
+    return { label: 'Not configured', color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.06)' };
+  }
+  const now = Date.now();
+  const opens = round.scoring_opens_at ? new Date(round.scoring_opens_at).getTime() : null;
+  const closes = round.scoring_closes_at ? new Date(round.scoring_closes_at).getTime() : null;
+
+  if (opens && now < opens) {
+    return { label: 'Opens soon', color: '#FBBF24', bg: 'rgba(251,191,36,0.1)' };
+  }
+  if (closes && now > closes) {
+    return { label: 'Scoring closed', color: '#EF4444', bg: 'rgba(239,68,68,0.1)' };
+  }
+  if (opens && now >= opens && (!closes || now <= closes)) {
+    return { label: 'Scoring open', color: '#34D399', bg: 'rgba(52,211,153,0.1)' };
+  }
+  return { label: 'Configured', color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.06)' };
+}
+
+function toLocalDatetimeStr(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatCountdown(targetIso: string): string {
+  const diff = new Date(targetIso).getTime() - Date.now();
+  if (diff <= 0) return 'now';
+  const hours = Math.floor(diff / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+// ─── Scoring Window Config ────────────────────────────────────────────────────
+
+function ScoringWindowConfig({
+  round,
+  slug,
+  onSaved,
+}: {
+  round: Round;
+  slug: string;
+  onSaved: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [opensAt, setOpensAt] = useState(toLocalDatetimeStr(round.scoring_opens_at));
+  const [closesAt, setClosesAt] = useState(toLocalDatetimeStr(round.scoring_closes_at));
+  const [saving, setSaving] = useState(false);
+
+  const windowStatus = getScoringWindowStatus(round);
+  const hasChanges =
+    toLocalDatetimeStr(round.scoring_opens_at) !== opensAt ||
+    toLocalDatetimeStr(round.scoring_closes_at) !== closesAt;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/rounds/${round.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          scoring_opens_at: opensAt ? new Date(opensAt).toISOString() : null,
+          scoring_closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+        }),
+      });
+      toast.success('Scoring window updated');
+      onSaved();
+    } catch {
+      toast.error('Failed to update scoring window');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-white/5 pt-3">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-[11px] text-white/40 hover:text-white/60 transition-colors w-full"
+      >
+        <CalendarClock className="h-3 w-3" />
+        <span className="font-medium">Scoring Window</span>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+          style={{ background: windowStatus.bg, color: windowStatus.color }}
+        >
+          {windowStatus.label}
+        </span>
+        {round.scoring_opens_at && windowStatus.label === 'Opens soon' && (
+          <span className="text-[10px] text-yellow-400/60">in {formatCountdown(round.scoring_opens_at)}</span>
+        )}
+        {round.scoring_closes_at && windowStatus.label === 'Scoring open' && (
+          <span className="text-[10px] text-emerald-400/60">closes in {formatCountdown(round.scoring_closes_at)}</span>
+        )}
+        <span className="ml-auto">
+          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </span>
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-white/25 mb-1.5">Opens at</label>
+                <input
+                  type="datetime-local"
+                  value={opensAt}
+                  onChange={(e) => setOpensAt(e.target.value)}
+                  className="w-full rounded-lg border border-white/8 bg-white/3 px-3 py-2 text-xs text-white/70 outline-none focus:border-[#CCFF00]/30 focus:bg-[#CCFF00]/3 transition-all [color-scheme:dark]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-white/25 mb-1.5">Closes at</label>
+                <input
+                  type="datetime-local"
+                  value={closesAt}
+                  onChange={(e) => setClosesAt(e.target.value)}
+                  className="w-full rounded-lg border border-white/8 bg-white/3 px-3 py-2 text-xs text-white/70 outline-none focus:border-[#CCFF00]/30 focus:bg-[#CCFF00]/3 transition-all [color-scheme:dark]"
+                />
+              </div>
+            </div>
+            {hasChanges && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 flex justify-end"
+              >
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold bg-[#CCFF00] text-black hover:bg-[#b8e600] disabled:opacity-50 transition-all"
+                >
+                  {saving ? (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                      className="h-3 w-3 rounded-full border-2 border-black/20 border-t-black"
+                    />
+                  ) : (
+                    <Save className="h-3 w-3" />
+                  )}
+                  {saving ? 'Saving…' : 'Save Window'}
+                </button>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ─── Round Card ───────────────────────────────────────────────────────────────
 
 function RoundCard({
   round,
   index,
   total,
+  slug,
   onDelete,
   onToggleInit,
   initializingId,
   onPublishResults,
   onAdvanceTeams,
+  onRefresh,
 }: {
   round: Round;
   index: number;
   total: number;
+  slug: string;
   onDelete: (id: string) => void;
   onToggleInit: (round: Round) => void;
   initializingId: string | null;
   onPublishResults: (round: Round) => void;
   onAdvanceTeams: (round: Round) => void;
-}) {
+  onRefresh: () => void;
+}){
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const cfg = getStatus(round.status);
@@ -315,6 +491,9 @@ function RoundCard({
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Scoring Window Config */}
+            <ScoringWindowConfig round={round} slug={slug} onSaved={onRefresh} />
           </div>
         </motion.div>
       </div>
@@ -638,11 +817,13 @@ export function RoundsPage() {
               round={round}
               index={i}
               total={rounds.length}
+              slug={slug!}
               onDelete={handleDelete}
               onToggleInit={handleToggleInit}
               initializingId={initializingId}
               onPublishResults={handlePublishResults}
               onAdvanceTeams={handleAdvanceTeams}
+              onRefresh={fetchRounds}
             />
           ))}
 

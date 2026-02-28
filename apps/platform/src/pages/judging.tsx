@@ -35,6 +35,10 @@ import {
   ClipboardCheck,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  ShieldAlert,
+  RefreshCw,
+  BarChart3,
 } from 'lucide-react';
 
 interface Judge {
@@ -81,6 +85,21 @@ interface RubricCriterion {
   sort_order: number;
 }
 
+// ─── Outlier Detection Helpers ───────────────────────────────────────────────
+
+function computeMedian(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function getOutlierInfo(score: number, median: number): { isOutlier: boolean; deviation: number } {
+  if (median === 0) return { isOutlier: false, deviation: 0 };
+  const deviation = ((score - median) / median) * 100;
+  return { isOutlier: Math.abs(deviation) > 30, deviation: Math.round(deviation) };
+}
+
 const container = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.05 } },
@@ -91,6 +110,381 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
 };
 
+// ─── Scoring Progress Panel ──────────────────────────────────────────────────
+
+interface JudgeAssignment {
+  id: string;
+  status: string;
+}
+
+interface JudgeProgress {
+  judge: Judge;
+  assigned: number;
+  completed: number;
+  pending: number;
+  conflicted: number;
+}
+
+function ScoringProgressPanel({
+  judges,
+  slug,
+}: {
+  judges: Judge[];
+  slug: string;
+}) {
+  const [progress, setProgress] = useState<JudgeProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProgress() {
+      const acceptedJudges = judges.filter((j) => j.status === 'accepted');
+      if (acceptedJudges.length === 0) {
+        setProgress([]);
+        setLoading(false);
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        acceptedJudges.map((j) =>
+          apiRequest<{ data: JudgeAssignment[] }>(`/api/v1/hackathons/${slug}/judging/judges/${j.id}/assignments`)
+        )
+      );
+
+      const progressData: JudgeProgress[] = acceptedJudges.map((judge, i) => {
+        const result = results[i];
+        const assignments = result.status === 'fulfilled' ? (result.value.data ?? []) : [];
+        return {
+          judge,
+          assigned: assignments.length,
+          completed: assignments.filter((a) => a.status === 'scored').length,
+          pending: assignments.filter((a) => a.status === 'pending').length,
+          conflicted: assignments.filter((a) => a.status === 'conflict').length,
+        };
+      });
+
+      setProgress(progressData);
+      setLoading(false);
+    }
+
+    fetchProgress();
+  }, [judges, slug]);
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={`sp-${String(i)}`} className="h-16 bg-white/6 rounded-2xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (progress.length === 0) {
+    return (
+      <EmptyState
+        icon={BarChart3}
+        title="No accepted judges"
+        description="Progress will appear once judges accept their invites and receive assignments."
+      />
+    );
+  }
+
+  const totalAssigned = progress.reduce((s, p) => s + p.assigned, 0);
+  const totalCompleted = progress.reduce((s, p) => s + p.completed, 0);
+  const overallPct = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Overall progress */}
+      <div className="rounded-2xl border border-white/6 bg-white/2 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-white/60">Overall Scoring Progress</h3>
+          <span className="text-2xl font-black text-[#CCFF00]">{overallPct}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+          <motion.div
+            className="h-full rounded-full"
+            style={{ background: 'linear-gradient(90deg, #CCFF00, #34D399)' }}
+            initial={{ width: 0 }}
+            animate={{ width: `${overallPct}%` }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          />
+        </div>
+        <div className="flex items-center gap-4 mt-3 text-xs text-white/30">
+          <span>{totalCompleted} completed</span>
+          <span>{totalAssigned - totalCompleted} remaining</span>
+          <span>{progress.length} judges</span>
+        </div>
+      </div>
+
+      {/* Per-judge table */}
+      <div className="rounded-2xl border border-white/6 overflow-hidden">
+        <div className="grid grid-cols-[1fr,80px,80px,80px,120px] gap-4 px-5 py-3 bg-white/3 text-[10px] font-bold uppercase tracking-[0.15em] text-white/20">
+          <span>Judge</span>
+          <span className="text-center">Assigned</span>
+          <span className="text-center">Scored</span>
+          <span className="text-center">Pending</span>
+          <span className="text-right">Progress</span>
+        </div>
+        <motion.div variants={container} initial="hidden" animate="show">
+          {progress
+            .sort((a, b) => (b.assigned > 0 ? b.completed / b.assigned : 0) - (a.assigned > 0 ? a.completed / a.assigned : 0))
+            .map((p) => {
+              const pct = p.assigned > 0 ? Math.round((p.completed / p.assigned) * 100) : 0;
+              const statusLabel = p.assigned === 0 ? 'No assignments' : pct === 100 ? 'Complete' : pct > 0 ? 'In Progress' : 'Not Started';
+              const statusColor = pct === 100 ? '#34D399' : pct > 0 ? '#FBBF24' : 'rgba(255,255,255,0.2)';
+
+              return (
+                <motion.div
+                  key={p.judge.id}
+                  variants={item}
+                  className="grid grid-cols-[1fr,80px,80px,80px,120px] gap-4 items-center px-5 py-3 border-t border-white/4 hover:bg-white/2 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {p.judge.image ? (
+                      <img src={p.judge.image} alt="" className="h-7 w-7 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-[10px] font-bold text-violet-400 shrink-0">
+                        {p.judge.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white/70 truncate">{p.judge.display_name}</p>
+                    </div>
+                  </div>
+                  <span className="text-sm text-white/40 text-center tabular-nums">{p.assigned}</span>
+                  <span className="text-sm font-bold text-center tabular-nums" style={{ color: statusColor }}>{p.completed}</span>
+                  <span className="text-sm text-white/30 text-center tabular-nums">{p.pending}</span>
+                  <div className="flex items-center gap-2 justify-end">
+                    <div className="w-16 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: statusColor }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold w-8 text-right tabular-nums" style={{ color: statusColor }}>
+                      {pct}%
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
+        </motion.div>
+      </div>
+
+      {/* Alert for incomplete scoring */}
+      {totalAssigned > 0 && totalCompleted < totalAssigned && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-3 flex items-center gap-3">
+          <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+          <p className="text-xs text-amber-300/80">
+            {totalAssigned - totalCompleted} assignment{totalAssigned - totalCompleted !== 1 ? 's' : ''} still pending.
+            {progress.filter((p) => p.assigned > 0 && p.completed === 0).length > 0 && (
+              <> <strong>{progress.filter((p) => p.assigned > 0 && p.completed === 0).length} judge{progress.filter((p) => p.assigned > 0 && p.completed === 0).length !== 1 ? 's have' : ' has'} not started scoring.</strong></>
+            )}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Conflicts Panel ──────────────────────────────────────────────────────────
+
+interface ConflictEntry {
+  assignment_id: string;
+  team_id: string;
+  judge_id: string;
+  team_name: string;
+  judge_name: string;
+  judge_email: string;
+  declared_at: string;
+}
+
+function ConflictsPanel({
+  conflicts,
+  judges,
+  slug,
+  onRefresh,
+}: {
+  conflicts: ConflictEntry[];
+  judges: Judge[];
+  slug: string;
+  onRefresh: () => void;
+}) {
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [selectedConflict, setSelectedConflict] = useState<ConflictEntry | null>(null);
+  const [selectedNewJudge, setSelectedNewJudge] = useState('');
+  const [reassigning, setReassigning] = useState(false);
+
+  // Group conflicts by judge
+  const groupedByJudge = conflicts.reduce<Record<string, { judge: { id: string; name: string; email: string }; conflicts: ConflictEntry[] }>>((acc, c) => {
+    if (!acc[c.judge_id]) {
+      acc[c.judge_id] = { judge: { id: c.judge_id, name: c.judge_name, email: c.judge_email }, conflicts: [] };
+    }
+    acc[c.judge_id].conflicts.push(c);
+    return acc;
+  }, {});
+
+  // Available judges for reassignment (exclude the conflicted judge)
+  const getAvailableJudges = (excludeJudgeId: string) =>
+    judges.filter((j) => j.user_id !== excludeJudgeId && j.status === 'accepted');
+
+  async function handleReassign() {
+    if (!selectedConflict || !selectedNewJudge) return;
+    setReassigning(true);
+    try {
+      await apiRequest(`/api/v1/hackathons/${slug}/judging/assignments/${selectedConflict.assignment_id}/reassign`, {
+        method: 'POST',
+        body: JSON.stringify({ new_judge_id: selectedNewJudge }),
+      });
+      toast.success('Assignment reassigned successfully');
+      setReassignOpen(false);
+      setSelectedConflict(null);
+      setSelectedNewJudge('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reassign');
+    } finally {
+      setReassigning(false);
+    }
+  }
+
+  if (conflicts.length === 0) {
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="No conflicts declared"
+        description="When judges declare a conflict of interest with an assigned team, it will appear here for you to reassign."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5 text-red-400" />
+          Conflict of Interest Declarations
+        </h3>
+        <p className="text-sm text-white/40 mt-1">
+          {conflicts.length} conflict{conflicts.length !== 1 ? 's' : ''} declared across {Object.keys(groupedByJudge).length} judge{Object.keys(groupedByJudge).length !== 1 ? 's' : ''}. Reassign affected submissions to other judges.
+        </p>
+      </div>
+
+      <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
+        {Object.values(groupedByJudge).map(({ judge, conflicts: judgeConflicts }) => (
+          <motion.div
+            key={judge.id}
+            variants={item}
+            className="rounded-2xl border border-red-500/15 bg-red-500/3 overflow-hidden"
+          >
+            {/* Judge header */}
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-red-500/10 bg-red-500/5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/10 text-sm font-bold text-red-400">
+                {judge.name?.charAt(0)?.toUpperCase() ?? '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white/80 truncate">{judge.name || judge.email}</p>
+                <p className="text-xs text-white/30 truncate">{judge.email}</p>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                {judgeConflicts.length} conflict{judgeConflicts.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {/* Conflict items */}
+            <div className="divide-y divide-red-500/8">
+              {judgeConflicts.map((conflict) => (
+                <div key={conflict.assignment_id} className="flex items-center justify-between px-5 py-3">
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert className="h-4 w-4 text-red-400/60 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-white/80">{conflict.team_name}</p>
+                      <p className="text-xs text-white/25">
+                        Declared {new Date(conflict.declared_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => {
+                      setSelectedConflict(conflict);
+                      setSelectedNewJudge('');
+                      setReassignOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 rounded-full bg-[#CCFF00]/10 px-3 py-1.5 text-xs font-bold text-[#CCFF00] transition hover:bg-[#CCFF00]/20"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Reassign
+                  </motion.button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* Reassign Dialog */}
+      <Dialog open={reassignOpen} onOpenChange={(open) => { setReassignOpen(open); if (!open) { setSelectedConflict(null); setSelectedNewJudge(''); } }}>
+        <DialogContent className="border-white/8 bg-black/95 backdrop-blur-xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white text-xl font-black">Reassign Submission</DialogTitle>
+            <DialogDescription className="text-white/35">
+              Reassign <strong className="text-white/60">{selectedConflict?.team_name}</strong> from{' '}
+              <strong className="text-red-400">{selectedConflict?.judge_name || selectedConflict?.judge_email}</strong>{' '}
+              to another judge.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2 max-h-[300px] overflow-y-auto">
+            {selectedConflict && getAvailableJudges(selectedConflict.judge_id).map((j) => (
+              <button
+                key={j.id}
+                type="button"
+                onClick={() => setSelectedNewJudge(j.user_id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-all ${
+                  selectedNewJudge === j.user_id
+                    ? 'border-[#CCFF00] bg-[#CCFF00]/5'
+                    : 'border-white/8 hover:border-white/15'
+                }`}
+              >
+                {j.image ? (
+                  <img src={j.image} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                ) : (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-xs font-bold text-violet-400">
+                    {j.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+                  </div>
+                )}
+                <div className="text-left flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white/80 truncate">{j.display_name}</p>
+                  <p className="text-xs text-white/30 truncate">{j.email}</p>
+                </div>
+              </button>
+            ))}
+            {selectedConflict && getAvailableJudges(selectedConflict.judge_id).length === 0 && (
+              <p className="text-sm text-white/40 text-center py-4">No other accepted judges available.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReassignOpen(false)} className="border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white">
+              Cancel
+            </Button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleReassign}
+              disabled={reassigning || !selectedNewJudge}
+              className="rounded-lg bg-[#CCFF00] px-5 py-2 text-sm font-bold text-black transition hover:bg-white disabled:opacity-50"
+            >
+              {reassigning ? 'Reassigning…' : 'Reassign'}
+            </motion.button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export function JudgingPage() {
   const { slug } = useParams<{ slug: string }>();
   const { hackathonRoles, refreshToken } = useAuth();
@@ -99,7 +493,7 @@ export function JudgingPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [rubric, setRubric] = useState<RubricCriterion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric' | 'scoring' | 'conflicts'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'judges' | 'rubric' | 'scoring' | 'conflicts' | 'progress'>('leaderboard');
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteUserId, setInviteUserId] = useState('');
   const [createAccountDialog, setCreateAccountDialog] = useState(false);
@@ -117,6 +511,10 @@ export function JudgingPage() {
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
   const [isSubmittingScores, setIsSubmittingScores] = useState(false);
+
+  // Outlier detection state
+  const [showOutliers, setShowOutliers] = useState(true);
+  const [excludedTeams, setExcludedTeams] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!slug) return;
@@ -356,10 +754,10 @@ export function JudgingPage() {
   if (isJudge) {
     tabs.push({ key: 'scoring', label: 'Scoring', icon: Gavel, badge: pendingAssignments.length || undefined });
   }
-  // Add conflicts tab if any exist
-  if (conflicts.length > 0) {
-    tabs.push({ key: 'conflicts', label: 'Conflicts', icon: AlertCircle, badge: conflicts.length });
-  }
+  // Add conflicts tab (always show for organizers)
+  tabs.push({ key: 'conflicts', label: 'Conflicts', icon: AlertCircle, badge: conflicts.length || undefined });
+  // Add progress tab
+  tabs.push({ key: 'progress', label: 'Progress', icon: BarChart3 });
 
   return (
     <div>
@@ -510,49 +908,128 @@ export function JudgingPage() {
                 title="No scores yet"
                 description="Scores will appear once judges start evaluating submissions."
               />
-            ) : (
-              <motion.div variants={container} initial="hidden" animate="show" className="space-y-2">
-                {/* Header row */}
-                <div className="flex items-center gap-4 px-5 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-white/20">
-                  <span className="w-10">#</span>
-                  <span className="flex-1">Team</span>
-                  <span className="w-24 text-center">Judges</span>
-                  <span className="w-24 text-right">Score</span>
-                </div>
-                {leaderboard.map((entry, i) => (
-                  <motion.div
-                    key={entry.team_id}
-                    variants={item}
-                    className={`flex items-center gap-4 rounded-2xl border p-5 transition-all duration-300 hover:bg-white/4 ${
-                      i === 0
-                        ? 'border-[#CCFF00]/20 bg-[#CCFF00]/4'
-                        : i === 1
-                          ? 'border-white/8 bg-white/3'
-                          : 'border-white/ bg-white/2'
-                    }`}
-                  >
-                    <span className={`w-10 text-2xl font-black ${
-                      i === 0 ? 'text-[#CCFF00]' : i === 1 ? 'text-white/60' : i === 2 ? 'text-amber-600' : 'text-white/20'
-                    }`}>
-                      {entry.rank}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white/80 truncate">{entry.team_name}</p>
+            ) : (() => {
+              const scores = leaderboard.filter((e) => !excludedTeams.has(e.team_id)).map((e) => e.score);
+              const median = computeMedian(scores);
+              const outlierCount = leaderboard.filter((e) => !excludedTeams.has(e.team_id) && getOutlierInfo(e.score, median).isOutlier).length;
+
+              return (
+                <div className="space-y-4">
+                  {/* Outlier controls */}
+                  {outlierCount > 0 && (
+                    <div className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                        <p className="text-xs text-amber-300/80">
+                          <strong>{outlierCount} outlier{outlierCount !== 1 ? 's' : ''}</strong> detected (&gt;30% deviation from median of {median.toFixed(1)}%)
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowOutliers(!showOutliers)}
+                        className="text-[10px] font-bold uppercase tracking-wider text-amber-400 hover:text-amber-300 transition-colors"
+                      >
+                        {showOutliers ? 'Hide' : 'Show'} markers
+                      </button>
                     </div>
-                    <div className="w-24 text-center">
-                      <span className="text-xs text-white/30">
-                        {entry.judges_completed}/{entry.total_judges}
-                      </span>
+                  )}
+
+                  {/* Excluded teams notice */}
+                  {excludedTeams.size > 0 && (
+                    <div className="flex items-center justify-between rounded-xl border border-white/6 bg-white/2 px-5 py-3">
+                      <p className="text-xs text-white/40">
+                        {excludedTeams.size} team{excludedTeams.size !== 1 ? 's' : ''} excluded from median calculation
+                      </p>
+                      <button
+                        onClick={() => setExcludedTeams(new Set())}
+                        className="text-[10px] font-bold uppercase tracking-wider text-white/30 hover:text-white/60 transition-colors"
+                      >
+                        Reset
+                      </button>
                     </div>
-                    <div className="w-24 text-right">
-                      <span className={`text-lg font-black tabular-nums ${i === 0 ? 'text-[#CCFF00]' : 'text-white/70'}`}>
-                        {entry.score.toFixed(1)}%
-                      </span>
+                  )}
+
+                  <motion.div variants={container} initial="hidden" animate="show" className="space-y-2">
+                    {/* Header row */}
+                    <div className="flex items-center gap-4 px-5 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-white/20">
+                      <span className="w-10">#</span>
+                      <span className="flex-1">Team</span>
+                      <span className="w-24 text-center">Judges</span>
+                      <span className="w-24 text-right">Score</span>
+                      <span className="w-12" />
                     </div>
+                    {leaderboard.map((entry, i) => {
+                      const { isOutlier, deviation } = getOutlierInfo(entry.score, median);
+                      const isExcluded = excludedTeams.has(entry.team_id);
+
+                      return (
+                        <motion.div
+                          key={entry.team_id}
+                          variants={item}
+                          className={`flex items-center gap-4 rounded-2xl border p-5 transition-all duration-300 hover:bg-white/4 ${
+                            isExcluded
+                              ? 'border-white/4 bg-white/1 opacity-50'
+                              : isOutlier && showOutliers
+                                ? 'border-amber-500/30 bg-amber-500/5'
+                                : i === 0
+                                  ? 'border-[#CCFF00]/20 bg-[#CCFF00]/4'
+                                  : i === 1
+                                    ? 'border-white/8 bg-white/3'
+                                    : 'border-white/ bg-white/2'
+                          }`}
+                        >
+                          <span className={`w-10 text-2xl font-black ${
+                            isExcluded ? 'text-white/10' : i === 0 ? 'text-[#CCFF00]' : i === 1 ? 'text-white/60' : i === 2 ? 'text-amber-600' : 'text-white/20'
+                          }`}>
+                            {entry.rank}
+                          </span>
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <p className={`text-sm font-bold truncate ${isExcluded ? 'text-white/30 line-through' : 'text-white/80'}`}>{entry.team_name}</p>
+                            {isOutlier && showOutliers && !isExcluded && (
+                              <span className="group relative">
+                                <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-white/10 text-[10px] text-white/70 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                  {deviation > 0 ? '+' : ''}{deviation}% from median ({median.toFixed(1)}%)
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-24 text-center">
+                            <span className="text-xs text-white/30">
+                              {entry.judges_completed}/{entry.total_judges}
+                            </span>
+                          </div>
+                          <div className="w-24 text-right">
+                            <span className={`text-lg font-black tabular-nums ${
+                              isExcluded ? 'text-white/20' : i === 0 ? 'text-[#CCFF00]' : 'text-white/70'
+                            }`}>
+                              {entry.score.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="w-12 flex justify-end">
+                            {isOutlier && showOutliers && (
+                              <button
+                                onClick={() => {
+                                  const next = new Set(excludedTeams);
+                                  if (isExcluded) next.delete(entry.team_id);
+                                  else next.add(entry.team_id);
+                                  setExcludedTeams(next);
+                                }}
+                                className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${
+                                  isExcluded ? 'text-emerald-400 hover:text-emerald-300' : 'text-white/20 hover:text-amber-400'
+                                }`}
+                                title={isExcluded ? 'Include in calculation' : 'Exclude from calculation'}
+                              >
+                                {isExcluded ? 'Include' : 'Exclude'}
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </motion.div>
-                ))}
-              </motion.div>
-            )
+                </div>
+              );
+            })()
           )}
 
           {/* Judges */}
@@ -949,51 +1426,17 @@ export function JudgingPage() {
           )}
 
           {/* Conflicts Tab */}
-          {activeTab === 'conflicts' && conflicts.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-white">Conflict of Interest Declarations</h3>
-              <p className="text-sm text-white/40">
-                Judges have declared conflicts with these assignments. Reassign them to other judges.
-              </p>
-              <div className="space-y-3">
-                {conflicts.map((conflict) => (
-                  <div key={conflict.assignment_id} className="border border-red-500/20 bg-red-500/5 rounded-xl p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          <span className="text-red-400">{conflict.judge_name || conflict.judge_email}</span>
-                          {' → '}
-                          <span className="text-white/80">{conflict.team_name}</span>
-                        </p>
-                        <p className="text-xs text-white/30 mt-1">
-                          Declared {new Date(conflict.declared_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button
-                        onClick={async () => {
-                          const newJudgeId = prompt('Enter the judge ID to reassign to:');
-                          if (!newJudgeId) return;
-                          try {
-                            await apiRequest(`/api/v1/hackathons/${slug}/judging/assignments/${conflict.assignment_id}/reassign`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ new_judge_id: newJudgeId }),
-                            });
-                            toast.success('Assignment reassigned');
-                            fetchData();
-                          } catch {
-                            toast.error('Failed to reassign');
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-[#CCFF00]/10 text-[#CCFF00] text-xs font-bold hover:bg-[#CCFF00]/20 transition-colors"
-                      >
-                        Reassign
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {activeTab === 'progress' && (
+            <ScoringProgressPanel judges={judges} slug={slug!} />
+          )}
+
+          {activeTab === 'conflicts' && (
+            <ConflictsPanel
+              conflicts={conflicts}
+              judges={judges}
+              slug={slug!}
+              onRefresh={fetchData}
+            />
           )}
         </>
       )}

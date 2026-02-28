@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/auth-context';
 import { apiRequest } from '@/lib/api';
@@ -13,6 +13,8 @@ import {
   ClipboardCheck,
   ArrowRight,
   Loader2,
+  Timer,
+  Lock,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -62,6 +64,74 @@ interface ScoreState {
   comment: string;
 }
 
+interface Round {
+  id: string;
+  round_number: number;
+  name: string;
+  scoring_opens_at: string | null;
+  scoring_closes_at: string | null;
+}
+
+type WindowStatus = 'not_configured' | 'opens_soon' | 'open' | 'closed';
+
+function getScoringWindowStatus(round: Round | null): { status: WindowStatus; label: string; targetTime: Date | null } {
+  if (!round) return { status: 'not_configured', label: '', targetTime: null };
+  const opens = round.scoring_opens_at ? new Date(round.scoring_opens_at) : null;
+  const closes = round.scoring_closes_at ? new Date(round.scoring_closes_at) : null;
+  const now = new Date();
+
+  if (!opens && !closes) return { status: 'not_configured', label: '', targetTime: null };
+  if (opens && now < opens) return { status: 'opens_soon', label: 'Scoring opens in', targetTime: opens };
+  if (closes && now > closes) return { status: 'closed', label: 'Scoring closed', targetTime: null };
+  if (closes) return { status: 'open', label: 'Scoring closes in', targetTime: closes };
+  return { status: 'open', label: 'Scoring is open', targetTime: null };
+}
+
+function useCountdown(target: Date | null): string {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    if (!target) { setText(''); return; }
+    function update() {
+      const diff = target.getTime() - Date.now();
+      if (diff <= 0) { setText('now'); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setText(h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    }
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [target]);
+  return text;
+}
+
+function ScoringWindowBanner({ windowInfo }: { windowInfo: { status: WindowStatus; label: string; targetTime: Date | null } }) {
+  const countdown = useCountdown(windowInfo.targetTime);
+
+  if (windowInfo.status === 'not_configured') return null;
+
+  const config = {
+    opens_soon: { border: 'border-amber-500/20', bg: 'bg-amber-500/5', icon: Timer, iconColor: 'text-amber-400', textColor: 'text-amber-300/80' },
+    open: { border: 'border-emerald-500/20', bg: 'bg-emerald-500/5', icon: Timer, iconColor: 'text-emerald-400', textColor: 'text-emerald-300/80' },
+    closed: { border: 'border-red-500/20', bg: 'bg-red-500/5', icon: Lock, iconColor: 'text-red-400', textColor: 'text-red-300/80' },
+    not_configured: { border: '', bg: '', icon: Timer, iconColor: '', textColor: '' },
+  };
+
+  const c = config[windowInfo.status];
+  const Icon = c.icon;
+
+  return (
+    <div className={`rounded-xl ${c.border} ${c.bg} px-5 py-3 flex items-center gap-3`}>
+      <Icon className={`h-5 w-5 ${c.iconColor} shrink-0`} />
+      <p className={`text-sm font-medium ${c.textColor}`}>
+        {windowInfo.label}
+        {countdown && <span className="ml-2 font-bold tabular-nums">{countdown}</span>}
+      </p>
+    </div>
+  );
+}
+
 export function JudgeScoringPage() {
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
@@ -69,6 +139,7 @@ export function JudgeScoringPage() {
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [rubric, setRubric] = useState<RubricCriterion[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [rounds, setRounds] = useState<Round[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -83,16 +154,18 @@ export function JudgeScoringPage() {
       try {
         setIsLoading(true);
 
-        const [hackathonRes, rubricRes, assignmentsRes] = await Promise.all([
+        const [hackathonRes, rubricRes, assignmentsRes, roundsRes] = await Promise.all([
           apiRequest<{ data: Hackathon }>(`/api/v1/hackathons/${slug}`),
           apiRequest<{ data: RubricCriterion[] }>(`/api/v1/hackathons/${slug}/judging/rubric`),
           apiRequest<{ data: Assignment[] }>(`/api/v1/hackathons/${slug}/judging/my-assignments`),
+          apiRequest<{ data: Round[] }>(`/api/v1/hackathons/${slug}/rounds`),
         ]);
 
         setHackathon(hackathonRes.data);
         const sortedRubric = rubricRes.data.sort((a, b) => a.sort_order - b.sort_order);
         setRubric(sortedRubric);
         setAssignments(assignmentsRes.data);
+        setRounds(roundsRes.data ?? []);
       } catch (err) {
         console.warn('Failed to load judging data:', err);
         toast.error('Failed to load judging data. Please try again.');
@@ -218,6 +291,12 @@ export function JudgeScoringPage() {
   const pendingAssignments = assignments.filter((a) => a.status === 'pending');
   const scoredAssignments = assignments.filter((a) => a.status === 'scored');
 
+  // Determine active round from assignments and check scoring window
+  const activeRoundNumber = selectedAssignment?.round ?? pendingAssignments[0]?.round ?? null;
+  const activeRound = activeRoundNumber != null ? rounds.find((r) => r.round_number === activeRoundNumber) ?? null : null;
+  const windowInfo = getScoringWindowStatus(activeRound);
+  const scoringDisabled = windowInfo.status === 'opens_soon' || windowInfo.status === 'closed';
+
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -239,6 +318,9 @@ export function JudgeScoringPage() {
             </Badge>
           </div>
         </div>
+
+        {/* Scoring Window Banner */}
+        <ScoringWindowBanner windowInfo={windowInfo} />
 
         {/* If no assignment is selected, show the assignment list */}
         {!selectedAssignment ? (
@@ -285,9 +367,11 @@ export function JudgeScoringPage() {
                         <Badge className="bg-amber-500/20 text-amber-400">pending</Badge>
                         <Button
                           size="sm"
-                          className="bg-[#CCFF00] text-black hover:bg-[#CCFF00]/80"
+                          className="bg-[#CCFF00] text-black hover:bg-[#CCFF00]/80 disabled:opacity-40"
                           onClick={() => selectAssignment(assignment)}
+                          disabled={scoringDisabled}
                         >
+                          {scoringDisabled ? <Lock className="mr-1 h-3 w-3" /> : null}
                           Score <ArrowRight className="ml-1 h-4 w-4" />
                         </Button>
                       </CardContent>
@@ -423,8 +507,8 @@ export function JudgeScoringPage() {
                 <div className="flex justify-end pt-4">
                   <Button
                     onClick={handleSubmit}
-                    disabled={isSubmitting || rubric.length === 0}
-                    className="bg-[#CCFF00] text-black hover:bg-[#b3e600] font-bold px-8 py-6 text-lg"
+                    disabled={isSubmitting || rubric.length === 0 || scoringDisabled}
+                    className="bg-[#CCFF00] text-black hover:bg-[#b3e600] font-bold px-8 py-6 text-lg disabled:opacity-40"
                   >
                     {isSubmitting ? (
                       <>

@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Star,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ function getHackathonNavItems(slug: string): NavItem[] {
   return [
     { label: 'Score', icon: Gavel, path: `/hackathons/${slug}/score` },
     { label: 'My Assignments', icon: ClipboardCheck, path: `/hackathons/${slug}/assignments` },
+    { label: 'My Scores', icon: Star, path: `/hackathons/${slug}/my-scores` },
     { label: 'Leaderboard', icon: Trophy, path: `/hackathons/${slug}/leaderboard` },
   ];
 }

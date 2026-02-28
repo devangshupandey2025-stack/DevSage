@@ -9,6 +9,7 @@ import { JudgeAssignmentsPage } from '@/pages/judge-assignments';
 import { JudgeInviteAcceptPage } from '@/pages/judge-invite-accept';
 import { LeaderboardPage } from '@/pages/leaderboard';
 import { ChangePasswordPage } from '@/pages/change-password';
+import { MyScoresPage } from '@/pages/my-scores';
 
 const router = createBrowserRouter([
   // Public routes
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
           // Hackathon judging routes
           { path: '/hackathons/:slug/score', element: <JudgeScoringPage /> },
           { path: '/hackathons/:slug/assignments', element: <JudgeAssignmentsPage /> },
+          { path: '/hackathons/:slug/my-scores', element: <MyScoresPage /> },
           { path: '/hackathons/:slug/leaderboard', element: <LeaderboardPage /> },
         ],
       },
