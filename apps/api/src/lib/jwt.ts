@@ -1,7 +1,7 @@
 import type { JWTPayload } from '../types/auth.js';
+import { TIMING } from './constants.js';
 
 const ALGORITHM = { name: 'HMAC', hash: 'SHA-256' } as const;
-const ACCESS_TOKEN_EXPIRY = 15 * 60;
 
 function base64UrlEncode(data: ArrayBuffer | Uint8Array): string {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
@@ -19,14 +19,23 @@ function base64UrlDecode(str: string): Uint8Array {
   return bytes;
 }
 
+// CryptoKey cache — avoids re-importing the same key on every sign/verify.
+// Workers isolate instances are single-threaded, so a simple Map is safe.
+const keyCache = new Map<string, CryptoKey>();
+
 async function getKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
+  let key = keyCache.get(secret);
+  if (key) return key;
+
+  key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
     ALGORITHM,
     false,
     ['sign', 'verify'],
   );
+  keyCache.set(secret, key);
+  return key;
 }
 
 export async function signJWT(payload: Omit<JWTPayload, 'iat' | 'exp'>, secret: string): Promise<string> {
@@ -34,7 +43,7 @@ export async function signJWT(payload: Omit<JWTPayload, 'iat' | 'exp'>, secret: 
   const fullPayload: JWTPayload = {
     ...payload,
     iat: now,
-    exp: now + ACCESS_TOKEN_EXPIRY,
+    exp: now + TIMING.ACCESS_TOKEN_EXPIRY_SECONDS,
   };
 
   const header = { alg: 'HS256', typ: 'JWT' };

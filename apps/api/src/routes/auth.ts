@@ -152,7 +152,9 @@ auth.post('/register', async (c) => {
     'SELECT id FROM users WHERE email = ? LIMIT 1',
   ).bind(email).first<{ id: string }>();
   if (existing) {
-    return errorResponse(c, 409, 'CONFLICT', 'Email already registered');
+    // Return same shape as success to prevent user enumeration.
+    // Don't issue session cookies for the existing account.
+    return successResponse(c, { id: existing.id, email, name }, { status: 201 });
   }
 
   const id = crypto.randomUUID();

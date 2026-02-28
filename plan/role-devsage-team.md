@@ -1,6 +1,6 @@
 # DevSage Team — Platform Admin User Flow
 
-> Role: Platform Admin | Scope: Platform-wide | App: `shikdd.devsage.org` + CLI
+> Role: Platform Admin (`platform_admins` table) | Scope: Platform-wide | App: `shikdd.devsage.org`
 
 ---
 
@@ -22,7 +22,7 @@ DevSage's own team. Unrestricted access across the entire platform — can do ev
 
 ### 2. Hackathon Request Review
 
-When a Workspace Manager submits a hackathon creation request:
+When a Workspace Owner or Admin submits a hackathon creation request:
 
 1. Request appears on the Admin Dashboard
 2. Review basics (title, slug, dates, team sizes)
@@ -32,40 +32,28 @@ When a Workspace Manager submits a hackathon creation request:
    - Durable Object state machine initialized
    - Hackathon slug and IDs generated
    - Audit event logged
-   - All backend connections ready (API routes, DO, queues, webhooks)
-5. Dashboard shows a **CLI command** for frontend setup
+   - Hackathon page available at `devsage.org/hackathons/:slug`
 
-### 3. Hackathon Frontend Deployment
+### 3. Hackathon Theming (Initial Setup)
 
-After approving, copy the generated CLI command from the dashboard and run it locally.
+After approval, Platform Admin sets the initial branding via the admin panel:
 
-**CLI Automated Steps** (`devsage-cli deploy-hackathon --hackathon-slug <slug> --workspace-slug <slug>`):
+1. Upload logo and set brand colors
+2. Configure sponsor content
+3. Review & QA — verify hackathon page renders correctly with dynamic theming
+4. Custom domain setup (optional — CNAME-based)
+5. CORS origin update (if custom domain is needed)
+6. Notify Event Leads that the hackathon is ready for configuration
 
-1. Clone hackathon frontend template repo
-2. Rename folder to `{hackathon-slug}-{workspace-slug}`
-3. Text-based edit across repo — replace placeholders (slugs, IDs, config, API origin)
-4. Push to `SHIKDD-org` on GitHub
-5. Deploy to Cloudflare Workers (Static Assets)
-6. Set up subdomain: `{hackathon-slug}.{workspace-slug}.devsage.org`
-
-**Manual Steps:**
-
-1. Frontend design customization (branding, logos, colors, copy)
-2. Sponsor content — add directly OR give Event Lead repo access (case-by-case)
-3. Review & QA — verify frontend works end-to-end with backend
-4. CORS origin update (if new subdomain/domain)
-5. Custom domain setup (if applicable — CNAME-based)
-6. Final deploy — push changes, redeploy
-7. Notify Event Leads that frontend is live
+> After handoff, Event Leads can adjust theming (logo, colors, copy) through the Platform app. Platform Admin retains ownership of custom domain and CORS config.
 
 ### 4. Handoff to Event Leads
 
-Once frontend is finalized:
+Once theming is finalized:
 
 - Event is ready for configuration
 - Event Leads configure rounds, rubric, judges, settings on Platform
 - Event Leads can change deadlines while in draft/active, postpone events
-- Event Leads **cannot** modify the frontend — that stays with DevSage team
 
 ### 5. Ongoing Platform Management
 
@@ -77,7 +65,8 @@ Admin Dashboard provides:
 - **Hackathons** — view all hackathons, admin-level detail, round management
 - **Admins** — manage platform admin list (add/remove DevSage team members)
 - **Invites** — manage pending invites
-- **Audit** — trigger hash backfill for audit chain integrity
+- **Requests** — hackathon request review pipeline
+- **Audit** — trigger hash backfill for audit chain integrity. Backfill is needed when audit events were inserted without hash chaining (e.g., during bulk imports or after a bug). It retroactively computes SHA-256 hashes to restore the chain. If the chain is broken (gap or tampered record), the backfill flags affected events
 
 ### 6. Intervention
 
@@ -86,28 +75,8 @@ Can step into any workspace or hackathon at any time to:
 - Fix issues
 - Override state transitions
 - Manage invites or roles
-- Debug webhook/submission pipeline problems
-- Force-advance or rollback hackathon state
-
----
-
-## CLI Summary
-
-| Step | Automated | Manual |
-|------|-----------|--------|
-| Clone template repo | ✅ | — |
-| Rename folder | ✅ | — |
-| Replace placeholders | ✅ | — |
-| Push to GitHub | ✅ | — |
-| Deploy to Cloudflare Workers | ✅ | — |
-| Set up subdomain | ✅ | — |
-| Frontend design customization | — | ✅ |
-| Sponsor content | — | ✅ |
-| Review & QA | — | ✅ |
-| CORS origin update | — | ✅ |
-| Custom domain setup | — | ✅ |
-| Final deploy | — | ✅ |
-| Notify event leads | — | ✅ |
+- Debug webhook/submission pipeline problems — includes viewing and replaying dead-letter queue messages
+- Force-advance or rollback hackathon state (exceptional cases only — e.g., reverting a premature state transition)
 
 ---
 
@@ -119,8 +88,9 @@ Can step into any workspace or hackathon at any time to:
 | `/users` | All users management |
 | `/workspaces` | All workspaces |
 | `/workspaces/:id` | Workspace detail |
-| `/hackathons` | All hackathons + request review |
+| `/hackathons` | All hackathons |
 | `/hackathons/:id` | Hackathon admin detail |
+| `/hackathon-requests` | Hackathon request review pipeline |
 | `/admins` | Platform admin management |
 | `/invites` | Invite management |
 | `/profile` | Admin profile |
@@ -129,4 +99,9 @@ Can step into any workspace or hackathon at any time to:
 
 ## Permissions
 
-Has **unrestricted access** to everything. All actions available to Owners, Managers, and Event Leads are also available to Platform Admins.
+Has **unrestricted access** to everything. All actions available to Owners, Admins, and Event Leads are also available to Platform Admins.
+
+Additionally:
+
+- **Account deletion requests** — process user data deletion requests. Personal data is purged; audit trail entries and anonymized hackathon records (submissions, scores) are retained for integrity
+- **Data export** — can export workspace or hackathon data on request (for institutional compliance)

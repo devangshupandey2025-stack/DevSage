@@ -232,6 +232,7 @@ export async function ensureSchema() {
       tracks text DEFAULT '[]' NOT NULL,
       prizes text DEFAULT '[]' NOT NULL,
       settings text DEFAULT '{}' NOT NULL,
+      judge_guidelines text,
       created_by text NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL,
@@ -251,6 +252,8 @@ export async function ensureSchema() {
       submission_deadline text,
       started_at text,
       completed_at text,
+      scoring_opens_at text,
+      scoring_closes_at text,
       is_initialized integer DEFAULT 0 NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL,
@@ -588,13 +591,32 @@ export async function ensureSchema() {
       id text PRIMARY KEY NOT NULL,
       workspace_id text,
       name text NOT NULL,
-      description text DEFAULT '' NOT NULL,
-      config_snapshot text NOT NULL DEFAULT '{}',
-      rubric_snapshot text DEFAULT '[]' NOT NULL,
-      created_by text NOT NULL,
-      created_at text NOT NULL,
-      updated_at text NOT NULL
+      description text,
+      settings text DEFAULT '{}' NOT NULL,
+      tracks text DEFAULT '[]' NOT NULL,
+      rounds text DEFAULT '[]' NOT NULL,
+      rubric text DEFAULT '[]' NOT NULL,
+      is_platform_default integer DEFAULT 0 NOT NULL,
+      is_public integer DEFAULT 0,
+      created_by text,
+      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     )`,
+
+    // hackathon_notification_config
+    `CREATE TABLE IF NOT EXISTS hackathon_notification_config (
+      id text PRIMARY KEY NOT NULL,
+      hackathon_id text NOT NULL,
+      user_id text NOT NULL,
+      email_enabled integer DEFAULT 1 NOT NULL,
+      in_app_enabled integer DEFAULT 1 NOT NULL,
+      created_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (hackathon_id) REFERENCES hackathons(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_hackathon_notification_config_hackathon_user ON hackathon_notification_config (hackathon_id, user_id)`,
   ];
 
   for (const sql of statements) {
@@ -611,7 +633,7 @@ export async function resetDb() {
     'force_push_events', 'commit_log', 'webhook_deliveries', 'submissions',
     'team_repos', 'pending_installations', 'team_invites', 'team_messages',
     'team_members', 'teams', 'organizer_roles', 'hackathon_rounds',
-    'hackathons', 'hackathon_templates', 'workspace_invites',
+    'hackathons', 'hackathon_templates', 'hackathon_notification_config', 'workspace_invites',
     'workspace_members', 'workspaces', 'platform_admins', 'session', 'account', 'users', 'user',
   ];
   for (const table of tables) {

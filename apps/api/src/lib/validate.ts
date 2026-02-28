@@ -83,3 +83,25 @@ function formatZodErrors(error: ZodError): Array<{ field: string; message: strin
     message: issue.message,
   }));
 }
+
+/**
+ * Safely parse an integer from a query parameter string.
+ * Returns fallback if the value is missing, empty, or not a valid integer.
+ */
+export function safeParseInt(value: string | undefined | null, fallback: number): number {
+  if (value == null || value === '') return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+/**
+ * Safe JSON.parse that returns fallback on any error.
+ */
+export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (value == null) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}

@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
+import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
-import { validateBody } from '../lib/validate.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { z } from 'zod';
 
 const createRoundBodySchema = z.object({
@@ -21,6 +22,8 @@ const updateRoundBodySchema = z.object({
   submission_deadline: z.string().nullable().optional(),
   started_at: z.string().nullable().optional(),
   completed_at: z.string().nullable().optional(),
+  scoring_opens_at: z.string().nullable().optional(),
+  scoring_closes_at: z.string().nullable().optional(),
 });
 
 const initializeRoundSchema = z.object({
@@ -37,6 +40,7 @@ rounds.use('/*', hackathonContext);
 // Create round
 rounds.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
   const body = await validateBody(c, createRoundBodySchema);
   if (body instanceof Response) return body;
 
@@ -48,6 +52,14 @@ rounds.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, hackathon.id, body.round_number, body.name, roundType,
     'upcoming', 0, body.submission_deadline ?? null, now, now).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'round.created', entity_type: 'hackathon_round', entity_id: id,
+      details: { name: body.name, round_number: body.round_number },
+    })
+  );
 
   const created = await c.env.DB.prepare('SELECT * FROM hackathon_rounds WHERE id = ?').bind(id).first();
   return successResponse(c, created, { status: 201 });
@@ -127,10 +139,19 @@ rounds.patch('/:roundId/initialize', authMiddleware, requireRole('co_organizer')
 // Delete round
 rounds.delete('/:roundId', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
   const roundId = c.req.param('roundId');
   await c.env.DB.prepare(
     'DELETE FROM hackathon_rounds WHERE id = ? AND hackathon_id = ?'
   ).bind(roundId, hackathon.id).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'round.deleted', entity_type: 'hackathon_round', entity_id: roundId,
+    })
+  );
+
   return successResponse(c, { deleted: true });
 });
 
@@ -140,8 +161,8 @@ rounds.delete('/:roundId', authMiddleware, requireRole('co_organizer'), async (c
 rounds.get('/:roundId/results', async (c) => {
   const hackathon = c.get('hackathon')!;
   const roundId = c.req.param('roundId');
-  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10), 1), 100);
-  const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 50), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
 
   const results = await c.env.DB.prepare(`
     SELECT rr.*, t.name as team_name, t.status as team_status

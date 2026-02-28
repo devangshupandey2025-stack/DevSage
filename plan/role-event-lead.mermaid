@@ -1,11 +1,11 @@
 ---
-title: "Event Lead(s) — Student Coordinator User Flow"
+title: "Event Lead(s) — Hackathon Organizer User Flow"
 ---
 
 flowchart TD
-    %% ── Onboarding ─────────────────────────────
-    subgraph ONBOARD["📩 Onboarding"]
-        O1[Receive invite from Workspace Manager]
+    %% ── Onboarding ─────────────────────────
+    subgraph ONBOARD["Onboarding"]
+        O1[Receive invite from Workspace Admin]
         O2[Click invite → platform.devsage.org]
         O3[Sign up / Log in]
         O4[Accept hackathon invite]
@@ -13,41 +13,40 @@ flowchart TD
 
     O1 --> O2 --> O3 --> O4
 
-    %% ── Configuration ──────────────────────────
-    subgraph CONFIG["⚙️ Configure — Draft Phase"]
+    %% ── Configuration ──────────────────────
+    subgraph CONFIG["Configure — Draft Phase"]
         CF1["Set Up Rounds
-(name, type: elimination or scoring-only)"]
+(name, deadlines)"]
         CF2["Define Rubric per round —
 weighted scoring"]
         CF3["Invite Judges
 (invite link or create account)"]
         CF4["Configure Settings
 (registration, tags, repo, timezone)"]
-        CF5[Pre-event Announcements]
+        CF5["Configure Theming
+(logo, colors, copy)"]
+        CF6[Pre-event Announcements]
     end
 
     O4 --> CONFIG
 
-    %% ── Participant Seeding (Private) ──────────
-    subgraph SEED["📋 Participant Seeding (Private Hackathons)"]
-        SE1[Upload Excel file]
-        SE2{"Excel mode?"}
+    %% ── Participant Seeding (Private) ──────
+    subgraph SEED["Participant Seeding (Private)"]
+        SE1[Upload participant data]
+        SE2{"Seeding mode?"}
         SE3["Mode A: Full Structure
 (teams + roles pre-defined)"]
         SE4["Mode B: Leaders Only
 (leaders recruit members)"]
-        SE5["Mode C: Participants Only
-(self-organize)"]
     end
 
     CONFIG --> SEED
     SE1 --> SE2
     SE2 -->|A| SE3
     SE2 -->|B| SE4
-    SE2 -->|C| SE5
 
-    %% ── Activation ─────────────────────────────
-    subgraph ACTIVATE["🚀 Activation"]
+    %% ── Activation ─────────────────────────
+    subgraph ACTIVATE["Activation"]
         A1["Transition: draft → active"]
         A2[Deadline alarm set in Durable Object]
         A3[Participants can register & submit]
@@ -57,8 +56,8 @@ weighted scoring"]
     CONFIG --> A1
     A1 --> A2 --> A3
 
-    %% ── Active Monitoring ──────────────────────
-    subgraph MONITOR["📊 Active Monitoring"]
+    %% ── Active Monitoring ──────────────────
+    subgraph MONITOR["Active Monitoring"]
         M1[Track Teams]
         M2[Review Submissions]
         M3[Post Announcements]
@@ -69,42 +68,37 @@ weighted scoring"]
 
     A3 --> MONITOR
 
-    %% ── Judging Phase ──────────────────────────
-    subgraph JUDGING["⚖️ Judging Phase"]
-        J1["Transition: active → judging
-(opens judging window)"]
+    %% ── Judging Phase ──────────────────────
+    subgraph JUDGING["Judging Phase"]
+        J1["Transition: active → judging"]
         J2["Assign judges to submissions
 (handle COI reassignments)"]
         J3[Monitor scoring progress]
-        J4["Window closes: on transition out
-or configured duration elapses"]
     end
 
-    MONITOR --> J1 --> J2 --> J3 --> J4
+    MONITOR --> J1 --> J2 --> J3
 
-    %% ── Multi-Round Cycle ──────────────────────
-    subgraph ROUNDS["🔄 Multi-Round Cycle"]
+    %% ── Multi-Round Cycle ──────────────────
+    subgraph ROUNDS["Multi-Round Cycle"]
         MR1[Publish round results]
-        MR2{"Round type?"}
-        MR3["Elimination:
-select advancing teams"]
-        MR4["Eliminated teams — view only,
-can disband"]
-        MR5["Scoring-only:
-all teams ranked, none eliminated"]
+        MR2{"Eliminate
+teams?"}
+        MR3["Select advancing teams"]
+        MR4["Eliminated teams — view only"]
+        MR5["All teams proceed"]
         MR6{More rounds?}
-        MR7[All continuing teams → next round]
+        MR7[Continuing teams → next round]
     end
 
-    J4 --> MR1 --> MR2
-    MR2 -->|Elimination| MR3 --> MR4
+    J3 --> MR1 --> MR2
+    MR2 -->|Yes| MR3 --> MR4
     MR3 --> MR6
-    MR2 -->|Scoring-only| MR5 --> MR6
+    MR2 -->|No| MR5 --> MR6
     MR6 -->|Yes| MR7 --> MONITOR
     MR6 -->|No| COMPLETE
 
-    %% ── Completion ─────────────────────────────
-    subgraph COMPLETE["🏆 Completion"]
+    %% ── Completion ─────────────────────────
+    subgraph COMPLETE["Completion"]
         CO1["Transition: judging → completed"]
         CO2[Publish final results]
         CO3["Optional: archive later"]
@@ -113,7 +107,7 @@ all teams ranked, none eliminated"]
 
     CO1 --> CO2 --> CO3 --> CO4
 
-    %% ── Styling ─────────────────────────────────
+    %% ── Styling ─────────────────────────────
     classDef onboard fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
     classDef config fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
     classDef seed fill:#1e1e2e,stroke:#fab387,color:#cdd6f4

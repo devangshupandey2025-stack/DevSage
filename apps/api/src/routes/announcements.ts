@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse } from '../lib/response.js';
+import { insertAuditEvent } from '../lib/audit.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
@@ -43,8 +44,8 @@ announcements.get('/', async (c) => {
 // Create announcement (organizer+)
 announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
-  const user = c.get('user');
-  
+  const user = c.get('user')!;
+
   const body = await validateBody(c, createAnnouncementSchema);
   if (body instanceof Response) return body;
 
@@ -53,7 +54,30 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
   await c.env.DB.prepare(
     `INSERT INTO announcements (id, hackathon_id, author_id, title, content, pinned, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, hackathon.id, user?.id, body.title, body.content, body.pinned ? 1 : 0, now, now).run();
+  ).bind(id, hackathon.id, user.id, body.title, body.content, body.pinned ? 1 : 0, now, now).run();
+
+  // Dispatch notification to all hackathon participants
+  c.executionCtx.waitUntil(
+    c.env.NOTIFICATION_QUEUE.send({
+      type: 'announcement.created',
+      hackathon_id: hackathon.id,
+      actor_id: user.id,
+      data: { announcement_id: id, title: body.title },
+    })
+  );
+
+  // Audit trail
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id,
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'announcement.created',
+      entity_type: 'announcement',
+      entity_id: id,
+      details: { title: body.title },
+    })
+  );
 
   const created = await c.env.DB.prepare(
     `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
@@ -67,6 +91,8 @@ announcements.post('/', authMiddleware, requireRole('co_organizer'), async (c) =
 
 // Update announcement (organizer+)
 announcements.patch('/:announcementId', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
   const announcementId = c.req.param('announcementId');
   const body = await validateBody(c, updateAnnouncementSchema);
   if (body instanceof Response) return body;
@@ -97,6 +123,18 @@ announcements.patch('/:announcementId', authMiddleware, requireRole('co_organize
 
   await c.env.DB.prepare(`UPDATE announcements SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id,
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'announcement.updated',
+      entity_type: 'announcement',
+      entity_id: announcementId,
+      changes: body,
+    })
+  );
+
   const updated = await c.env.DB.prepare(
     `SELECT a.*, u.name as author_name, u.avatar_url as author_avatar
      FROM announcements a
@@ -109,8 +147,23 @@ announcements.patch('/:announcementId', authMiddleware, requireRole('co_organize
 
 // Delete announcement (organizer+)
 announcements.delete('/:announcementId', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const user = c.get('user')!;
   const announcementId = c.req.param('announcementId');
+
   await c.env.DB.prepare('DELETE FROM announcements WHERE id = ?').bind(announcementId).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id,
+      actor_id: user.id,
+      actor_type: 'user',
+      action: 'announcement.deleted',
+      entity_type: 'announcement',
+      entity_id: announcementId,
+    })
+  );
+
   return successResponse(c, { deleted: true });
 });
 

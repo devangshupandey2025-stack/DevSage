@@ -318,4 +318,92 @@ workspaces.post('/invites/token/:token/decline', authMiddleware, async (c) => {
   return successResponse(c, { declined: true });
 });
 
+// ─── Workspace Deletion (GAP-010) ────────────────────────────
+
+// Soft-delete workspace (owner only, all hackathons must be draft/archived)
+workspaces.delete('/:workspaceId', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const workspaceId = c.req.param('workspaceId');
+
+  const workspaceRole = await getWorkspaceRole(c, workspaceId, user.id);
+  if (!workspaceRole || workspaceRole !== 'owner') {
+    return errorResponse(c, 403, 'FORBIDDEN', 'Only owner can delete workspace');
+  }
+
+  const activeHackathons = await c.env.DB.prepare(
+    "SELECT COUNT(*) as count FROM hackathons WHERE workspace_id = ? AND status NOT IN ('draft', 'archived')"
+  ).bind(workspaceId).first<{ count: number }>();
+
+  if ((activeHackathons?.count ?? 0) > 0) {
+    return errorResponse(c, 409, 'ACTIVE_HACKATHONS', 'All hackathons must be draft or archived before deleting workspace');
+  }
+
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    'UPDATE workspaces SET deleted_at = ? WHERE id = ?'
+  ).bind(now, workspaceId).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id, actor_type: 'user',
+      action: 'workspace.deleted', entity_type: 'workspace', entity_id: workspaceId,
+      details: { deleted_at: now },
+    })
+  );
+
+  return successResponse(c, { deleted: true });
+});
+
+// ─── Workspace Ownership Transfer (GAP-011) ──────────────────
+
+const transferOwnershipSchema = z.object({
+  new_owner_id: z.string().uuid(),
+});
+
+// Transfer workspace ownership
+workspaces.post('/:workspaceId/transfer', authMiddleware, async (c) => {
+  const user = c.get('user')!;
+  const workspaceId = c.req.param('workspaceId');
+
+  const workspaceRole = await getWorkspaceRole(c, workspaceId, user.id);
+  if (!workspaceRole || workspaceRole !== 'owner') {
+    return errorResponse(c, 403, 'FORBIDDEN', 'Only owner can transfer ownership');
+  }
+
+  const body = await validateBody(c, transferOwnershipSchema);
+  if (body instanceof Response) return body;
+
+  if (body.new_owner_id === user.id) {
+    return errorResponse(c, 400, 'VALIDATION_ERROR', 'Cannot transfer ownership to yourself');
+  }
+
+  // Verify new owner is an existing workspace member
+  const newOwnerMembership = await c.env.DB.prepare(
+    'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? LIMIT 1'
+  ).bind(workspaceId, body.new_owner_id).first<{ role: string }>();
+
+  if (!newOwnerMembership) {
+    return errorResponse(c, 404, 'NOT_FOUND', 'New owner must be an existing workspace member');
+  }
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "UPDATE workspace_members SET role = 'owner' WHERE workspace_id = ? AND user_id = ?"
+    ).bind(workspaceId, body.new_owner_id),
+    c.env.DB.prepare(
+      "UPDATE workspace_members SET role = 'admin' WHERE workspace_id = ? AND user_id = ?"
+    ).bind(workspaceId, user.id),
+  ]);
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      actor_id: user.id, actor_type: 'user',
+      action: 'workspace.ownership_transferred', entity_type: 'workspace', entity_id: workspaceId,
+      details: { new_owner_id: body.new_owner_id, previous_owner_id: user.id },
+    })
+  );
+
+  return successResponse(c, { transferred: true, new_owner_id: body.new_owner_id });
+});
+
 export default workspaces;

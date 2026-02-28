@@ -6,7 +6,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
 import { generateInviteCode } from '../lib/utils.js';
-import { validateBody } from '../lib/validate.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { createTeamSchema, joinTeamSchema, transferLeadershipSchema } from '@devsage/shared';
 import { z } from 'zod';
 
@@ -145,8 +145,8 @@ teams.post('/', authMiddleware, async (c) => {
 // List teams in hackathon
 teams.get('/', async (c) => {
   const hackathon = c.get('hackathon')!;
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(

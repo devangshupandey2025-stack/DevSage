@@ -4,13 +4,14 @@ import { successResponse, errorResponse, cursorPaginatedResponse } from '../lib/
 import { authMiddleware } from '../middleware/auth.js';
 import { hackathonContext } from '../middleware/hackathon.js';
 import { requireRole } from '../middleware/role.js';
+import { safeParseInt, safeJsonParse } from '../lib/validate.js';
 
 const audit = new Hono<AppEnv>();
 
 // Query audit events for a hackathon (organizer+)
 audit.get('/', hackathonContext, authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
   const cursor = c.req.query('cursor');
   const eventType = c.req.query('action');
   const entityType = c.req.query('entity_type');
@@ -20,7 +21,10 @@ audit.get('/', hackathonContext, authMiddleware, requireRole('co_organizer'), as
   let query = 'SELECT * FROM audit_events WHERE hackathon_id = ?';
   const params: unknown[] = [hackathon.id];
 
-  if (cursor) { query += ' AND sequence > ?'; params.push(parseInt(cursor)); }
+  if (cursor) {
+    const cursorVal = safeParseInt(cursor, 0);
+    if (cursorVal > 0) { query += ' AND sequence > ?'; params.push(cursorVal); }
+  }
   if (eventType) { query += ' AND action = ?'; params.push(eventType); }
   if (entityType) { query += ' AND entity_type = ?'; params.push(entityType); }
   if (entityId) { query += ' AND entity_id = ?'; params.push(entityId); }
@@ -36,11 +40,11 @@ audit.get('/', hackathonContext, authMiddleware, requireRole('co_organizer'), as
   const data = hasMore ? results.slice(0, limit) : results;
   const nextCursor = hasMore && data.length > 0 ? String(data[data.length - 1].sequence) : null;
 
-  // Parse JSON fields
+  // Parse JSON fields safely (never crash on corrupt data)
   const parsed = data.map(row => ({
     ...row,
-    details: row.details ? JSON.parse(row.details as string) : null,
-    changes: row.changes ? JSON.parse(row.changes as string) : null,
+    details: safeJsonParse(row.details as string | null, null),
+    changes: safeJsonParse(row.changes as string | null, null),
   }));
 
   return cursorPaginatedResponse(c, parsed, nextCursor);

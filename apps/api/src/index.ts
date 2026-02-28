@@ -27,7 +27,9 @@ import organizers from './routes/organizers.js';
 import announcements from './routes/announcements.js';
 import judgePortal from './routes/judge-portal.js';
 import hackathonRequests from './routes/hackathon-requests.js';
+import templates from './routes/templates.js';
 import auth from './routes/auth.js';
+import twoFactor from './routes/two-factor.js';
 
 // Queue & Cron
 import { queueHandler } from './queue/index.js';
@@ -70,7 +72,9 @@ app.route('/api/v1/notifications', notifications);
 app.route('/api/v1/invites', invites);
 app.route('/api/v1/judge', judgePortal);
 app.route('/api/v1/hackathon-requests', hackathonRequests);
+app.route('/api/v1/templates', templates);
 app.route('/auth', auth);
+app.route('/auth/2fa', twoFactor);
 app.route('/webhooks', webhooks);
 
 // Export Worker handlers

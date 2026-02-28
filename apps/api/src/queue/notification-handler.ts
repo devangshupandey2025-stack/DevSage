@@ -48,64 +48,74 @@ export async function handleNotificationMessage(
     env,
   );
 
-  // ── Fan-out to each recipient ──────────────────────────────────
-  let anyEmailFailed = false;
+  // ── Load notification preferences (GAP-012) ────────────────────
+  const prefMap = new Map<string, { email_enabled: number; in_app_enabled: number }>();
+  if (hackathon_id && recipients.length > 0) {
+    const prefs = await env.DB.prepare(
+      'SELECT user_id, email_enabled, in_app_enabled FROM hackathon_notification_config WHERE hackathon_id = ?'
+    ).bind(hackathon_id).all<{ user_id: string; email_enabled: number; in_app_enabled: number }>();
+    for (const p of prefs.results || []) {
+      prefMap.set(p.user_id, p);
+    }
+  }
 
-  for (const recipient of recipients) {
-    const now = new Date().toISOString();
+  // ── Batch in-app notifications (sequential DB writes) ─────────
+  const now = new Date().toISOString();
+  const notifIds: Array<{ notifId: string; recipient: typeof recipients[0] }> = [];
 
-    // In-app notification
-    const notifId = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, link, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        notifId,
-        recipient.user_id,
-        hackathon_id ?? null,
-        type,
-        content.title,
-        content.body,
-        content.link,
-        now,
-      )
-      .run();
+  // Filter recipients based on in-app preferences
+  const inAppRecipients = recipients.filter((r) => {
+    const pref = prefMap.get(r.user_id);
+    return !pref || pref.in_app_enabled !== 0; // default to enabled
+  });
 
-    // Email
-    if (recipient.email) {
+  // Insert in-app notifications in batches of 20 (D1 batch limit)
+  for (let i = 0; i < inAppRecipients.length; i += 20) {
+    const chunk = inAppRecipients.slice(i, i + 20);
+    const statements = chunk.map((recipient) => {
+      const notifId = crypto.randomUUID();
+      notifIds.push({ notifId, recipient });
+      return env.DB.prepare(
+        `INSERT INTO in_app_notifications (id, user_id, hackathon_id, type, title, body, link, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(notifId, recipient.user_id, hackathon_id ?? null, type, content.title, content.body, content.link, now);
+    });
+    await env.DB.batch(statements);
+  }
+
+  // ── Parallel email fan-out ──────────────────────────────────────
+  // Filter by email preference (GAP-012)
+  const emailRecipients = notifIds.filter(n => {
+    if (!n.recipient.email) return false;
+    const pref = prefMap.get(n.recipient.user_id);
+    return !pref || pref.email_enabled !== 0; // default to enabled
+  });
+  const emailResults = await Promise.allSettled(
+    emailRecipients.map(async ({ notifId, recipient }) => {
       const emailSent = await sendEmail(env, {
         to: recipient.email,
         subject: content.title,
         html: content.html,
       });
 
-      if (!emailSent) anyEmailFailed = true;
-
-      const deliveryId = crypto.randomUUID();
       await env.DB.prepare(
         `INSERT INTO notification_deliveries (id, event_id, user_id, channel, notification_type, status, created_at)
          VALUES (?, ?, ?, 'email', ?, ?, ?)`,
-      )
-        .bind(
-          deliveryId,
-          notifId,
-          recipient.user_id,
-          type,
-          emailSent ? 'sent' : 'failed',
-          now,
-        )
-        .run();
-    }
-  }
+      ).bind(crypto.randomUUID(), notifId, recipient.user_id, type, emailSent ? 'sent' : 'failed', now).run();
 
-  // ── Mark as processed only if all emails sent successfully ─────
+      return emailSent;
+    }),
+  );
+
+  const anyEmailFailed = emailResults.some(
+    r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value),
+  );
+
+  // ── Mark as processed ───────────────────────────────────────────
   if (!anyEmailFailed) {
     await env.DB.prepare(
       'INSERT OR IGNORE INTO notification_idempotency (id, idempotency_key, created_at) VALUES (?, ?, ?)',
-    )
-      .bind(crypto.randomUUID(), idempotencyKey, new Date().toISOString())
-      .run();
+    ).bind(crypto.randomUUID(), idempotencyKey, now).run();
   }
 }
 
@@ -205,6 +215,13 @@ async function generateNotificationContent(
       return simpleContent(
         'Results Published',
         'The hackathon results have been published!',
+        null,
+      );
+
+    case 'announcement.created':
+      return simpleContent(
+        `New Announcement: ${data?.title ?? ''}`,
+        `A new announcement has been posted${data?.title ? `: ${data.title}` : ''}.`,
         null,
       );
 

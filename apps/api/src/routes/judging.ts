@@ -8,13 +8,47 @@ import { requireRole } from '../middleware/role.js';
 import { assignSubmissionsRoundRobin, computeLeaderboard } from '../services/judging-service.js';
 import { hashPassword } from '../lib/password.js';
 import { generateETag, checkConditionalRequest } from '../lib/etag.js';
-import { KV_TTL } from '../lib/constants.js';
-import { validateBody } from '../lib/validate.js';
+import { KV_TTL, HTTP_CACHE } from '../lib/constants.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { createRubricCriterionSchema, updateRubricCriterionSchema } from '@devsage/shared';
 import { z } from 'zod';
 
 const judging = new Hono<AppEnv>();
 judging.use('/*', hackathonContext);
+
+// === Judge Guidelines (GAP-005) ===
+
+// Get judge guidelines
+judging.get('/guidelines', async (c) => {
+  const hackathon = c.get('hackathon')!;
+  const result = await c.env.DB.prepare(
+    'SELECT judge_guidelines FROM hackathons WHERE id = ?'
+  ).bind(hackathon.id).first<{ judge_guidelines: string | null }>();
+  return successResponse(c, { guidelines: result?.judge_guidelines ?? null });
+});
+
+// Update judge guidelines (organizer+)
+judging.patch('/guidelines', authMiddleware, requireRole('co_organizer'), async (c) => {
+  const user = c.get('user')!;
+  const hackathon = c.get('hackathon')!;
+  const body = await validateBody(c, z.object({
+    guidelines: z.string().max(10000).nullable(),
+  }));
+  if (body instanceof Response) return body;
+
+  await c.env.DB.prepare(
+    'UPDATE hackathons SET judge_guidelines = ?, updated_at = ? WHERE id = ?'
+  ).bind(body.guidelines, new Date().toISOString(), hackathon.id).run();
+
+  c.executionCtx.waitUntil(
+    insertAuditEvent(c.env.DB, {
+      hackathon_id: hackathon.id, actor_id: user.id, actor_type: 'user',
+      action: 'hackathon.guidelines_updated', entity_type: 'hackathon', entity_id: hackathon.id,
+    })
+  );
+
+  return successResponse(c, { guidelines: body.guidelines });
+});
 
 // === Rubric CRUD (organizer+) ===
 
@@ -206,18 +240,28 @@ judging.post('/judges/bulk', authMiddleware, requireRole('co_organizer'), async 
   return successResponse(c, results, { status: 201 });
 });
 
-// List judges (public - for overview metrics)
+// List judges (public - for overview metrics, paginated)
 judging.get('/judges', async (c) => {
   const hackathon = c.get('hackathon')!;
-  const judges = await c.env.DB.prepare(`
-    SELECT j.id, j.invite_status as status, j.user_id, j.track_id, j.invited_at, j.responded_at,
-           u.name as display_name, u.email, u.avatar_url as image
-    FROM judges j
-    LEFT JOIN users u ON j.user_id = u.id
-    WHERE j.hackathon_id = ?
-    ORDER BY j.invited_at ASC
-  `).bind(hackathon.id).all();
-  return successResponse(c, judges.results || []);
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 50), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
+
+  const [judges, count] = await Promise.all([
+    c.env.DB.prepare(`
+      SELECT j.id, j.invite_status as status, j.user_id, j.track_id, j.invited_at, j.responded_at,
+             u.name as display_name, u.email, u.avatar_url as image
+      FROM judges j
+      LEFT JOIN users u ON j.user_id = u.id
+      WHERE j.hackathon_id = ?
+      ORDER BY j.invited_at ASC
+      LIMIT ? OFFSET ?
+    `).bind(hackathon.id, limit, offset).all(),
+    c.env.DB.prepare(
+      'SELECT COUNT(*) as total FROM judges WHERE hackathon_id = ?'
+    ).bind(hackathon.id).first<{ total: number }>(),
+  ]);
+
+  return paginatedResponse(c, judges.results || [], count?.total ?? 0, limit, offset);
 });
 
 // Remove judge
@@ -329,7 +373,8 @@ judging.post('/judges/:judgeId/accept', authMiddleware, requireRole('co_organize
 // Auto-assign submissions to judges (round-robin)
 judging.post('/assign', authMiddleware, requireRole('co_organizer'), async (c) => {
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ round_id?: string }>().catch((): { round_id?: string } => ({}));
+  const body = await validateBody(c, z.object({ round_id: z.string().min(1).optional() }));
+  if (body instanceof Response) return body;
 
   const result = await assignSubmissionsRoundRobin(c.env.DB, hackathon.id, body.round_id);
   return successResponse(c, result);
@@ -434,20 +479,40 @@ judging.post('/submissions/:submissionId/scores', authMiddleware, requireRole('j
 
   if (!assignment) return errorResponse(c, 403, 'NOT_ASSIGNED', 'Not assigned to this submission');
 
+  // Enforce judging time windows (GAP-004)
+  const activeRound = await c.env.DB.prepare(
+    `SELECT scoring_opens_at, scoring_closes_at FROM hackathon_rounds
+     WHERE hackathon_id = ? AND status = 'active' ORDER BY round_number ASC LIMIT 1`
+  ).bind(hackathon.id).first<{ scoring_opens_at: string | null; scoring_closes_at: string | null }>();
+
+  if (activeRound) {
+    const now = new Date();
+    if (activeRound.scoring_opens_at && now < new Date(activeRound.scoring_opens_at)) {
+      return errorResponse(c, 403, 'SCORING_NOT_OPEN', 'Scoring has not opened yet for this round');
+    }
+    if (activeRound.scoring_closes_at && now > new Date(activeRound.scoring_closes_at)) {
+      return errorResponse(c, 403, 'SCORING_CLOSED', 'Scoring window has closed for this round');
+    }
+  }
+
   const now = new Date().toISOString();
 
-  // Upsert scores
-  for (const s of body.scores) {
+  // Batch upsert scores (eliminates N+1)
+  const scoreStatements = body.scores.map((s) => {
     const round = s.round ?? 1;
-    const assignmentId = s.assignment_id;
-    await c.env.DB.prepare(`
+    return c.env.DB.prepare(`
       INSERT INTO scores (id, submission_id, judge_id, criteria_id, assignment_id, score, comment, round, scored_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(submission_id, judge_id, criteria_id, round) DO UPDATE SET score = ?, comment = ?, scored_at = ?
     `).bind(
-      crypto.randomUUID(), submissionId, judge.id, s.criteria_id, assignmentId, s.score, s.comment ?? null, round, now,
+      crypto.randomUUID(), submissionId, judge.id, s.criteria_id, s.assignment_id, s.score, s.comment ?? null, round, now,
       s.score, s.comment ?? null, now
-    ).run();
+    );
+  });
+
+  // Execute in batches of 20 to stay under D1 param limit
+  for (let i = 0; i < scoreStatements.length; i += 20) {
+    await c.env.DB.batch(scoreStatements.slice(i, i + 20));
   }
 
   // Update assignment status
@@ -500,7 +565,7 @@ judging.get('/leaderboard', async (c) => {
       return c.body(null, 304);
     }
     c.header('ETag', etag);
-    c.header('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+    c.header('Cache-Control', `public, max-age=${HTTP_CACHE.LEADERBOARD_MAX_AGE}, stale-while-revalidate=${HTTP_CACHE.LEADERBOARD_SWR}`);
     return successResponse(c, data);
   }
 
@@ -632,7 +697,8 @@ judging.post('/assignments/:assignmentId/reassign', authMiddleware, requireRole(
 judging.post('/results/publish', authMiddleware, requireRole('organizer'), async (c) => {
   const user = c.get('user')!;
   const hackathon = c.get('hackathon')!;
-  const body = await c.req.json<{ round_id?: string }>().catch((): { round_id?: string } => ({}));
+  const body = await validateBody(c, z.object({ round_id: z.string().min(1).optional() }));
+  if (body instanceof Response) return body;
 
   if (hackathon.status !== 'judging' && hackathon.status !== 'completed') {
     return errorResponse(c, 409, 'INVALID_STATE', 'Cannot publish results in current state');

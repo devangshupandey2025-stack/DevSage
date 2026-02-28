@@ -39,29 +39,34 @@ export async function assignSubmissionsRoundRobin(
     (existing.results || []).map(a => `${a.judge_id}:${a.team_id}:${a.round}`)
   );
 
-  // Round-robin assign
-  let assigned = 0;
+  // Round-robin assign — collect statements and batch
   const judgeIds = judges.results.map(j => j.id);
   let judgeIndex = 0;
   const now = new Date().toISOString();
   const round = 1;
+  const statements: D1PreparedStatement[] = [];
 
   for (const sub of submissions.results) {
     const judgeId = judgeIds[judgeIndex % judgeIds.length];
     const key = `${judgeId}:${sub.team_id}:${round}`;
 
     if (!existingSet.has(key)) {
-      const id = crypto.randomUUID();
-      await db.prepare(
-        'INSERT OR IGNORE INTO judge_assignments (id, hackathon_id, judge_id, team_id, submission_id, round, status, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(id, hackathonId, judgeId, sub.team_id, sub.id, round, 'pending', now).run();
-      assigned++;
+      statements.push(
+        db.prepare(
+          'INSERT OR IGNORE INTO judge_assignments (id, hackathon_id, judge_id, team_id, submission_id, round, status, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(crypto.randomUUID(), hackathonId, judgeId, sub.team_id, sub.id, round, 'pending', now)
+      );
     }
 
     judgeIndex++;
   }
 
-  return { assigned };
+  // Execute in batches of 20 (D1 batch limit)
+  for (let i = 0; i < statements.length; i += 20) {
+    await db.batch(statements.slice(i, i + 20));
+  }
+
+  return { assigned: statements.length };
 }
 
 /**

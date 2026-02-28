@@ -1,6 +1,6 @@
 # Judge — Scoring & Evaluation User Flow
 
-> Role: Judge | Scope: Per-hackathon | App: `judge.devsage.org` | Count: Multiple per hackathon
+> Role: `judge` (per-hackathon) | Scope: Per-hackathon | App: `judge.devsage.org`
 
 ---
 
@@ -18,6 +18,8 @@ Industry professionals, faculty, or domain experts invited to evaluate hackathon
 | **Credentials Provided** | Event Lead creates judge account on Platform → judge receives email + temporary password → logs into `judge.devsage.org` → must reset password on first login |
 
 > Both methods land the judge on `judge.devsage.org`. Judges authenticate with **email/password only** — no OAuth.
+>
+> **Forgot password:** Judges can request a password reset from the `judge.devsage.org` login page. A reset link is sent to their registered email. This is self-service — no Event Lead intervention needed.
 
 ---
 
@@ -48,7 +50,7 @@ Judges can declare conflicts at any point before they score a given submission �
 2. **Declare conflicts** — flag any team where the judge has a personal/professional connection
 3. Conflicted submissions are reassigned by the Event Lead
 4. Judge cannot score submissions they've flagged
-5. Once a submission has been scored by this judge, they can no longer flag it as conflicted
+5. Once scores for a submission have been **submitted** by this judge, they can no longer flag it as conflicted. Partial/draft entries that haven't been submitted don't count — the judge can still declare a conflict and discard the draft
 
 ### 4. Scoring (During Judging Window)
 
@@ -57,7 +59,7 @@ The judging window is a tight **1–2 hour period**. It opens when the Event Lea
 1. Judging window opens → judge receives notification
 2. View assigned submissions:
    - Team name
-   - Repo link — read-only access to the submission commit/tag, served through the judge dashboard via the DevSage GitHub App (judges are **not** added as GitHub collaborators)
+   - Repo link — read-only access to the submitted commit/tag via the judge dashboard. The backend uses the DevSage GitHub App's installation token to fetch repo contents (file tree + file content at the pinned SHA) and serves them through the judge API. Judges see a code browser in the dashboard — they are **not** added as GitHub collaborators and never get direct GitHub access
    - Submission metadata (tag, SHA, timestamp, late flag)
 3. For each assigned submission:
    - Review the code/project via repo link
@@ -81,9 +83,17 @@ For hackathons with multiple rounds:
 ### 6. Post-Judging
 
 1. Judging window closes → scores locked (no further edits)
-2. Judge can view their own submitted scores (read-only)
-3. Final results published by Event Lead — judge can see the leaderboard
-4. Judge's involvement ends after the final round
+2. **If the judge didn't finish:** any unscored assignments are flagged for the Event Lead. The Event Lead may extend the window, reassign to another judge, or accept partial coverage. The judge is not penalized — it's an operational issue, not a judge failure
+3. Judge can view their own submitted scores (read-only)
+4. Final results published by Event Lead — judge can see the leaderboard
+5. Judge's involvement ends after the final round
+
+### How Scores Are Used
+
+- Each judge's scores are per-criterion, per-submission
+- When multiple judges score the same submission, their per-criterion scores are **averaged**, then the rubric weights are applied to compute the final submission score
+- Judges cannot see other judges' scores (blind judging) — only the Event Lead sees the aggregate
+- If a judge's total score for a submission is a significant outlier (>30% deviation from median), the Event Lead is alerted for review
 
 ---
 
@@ -131,3 +141,4 @@ For hackathons with multiple rounds:
 - Repo access is read-only through the judge dashboard (via DevSage GitHub App), not direct GitHub access
 - Cannot access the Platform app or Admin Dashboard
 - No GitHub OAuth — email/password auth only
+- All deadlines displayed in the hackathon's configured timezone (stored as UTC internally)

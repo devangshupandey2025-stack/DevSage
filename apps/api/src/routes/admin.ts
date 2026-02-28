@@ -4,7 +4,7 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
 import { backfillAuditHashes, insertAuditEvent } from '../lib/audit.js';
-import { validateBody } from '../lib/validate.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { z } from 'zod';
 
 const addPlatformAdminSchema = z.object({
@@ -32,8 +32,8 @@ admin.use('/*', authMiddleware, requirePlatformAdmin);
 
 // List all users
 admin.get('/users', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const [rows, count] = await Promise.all([
     c.env.DB.prepare('SELECT id, email, name, avatar_url as image, created_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind(limit, offset).all(),
@@ -44,8 +44,8 @@ admin.get('/users', async (c) => {
 
 // List all hackathons
 admin.get('/hackathons', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const [rows, count] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM hackathons ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(limit, offset).all(),
     c.env.DB.prepare('SELECT COUNT(*) as total FROM hackathons').first<{ total: number }>(),
@@ -167,8 +167,8 @@ admin.patch('/hackathons/:hackathonId/rounds/:roundId/initialize', async (c) => 
 // ─── Invites ─────────────────────────────────────────────────
 
 admin.get('/invites', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '10'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 10), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const [rows, count] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM platform_invites ORDER BY created_at DESC LIMIT ? OFFSET ?')
       .bind(limit, offset).all(),

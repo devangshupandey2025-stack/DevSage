@@ -10,6 +10,8 @@ import { generateETag, checkConditionalRequest } from '../lib/etag.js';
 import { getHackathonDOStub } from '../lib/do-client.js';
 import { validateBody } from '../lib/validate.js';
 import { createHackathonSchema, updateHackathonSchema, transitionHackathonSchema } from '@devsage/shared';
+import { HTTP_CACHE } from '../lib/constants.js';
+import { safeParseInt } from '../lib/validate.js';
 
 // workspace_id can come from URL params, so it's optional in the body
 const createHackathonBodySchema = createHackathonSchema.extend({
@@ -52,6 +54,8 @@ const createHackathonHandler = async (c: Context<AppEnv>) => {
   let settings = body.settings ? JSON.stringify(body.settings) : '{}';
   let tracks = body.tracks ? JSON.stringify(body.tracks) : '[]';
   let prizes = body.prizes ? JSON.stringify(body.prizes) : '[]';
+  let templateRounds: Array<{ name: string; round_number: number; type?: string }> = [];
+  let templateRubric: Array<{ name: string; description?: string; max_score?: number; weight?: number; round?: number }> = [];
   if (body.template_id) {
     const template = await c.env.DB.prepare(
       'SELECT settings, tracks, rounds, rubric FROM hackathon_templates WHERE id = ?'
@@ -61,6 +65,8 @@ const createHackathonHandler = async (c: Context<AppEnv>) => {
     if (template) {
       settings = template.settings;
       tracks = template.tracks ?? tracks;
+      try { templateRounds = JSON.parse(template.rounds || '[]'); } catch { /* skip */ }
+      try { templateRubric = JSON.parse(template.rubric || '[]'); } catch { /* skip */ }
     }
   }
 
@@ -84,6 +90,32 @@ const createHackathonHandler = async (c: Context<AppEnv>) => {
   await c.env.DB.prepare(
     'INSERT INTO organizer_roles (id, hackathon_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
   ).bind(crypto.randomUUID(), id, user.id, 'organizer', now).run();
+
+  // Apply template rounds (API-002 fix)
+  if (templateRounds.length > 0) {
+    const roundStmts = templateRounds.map((r) =>
+      c.env.DB.prepare(
+        `INSERT INTO hackathon_rounds (id, hackathon_id, round_number, name, type, status, is_initialized, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'upcoming', 0, ?, ?)`
+      ).bind(crypto.randomUUID(), id, r.round_number, r.name, r.type ?? 'scoring_only', now, now)
+    );
+    for (let i = 0; i < roundStmts.length; i += 20) {
+      await c.env.DB.batch(roundStmts.slice(i, i + 20));
+    }
+  }
+
+  // Apply template rubric (API-002 fix)
+  if (templateRubric.length > 0) {
+    const rubricStmts = templateRubric.map((r, idx) =>
+      c.env.DB.prepare(
+        `INSERT INTO rubric_criteria (id, hackathon_id, name, description, max_score, weight, sort_order, round, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(crypto.randomUUID(), id, r.name, r.description ?? '', r.max_score ?? 10, r.weight ?? 1, idx, r.round ?? 1, now)
+    );
+    for (let i = 0; i < rubricStmts.length; i += 20) {
+      await c.env.DB.batch(rubricStmts.slice(i, i + 20));
+    }
+  }
 
   // Initialize DO
   const stub = getHackathonDOStub(c.env.HACKATHON_SM, id);
@@ -116,8 +148,8 @@ hackathons.post('/workspaces/:workspaceId/hackathons', authMiddleware, createHac
 
 // List hackathons (public)
 hackathons.get('/', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const status = c.req.query('status');
 
   let query = 'SELECT * FROM hackathons';
@@ -154,7 +186,7 @@ hackathons.get('/:slug', hackathonContext, async (c) => {
   }
 
   c.header('ETag', etag);
-  c.header('Cache-Control', 'public, max-age=10, stale-while-revalidate=30');
+  c.header('Cache-Control', `public, max-age=${HTTP_CACHE.HACKATHON_DETAIL_MAX_AGE}, stale-while-revalidate=${HTTP_CACHE.HACKATHON_DETAIL_SWR}`);
   return successResponse(c, full);
 });
 
@@ -221,29 +253,39 @@ hackathons.post('/:slug/transition', authMiddleware, hackathonContext, requireRo
   const stub = getHackathonDOStub(c.env.HACKATHON_SM, hackathon.id);
 
   // Auto-initialize DO if not yet initialized (handles seeded hackathons)
-  const initRes = await stub.fetch(new Request('http://do/initialize', {
-    method: 'POST',
-    body: JSON.stringify({
-      hackathon_id: hackathon.id,
-      status: hackathon.status,
-      submission_deadline: activeRound?.submission_deadline,
-    }),
-  }));
+  let initRes: Response;
+  try {
+    initRes = await stub.fetch(new Request('http://do/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        hackathon_id: hackathon.id,
+        status: hackathon.status,
+        submission_deadline: activeRound?.submission_deadline,
+      }),
+    }));
+  } catch {
+    return errorResponse(c, 503, 'DO_UNAVAILABLE', 'State machine unavailable');
+  }
   if (!initRes.ok) {
-    const initResult = await initRes.json() as { ok: boolean; error?: unknown };
+    const initResult = await initRes.json().catch(() => ({ ok: false, error: 'DO init failed' })) as { ok: boolean; error?: unknown };
     return c.json(initResult, initRes.status as 400 | 500);
   }
 
-  const doRes = await stub.fetch(new Request('http://do/transition', {
-    method: 'POST',
-    body: JSON.stringify({
-      target_status: body.target_status,
-      version: body.version,
-      submission_deadline: activeRound?.submission_deadline,
-    }),
-  }));
+  let doRes: Response;
+  try {
+    doRes = await stub.fetch(new Request('http://do/transition', {
+      method: 'POST',
+      body: JSON.stringify({
+        target_status: body.target_status,
+        version: body.version,
+        submission_deadline: activeRound?.submission_deadline,
+      }),
+    }));
+  } catch {
+    return errorResponse(c, 503, 'DO_UNAVAILABLE', 'State machine unavailable');
+  }
 
-  const result = await doRes.json() as { ok: boolean; data?: unknown; error?: unknown };
+  const result = await doRes.json().catch(() => ({ ok: false, error: 'DO transition failed' })) as { ok: boolean; data?: unknown; error?: unknown };
   if (!result.ok) {
     return c.json(result, doRes.status as 400 | 409);
   }

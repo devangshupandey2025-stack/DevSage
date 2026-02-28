@@ -198,7 +198,8 @@ export async function fetchGitHubUserProfile(accessToken: string): Promise<GitHu
   const emails = (await emailResponse.json()) as GitHubEmailResponse[];
   const primaryVerified = emails.find((email) => email.primary && email.verified);
   const fallbackVerified = emails.find((email) => email.verified);
-  const selectedEmail = user.email ?? primaryVerified?.email ?? fallbackVerified?.email ?? emails[0]?.email ?? null;
+  // Only use verified emails — never fall back to unverified addresses
+  const selectedEmail = primaryVerified?.email ?? fallbackVerified?.email ?? null;
 
   return {
     githubId: user.id,

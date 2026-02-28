@@ -1,0 +1,101 @@
+---
+title: "Workspace Managers — Owner & Admin User Flows"
+---
+
+flowchart TD
+    %% ── Owner Onboarding ─────────────────────
+    subgraph OWNER_ONBOARD["Owner Onboarding"]
+        OO1[Receive invite from Platform Admin]
+        OO2[Click invite → platform.devsage.org]
+        OO3[Sign up / Log in]
+        OO4[Accept workspace invite as Owner]
+    end
+
+    OO1 --> OO2 --> OO3 --> OO4
+
+    %% ── Workspace Setup ──────────────────────
+    subgraph SETUP["Workspace Setup (Owner)"]
+        S1[Select billing plan]
+        S2[Invite Club VPs as Admins]
+        S3[Admins accept invite]
+    end
+
+    OO4 --> S1 --> S2 --> S3
+
+    %% ── Admin Onboarding ─────────────────────
+    subgraph ADMIN_ONBOARD["Admin Onboarding"]
+        AO1[Receive invite from Owner]
+        AO2[Click invite → platform.devsage.org]
+        AO3[Sign up / Log in]
+        AO4[Accept workspace invite as Admin]
+    end
+
+    AO1 --> AO2 --> AO3 --> AO4
+
+    %% ── Hackathon Request ────────────────────
+    subgraph REQUEST["Hackathon Request (Admin)"]
+        R1[Navigate to workspace]
+        R2["Submit hackathon request
+(title, slug, dates, team sizes)"]
+        R3[Track request status]
+    end
+
+    AO4 --> R1 --> R2 --> R3
+    S3 -.->|Delegates to Admins| R1
+
+    %% ── Request Tracking ─────────────────────
+    subgraph TRACKING["Request Status"]
+        direction LR
+        T1([Submitted]) --> T2([Under Review]) --> T3([Approved / Rejected])
+    end
+
+    R3 -.-> TRACKING
+
+    %% ── On Approval ──────────────────────────
+    subgraph APPROVED["On Approval"]
+        A1["Hackathon created in draft state"]
+        A2["Dynamic page live at
+devsage.org/hackathons/:slug"]
+    end
+
+    T3 -.->|Approved| A1 --> A2
+
+    %% ── Staffing ─────────────────────────────
+    subgraph STAFF["Hackathon Staffing"]
+        ST1["Invite Event Leads
+onto the hackathon"]
+        ST2[Event Leads accept invite]
+        ST3["Event Leads take over
+day-to-day operations"]
+    end
+
+    A2 --> ST1 --> ST2 --> ST3
+
+    %% ── Ongoing Access ───────────────────────
+    subgraph ONGOING["Ongoing Access"]
+        G1[View hackathon analytics]
+        G2[Full hackathon access if needed]
+        G3["Oversight — delegates to
+Event Leads"]
+    end
+
+    ST3 --> ONGOING
+
+    %% ── Styling ──────────────────────────────
+    classDef owner fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    classDef setup fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    classDef admin fill:#1e1e2e,stroke:#fab387,color:#cdd6f4
+    classDef request fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    classDef tracking fill:#1e1e2e,stroke:#cba6f7,color:#cdd6f4
+    classDef approved fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    classDef staff fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+    classDef ongoing fill:#1e1e2e,stroke:#89dceb,color:#cdd6f4
+
+    class OWNER_ONBOARD owner
+    class SETUP setup
+    class ADMIN_ONBOARD admin
+    class REQUEST request
+    class TRACKING tracking
+    class APPROVED approved
+    class STAFF staff
+    class ONGOING ongoing

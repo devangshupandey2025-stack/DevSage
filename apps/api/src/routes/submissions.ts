@@ -4,7 +4,7 @@ import { successResponse, errorResponse, paginatedResponse } from '../lib/respon
 import { hackathonContext } from '../middleware/hackathon.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { insertAuditEvent } from '../lib/audit.js';
-import { validateBody } from '../lib/validate.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { z } from 'zod';
 
 const analyzeRepoSchema = z.object({
@@ -275,8 +275,8 @@ Only respond with the JSON, no markdown formatting.`;
 // List submissions for hackathon
 submissions.get('/', async (c) => {
   const hackathon = c.get('hackathon')!;
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const teamId = c.req.query('team_id');
   const roundId = c.req.query('round_id');
   const currentOnly = c.req.query('current_only') !== 'false';
@@ -315,8 +315,8 @@ submissions.get('/', async (c) => {
 // AI Score leaderboard (MUST be before /:submissionId to avoid route conflict)
 submissions.get('/ai-leaderboard', async (c) => {
   const hackathon = c.get('hackathon')!;
-  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10), 1), 100);
-  const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 50), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.team_id, s.title, s.repo_url, s.ai_score, s.submitted_at,
             t.name as team_name
@@ -435,7 +435,7 @@ submissions.post('/', authMiddleware, async (c) => {
 
   // Mark any existing final submissions as non-final
   await c.env.DB.prepare(
-    'UPDATE submissions SET is_final = 0 WHERE hackathon_id = ? AND team_id = ? AND is_final = 1'
+    'UPDATE submissions SET is_final = 0, is_current = 0 WHERE hackathon_id = ? AND team_id = ? AND is_final = 1'
   ).bind(hackathon.id, membership.team_id).run();
 
   const id = crypto.randomUUID();
@@ -449,12 +449,14 @@ submissions.post('/', authMiddleware, async (c) => {
   } catch { repoFullName = body.repo_url; }
 
   await c.env.DB.prepare(
-    `INSERT INTO submissions (id, hackathon_id, team_id, round_id, tag_name, commit_sha, status, submitted_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending_validation', ?)`
+    `INSERT INTO submissions (id, hackathon_id, team_id, round_id, tag_name, commit_sha, title, description, repo_url, repo_full_name, demo_url, video_url, analysis_json, ai_review_json, ai_score, is_final, status, submitted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_validation', ?)`
   ).bind(
     id, hackathon.id, membership.team_id, targetRoundId || null,
-    body.title,
-    'manual',
+    body.title, 'manual',
+    body.title, body.description ?? null, body.repo_url, repoFullName,
+    body.demo_url ?? null, body.video_url ?? null,
+    body.analysis_json ?? null, body.ai_review_json ?? null, body.ai_score ?? null,
     now
   ).run();
 

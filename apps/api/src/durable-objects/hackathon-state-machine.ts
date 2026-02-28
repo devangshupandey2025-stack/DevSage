@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { VALID_TRANSITIONS } from '../lib/constants.js';
 
 interface DOEnv {
   DB: D1Database;
@@ -6,14 +7,6 @@ interface DOEnv {
   NOTIFICATION_QUEUE: Queue;
   WEBHOOK_QUEUE: Queue;
 }
-
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  draft: ['active'],
-  active: ['judging'],
-  judging: ['completed'],
-  completed: ['archived'],
-  archived: ['completed'],
-};
 
 export class HackathonStateMachine extends DurableObject<DOEnv> {
   private initialized = false;

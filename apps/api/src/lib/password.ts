@@ -1,7 +1,6 @@
-const ITERATIONS = 100_000;
+import { PASSWORD } from './constants.js';
+
 const HASH_ALGORITHM = 'SHA-256';
-const KEY_LENGTH_BYTES = 32;
-const SALT_LENGTH_BYTES = 16;
 
 function toBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -30,16 +29,16 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<ArrayBuffe
     {
       name: 'PBKDF2',
       salt: salt.buffer as ArrayBuffer,
-      iterations: ITERATIONS,
+      iterations: PASSWORD.PBKDF2_ITERATIONS,
       hash: HASH_ALGORITHM,
     },
     keyMaterial,
-    KEY_LENGTH_BYTES * 8,
+    PASSWORD.KEY_BYTES * 8,
   );
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  const salt = new Uint8Array(SALT_LENGTH_BYTES);
+  const salt = new Uint8Array(PASSWORD.SALT_BYTES);
   crypto.getRandomValues(salt);
   const hash = await deriveKey(password, salt);
   return `${toBase64(salt.buffer as ArrayBuffer)}:${toBase64(hash)}`;

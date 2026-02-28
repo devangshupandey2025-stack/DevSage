@@ -64,7 +64,7 @@ export async function sendEmail(
     password: env.SMTP_PASSWORD,
   };
 
-  console.warn(`[email] SMTP config: host=${config.host} port=${config.port} user=${config.username}`);
+  console.warn(`[email] SMTP config: host=${config.host} port=${config.port}`);
 
   // Try the configured port first
   try {

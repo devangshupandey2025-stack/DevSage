@@ -3,7 +3,7 @@ import type { AppEnv } from '../types/env.js';
 import { successResponse, errorResponse, paginatedResponse } from '../lib/response.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platform-admin.js';
-import { validateBody } from '../lib/validate.js';
+import { validateBody, safeParseInt } from '../lib/validate.js';
 import { z } from 'zod';
 
 const createHackathonRequestSchema = z.object({
@@ -96,8 +96,8 @@ hackathonRequests.post('/', authMiddleware, async (c) => {
 // List my hackathon requests (for organizer)
 hackathonRequests.get('/', authMiddleware, async (c) => {
   const user = c.get('user')!;
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(`
@@ -134,8 +134,8 @@ hackathonRequests.get('/:id', authMiddleware, async (c) => {
 
 // List all hackathon requests (admin only)
 hackathonRequests.get('/admin/all', authMiddleware, requirePlatformAdmin, async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100);
-  const offset = parseInt(c.req.query('offset') ?? '0');
+  const limit = Math.min(Math.max(safeParseInt(c.req.query('limit'), 20), 1), 100);
+  const offset = Math.max(safeParseInt(c.req.query('offset'), 0), 0);
   const status = c.req.query('status');
 
   let whereClause = '';

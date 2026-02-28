@@ -1,62 +1,26 @@
 import type { MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../types/env.js';
+import type { AppEnv, UserContext } from '../types/env.js';
 import { getAccessTokenCookie } from '../lib/cookies.js';
 import { verifyJWT } from '../lib/jwt.js';
+import { KV_TTL } from '../lib/constants.js';
 
 type RawRoleRow = { slug: string | null; role: string };
 type RawWorkspaceRow = { workspace_id: string; role: string };
 
 /**
- * Global middleware: extracts and validates JWT from access_token cookie.
- * Sets c.set('user', ...) on success, c.set('user', null) on failure.
+ * Build the full user context from DB queries (6 queries in parallel).
+ * Result is cached in KV to avoid repeating this on every request.
  */
-export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const cookieToken = getAccessTokenCookie(c);
-  const header = c.req.header('Authorization');
-  const headerToken = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const token = cookieToken ?? headerToken;
-
-  if (!token) {
-    c.set('user', null);
-    return next();
-  }
-
-  const payload = await verifyJWT(token, c.env.JWT_SECRET);
-  if (!payload?.sub) {
-    c.set('user', null);
-    return next();
-  }
-
-  const payloadWorkspaceRoles = payload.workspaceRoles ?? {};
-  const payloadHackathonRoles = payload.hackathonRoles ?? {};
-  const payloadPlatformAdmin = payload.platformAdmin === true;
-  const payloadEmail = payload.email ?? '';
-  const payloadName = payload.name ?? 'User';
-  const payloadImage = payload.image ?? null;
-
-  // Backward-compatible path for legacy Bearer token callers (tests + transitional clients).
-  if (!cookieToken) {
-    c.set('user', {
-      id: payload.sub,
-      email: payloadEmail,
-      name: payloadName,
-      image: payloadImage,
-      avatar_url: payloadImage,
-      github_username: null,
-      created_at: null,
-      platformAdmin: payloadPlatformAdmin,
-      hackathonRoles: payloadHackathonRoles,
-      workspaceRoles: payloadWorkspaceRoles,
-    });
-    return next();
-  }
-
-  const user = await c.env.DB.prepare(
+async function buildUserContext(
+  db: D1Database,
+  userId: string,
+): Promise<UserContext | null> {
+  const user = await db.prepare(
     `SELECT id, email, name, avatar_url, github_username, created_at
      FROM users
      WHERE id = ?
      LIMIT 1`,
-  ).bind(payload.sub).first<{
+  ).bind(userId).first<{
     id: string;
     email: string;
     name: string | null;
@@ -65,31 +29,28 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     created_at: string | null;
   }>();
 
-  if (!user) {
-    c.set('user', null);
-    return next();
-  }
+  if (!user) return null;
 
   const [platformAdminRow, workspaceRows, organizerRows, judgeRows, teamRows] = await Promise.all([
-    c.env.DB.prepare(
+    db.prepare(
       'SELECT id FROM platform_admins WHERE user_id = ? LIMIT 1',
     ).bind(user.id).first<{ id: string }>(),
-    c.env.DB.prepare(
+    db.prepare(
       'SELECT workspace_id, role FROM workspace_members WHERE user_id = ?',
     ).bind(user.id).all<RawWorkspaceRow>(),
-    c.env.DB.prepare(
+    db.prepare(
       `SELECT h.slug, o.role
        FROM organizer_roles o
        JOIN hackathons h ON h.id = o.hackathon_id
        WHERE o.user_id = ?`,
     ).bind(user.id).all<RawRoleRow>(),
-    c.env.DB.prepare(
+    db.prepare(
       `SELECT h.slug, 'judge' AS role
        FROM judges j
        JOIN hackathons h ON h.id = j.hackathon_id
        WHERE j.user_id = ? AND j.invite_status = 'accepted'`,
     ).bind(user.id).all<RawRoleRow>(),
-    c.env.DB.prepare(
+    db.prepare(
       `SELECT h.slug, tm.role
        FROM team_members tm
        JOIN teams t ON t.id = tm.team_id
@@ -120,12 +81,10 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   const hackathonRoles: Record<string, string[]> = {};
   for (const [slug, roles] of hackathonRoleSets.entries()) {
-    const existing = new Set(hackathonRoles[slug] || []);
-    for (const role of roles) existing.add(role);
-    hackathonRoles[slug] = [...existing];
+    hackathonRoles[slug] = [...roles];
   }
 
-  c.set('user', {
+  return {
     id: user.id,
     email: user.email,
     name: user.name ?? user.email,
@@ -136,8 +95,61 @@ export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     platformAdmin: !!platformAdminRow,
     hackathonRoles,
     workspaceRoles,
-  });
+  };
+}
 
+/**
+ * Global middleware: extracts and validates JWT from access_token cookie or Bearer header.
+ * Sets c.set('user', ...) on success, c.set('user', null) on failure.
+ *
+ * Uses KV cache (30s TTL) to avoid 6 DB queries per authenticated request.
+ * Cache is keyed by user ID and invalidated on TTL expiry.
+ */
+export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const cookieToken = getAccessTokenCookie(c);
+  const header = c.req.header('Authorization');
+  const headerToken = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = cookieToken ?? headerToken;
+
+  if (!token) {
+    c.set('user', null);
+    return next();
+  }
+
+  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  if (!payload?.sub) {
+    c.set('user', null);
+    return next();
+  }
+
+  // Try KV cache first
+  const cacheKey = `auth:ctx:${payload.sub}`;
+  const cached = await c.env.KV.get(cacheKey);
+  if (cached) {
+    try {
+      const userContext = JSON.parse(cached) as UserContext;
+      c.set('user', userContext);
+      return next();
+    } catch {
+      // Cache corrupted — fall through to DB
+    }
+  }
+
+  // Cache miss — build from DB
+  const userContext = await buildUserContext(c.env.DB, payload.sub);
+  if (!userContext) {
+    c.set('user', null);
+    return next();
+  }
+
+  // Cache in KV (fire-and-forget)
+  c.executionCtx?.waitUntil(
+    c.env.KV.put(cacheKey, JSON.stringify(userContext), {
+      expirationTtl: KV_TTL.AUTH_CONTEXT,
+    }),
+  );
+
+  c.set('user', userContext);
   return next();
 };
 

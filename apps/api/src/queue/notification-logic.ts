@@ -45,9 +45,10 @@ export async function resolveNotificationRecipients(
       // Notify organizers only
       return getOrganizers(db, hackathonId);
 
+    case 'announcement.created':
     case 'hackathon.judging_started':
     case 'results.published': {
-      // Notify all participants + judges + organizers
+      // Notify all participants + judges + organizers (bounded to 1000)
       const all = await db.prepare(`
         SELECT DISTINCT u.id as user_id, u.email FROM users u WHERE u.id IN (
           SELECT user_id FROM organizer_roles WHERE hackathon_id = ?
@@ -56,6 +57,7 @@ export async function resolveNotificationRecipients(
           UNION
           SELECT tm.user_id FROM team_members tm JOIN teams t ON tm.team_id = t.id WHERE t.hackathon_id = ?
         )
+        LIMIT 1000
       `).bind(hackathonId, hackathonId, hackathonId).all<Recipient>();
       return all.results || [];
     }

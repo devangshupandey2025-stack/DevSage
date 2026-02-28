@@ -178,7 +178,7 @@ export async function sendSmtp(
   const { host, port, username, password } = config;
   const directTls = port === 465;
 
-  console.warn(`[smtp] Connecting to ${host}:${port} (${directTls ? 'direct TLS' : 'STARTTLS'}) as ${username}`);
+  console.warn(`[smtp] Connecting to ${host}:${port} (${directTls ? 'direct TLS' : 'STARTTLS'})`);
 
   // For direct TLS (465), use 'on'. For STARTTLS (587), start plaintext ('off') and upgrade manually.
   let socket = connect(
