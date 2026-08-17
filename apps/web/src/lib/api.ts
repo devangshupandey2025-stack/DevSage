@@ -12,7 +12,9 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   const result = await localApiRequest<T>(endpoint, options);
 
   if (result.ok) {
-    return result.data;
+    // Preserve the original contract: apiRequest returns the full
+    // `{ ok, data }` envelope (the old fetch wrapper returned response.json()).
+    return result as T;
   }
 
   const status = result.error.status ?? 400;
