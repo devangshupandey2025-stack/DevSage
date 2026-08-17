@@ -1,38 +1,26 @@
+import { localApiRequest } from '@devsage/local-data';
+
 export class ApiError extends Error {
-  constructor(public status: number, public message: string) {
+  constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
   }
 }
 
 export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const apiOriginRaw = import.meta.env.VITE_API_ORIGIN as string | undefined;
-  const apiOrigin = apiOriginRaw ? apiOriginRaw.replace(/\/$/, '') : undefined;
-  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = apiOrigin ? `${apiOrigin}${path}` : path;
+  const isAuthCheck = endpoint === '/auth/me' || endpoint === 'auth/me';
+  const result = await localApiRequest<T>(endpoint, options);
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const errorMessage = typeof errorData.error === 'object' && errorData.error?.message
-      ? errorData.error.message
-      : typeof errorData.error === 'string'
-        ? errorData.error
-        : response.statusText || 'API Request Failed';
-    throw new ApiError(response.status, errorMessage);
+  if (result.ok) {
+    return result.data;
   }
 
-  // Handle 204 No Content
-  if (response.status === 204) {
-    return {} as T;
+  const status = result.error.status ?? 400;
+  if (status === 401 && !isAuthCheck) {
+    const currentPath = window.location.pathname;
+    if (currentPath !== '/login' && currentPath !== '/') {
+      window.location.href = '/login';
+    }
   }
-
-  return response.json();
+  throw new ApiError(status, result.error.message);
 }
