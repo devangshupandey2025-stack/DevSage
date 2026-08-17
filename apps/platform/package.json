@@ -12,6 +12,7 @@
     "deploy:dev": "pnpm build && wrangler deploy --env dev"
   },
   "dependencies": {
+    "@devsage/local-data": "workspace:*",
     "@devsage/shared": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
