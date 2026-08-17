@@ -91,8 +91,9 @@ function useCountdown(target: Date | null): string {
   const [text, setText] = useState('');
   useEffect(() => {
     if (!target) { setText(''); return; }
+    const deadline = target;
     function update() {
-      const diff = target.getTime() - Date.now();
+      const diff = deadline.getTime() - Date.now();
       if (diff <= 0) { setText('now'); return; }
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
