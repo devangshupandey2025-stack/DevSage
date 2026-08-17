@@ -40,3 +40,4 @@ export const teamInviteStatusSchema = z.enum(['pending', 'accepted', 'declined',
 export const workspaceInviteStatusSchema = z.enum(['pending', 'accepted', 'expired']);
 export const deletionRequestStatusSchema = z.enum(['pending', 'confirmed', 'completed', 'cancelled']);
 export const assignmentStatusSchema = z.enum(['pending', 'scored', 'skipped']);
+export type AssignmentStatus = z.infer<typeof assignmentStatusSchema>;
