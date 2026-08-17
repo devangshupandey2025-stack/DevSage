@@ -1,0 +1,29 @@
+{
+  "name": "@devsage/local-data",
+  "version": "0.1.0",
+  "description": "Local IndexedDB data adapter for frontend-only DevSage runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@devsage/shared": "workspace:*",
+    "dexie": "^4.0.0"
+  },
+  "devDependencies": {
+    "@devsage/config": "workspace:*",
+    "fake-indexeddb": "^6.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
+  }
+}
