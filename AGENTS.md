@@ -23,6 +23,7 @@ DevSage/
 ├── packages/
 │   ├── config/       # Shared tsconfig (base/react/worker) + ESLint flat config (ESLint 9+)
 │   ├── db/           # Drizzle ORM schemas (46 files) + D1 migrations (2 SQL files)
+│   ├── local-data/   # Frontend-only runtime: Dexie (IndexedDB) local adapter + demo seed — serves all 4 SPAs
 │   └── shared/       # Zod schemas (26 files), types, constants — ⚠️ DEAD CODE: zero imports at runtime
 ├── debt/             # Technical debt registry — 7 audit documents from 2026-02-26 audit
 ├── plan/             # Feature specifications — 8 cross-functional docs + 5 role specs + 9-part implementation guide
@@ -55,6 +56,7 @@ DevSage/
 | Add cron task | `apps/api/src/cron/index.ts` | Each task in independent try-catch |
 | Add DB table | `packages/db/src/schema/`, re-export from `schema/index.ts`, run `drizzle-kit generate` | |
 | Add Zod schema | `packages/shared/src/schemas/`, re-export from `src/index.ts` with `.js` extension | ⚠️ Currently dead code |
+| Add local adapter route | `packages/local-data/src/adapter.ts` ROUTES array | Mirrors real API shapes; tested in `packages/local-data/src/__tests__/adapter.test.ts` |
 | Add admin page | `apps/admin/src/pages/` | shikdd.devsage.org |
 | Add organizer page | `apps/platform/src/pages/` | platform.devsage.org |
 | Add judge page | `apps/judge/src/pages/` | judge.devsage.org |
@@ -67,17 +69,18 @@ DevSage/
 
 ```
 apps/api      → @devsage/shared, @devsage/db, @devsage/config
-apps/admin    → @devsage/shared
-apps/judge    → @devsage/shared
-apps/platform → @devsage/shared
-apps/web      → @devsage/shared
+apps/admin    → @devsage/shared, @devsage/local-data
+apps/judge    → @devsage/shared, @devsage/local-data
+apps/platform → @devsage/shared, @devsage/local-data
+apps/web      → @devsage/shared, @devsage/local-data
 packages/db     → @devsage/config
+packages/local-data → @devsage/shared, dexie (+ @devsage/config as devDep)
 packages/shared → (standalone, only dep: zod)
 packages/config → (standalone)
 ```
 
 **Rules:**
-- Frontend apps (`web`, `platform`, `admin`, `judge`) import from `packages/shared` only — **never** from `db` or `api`
+- Frontend apps (`web`, `platform`, `admin`, `judge`) import from `packages/shared` and `packages/local-data` only — **never** from `db` or `api`
 - No circular dependencies. No cross-app imports
 - Participant sites (`{slug}.devsage.org`) are separate repos
 
@@ -96,7 +99,8 @@ packages/config → (standalone)
 | `successResponse()` / `errorResponse()` | Function | `api/src/lib/response.ts` | `{ ok, data, meta }` / `{ ok, error: { code, message } }` |
 | `insertAuditEvent()` | Function | `api/src/lib/audit.ts` | Hash chain integrity (user/system/bot/cron actors) |
 | `createHackathonHandler` | Function | `api/src/routes/hackathons.ts` | Shared handler for both POST URL patterns |
-| `apiRequest<T>()` | Function | `*/src/lib/api.ts` | Per-app fetch wrapper: cookies, 401→refresh→retry |
+| `apiRequest<T>()` | Function | `*/src/lib/api.ts` | Per-app wrapper over `localApiRequest` (local runtime) — same call signature |
+| `localApiRequest<T>()` | Function | `packages/local-data/src/adapter.ts` | Local adapter: ROUTES → IndexedDB repos, `{ ok, data, meta }` envelope, optional-auth |
 | `AuthProvider` / `useAuth()` | Context | `*/src/contexts/auth-context.tsx` | `{ user, isAuthenticated, isLoading, logout }` |
 
 ## CONVENTIONS
@@ -175,6 +179,7 @@ pnpm deploy:all              # Deploy all apps
 # Single package
 pnpm --filter @devsage/api test
 pnpm --filter @devsage/api exec vitest run src/__tests__/hackathons.test.ts
+pnpm --filter @devsage/local-data test
 
 # DB migration after schema changes
 pnpm --filter @devsage/db run generate
@@ -184,6 +189,7 @@ pnpm --filter @devsage/db run generate
 
 - **Framework**: Vitest everywhere
 - **API tests**: `@cloudflare/vitest-pool-workers` — real Workers runtime with D1/KV/DO bindings. `singleWorker: true`
+- **local-data tests**: Vitest + `fake-indexeddb` — 28 tests in `packages/local-data/src/__tests__/adapter.test.ts` covering every API shape the 4 SPAs consume
 - **Frontend tests**: jsdom + `@testing-library/react` (⚠️ zero test files exist across all 4 frontend apps)
 - **Pattern**: `src/__tests__/**/*.test.ts`, integration-first, minimal mocking
 - **Current**: 24 test files, 223 passing, 0 failures
@@ -308,6 +314,7 @@ pnpm --filter @devsage/db run generate
 | `apps/admin` | `shadcn`, `tailwind-v4-shadcn`, `typescript-expert`, `zod` |
 | `apps/judge` | `shadcn`, `tailwind-v4-shadcn`, `typescript-expert`, `zod` |
 | `packages/db` | `d1-drizzle-schema`, `drizzle-migrations`, `typescript-expert` |
+| `packages/local-data` | `typescript-expert`, `vitest`, `vitest-testing`, `zod` |
 | `packages/shared` | `zod`, `typescript-expert`, `typescript-advanced-types` |
 
 ### Subagent Strategy
@@ -337,6 +344,7 @@ Use subagents for tasks spanning 2+ packages. Common patterns:
 ## NOTES
 
 - Four frontend apps: `web` (devsage.org), `platform` (platform.devsage.org), `admin` (shikdd.devsage.org), `judge` (judge.devsage.org)
+- Frontend-only runtime (branch `frontend-migration-phase-1`): all 4 SPAs run through `@devsage/local-data` — Dexie (IndexedDB) local adapter + demo seed, zero network calls to the API
 - Participant sites (`{slug}.devsage.org`) are separate repos via `scripts/generate-hackathon-site.js`
 - Vite dev proxy: `/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787`
 - Production API: `https://api.devsage.org` with `/api/v1/` prefix, slug-based hackathon addressing

@@ -31,6 +31,7 @@ DevSage/
 ├── packages/
 │   ├── config/       # Shared tsconfig + ESLint config
 │   ├── db/           # Drizzle ORM schemas + D1 migrations
+│   ├── local-data/   # Frontend-only runtime: Dexie (IndexedDB) local adapter + demo seed
 │   └── shared/       # Zod schemas, types, constants
 ├── scripts/
 │   └── generate-hackathon-site.js  # CLI tool for deploying hackathon sites
@@ -98,6 +99,7 @@ graph LR
 | Runtime | Cloudflare Workers |
 | Framework | Hono 4.6 |
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM — 49 tables, 148 indexes |
+| Local runtime | Dexie (IndexedDB) via `@devsage/local-data` — all 4 SPAs run offline against a seeded local adapter |
 | State machine | Durable Objects (HackathonStateMachine) |
 | Queues | Cloudflare Queues (github-webhooks + devsage-notifications) |
 | Frontend | React 18 + Vite 6 + Tailwind CSS v4 + shadcn/ui |

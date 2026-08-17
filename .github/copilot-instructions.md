@@ -12,6 +12,7 @@ apps/admin/        → shikdd.devsage.org — platform admin panel (port 5175)
 apps/judge/        → judge.devsage.org — judge scoring portal
 packages/config/   → Shared tsconfig (base/react/worker) + ESLint flat config (ESLint 9+)
 packages/db/       → Drizzle ORM schemas (46 files) + D1 migrations (3 SQL files)
+packages/local-data/ → Frontend-only runtime: Dexie (IndexedDB) local adapter + demo seed (serves all 4 SPAs)
 packages/shared/   → Zod schemas (26 files), types, constants — ⚠️ dead code: zero runtime imports
 ```
 
@@ -28,6 +29,7 @@ pnpm typecheck               # Type-check all
 # Single package
 pnpm --filter @devsage/api test
 pnpm --filter @devsage/web test
+pnpm --filter @devsage/local-data test
 
 # Single test file
 pnpm --filter @devsage/api exec vitest run src/__tests__/hackathons.test.ts
@@ -48,8 +50,9 @@ pnpm secrets:staged          # Staged files (runs on pre-commit)
 
 ## Dependency Rules
 
-- Frontend apps (`web`, `platform`, `admin`, `judge`) import from `@devsage/shared` only — **never** from `db` or `api`
+- Frontend apps (`web`, `platform`, `admin`, `judge`) import from `@devsage/shared` and `@devsage/local-data` only — **never** from `db` or `api`
 - `@devsage/api` imports from `@devsage/shared` and `@devsage/db`
+- `@devsage/local-data` imports from `@devsage/shared` (+ Dexie) and is the only data source the 4 SPAs use (frontend-only runtime)
 - No circular dependencies, no cross-app imports
 - Participant sites (`{slug}.devsage.org`) live in separate repositories
 
@@ -76,8 +79,8 @@ pnpm secrets:staged          # Staged files (runs on pre-commit)
 
 - React 18 + Vite + Tailwind CSS v4 + shadcn/ui + React Router v7 + TanStack Query v5
 - Path alias: `@/` → `./src/`
-- Vite dev proxy forwards `/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787`
-- Cookie-based auth: `credentials: 'include'`, 401 → auto-refresh → retry (via `apiRequest()` in each app's `lib/api.ts`)
+- **Frontend-only runtime**: all data flows through `@devsage/local-data`'s `localApiRequest()` (Dexie/IndexedDB adapter) via each app's `apiRequest()` wrapper — zero network calls to the API
+- Vite dev proxy (`/api/v1`, `/auth`, `/hackathons`, `/webhooks` → `http://localhost:8787`) is dormant but harmless
 - Brand color: `#CCFF00` (lime green), dark-first theme
 
 ### Database (`packages/db`)
@@ -127,6 +130,7 @@ pnpm secrets:staged          # Staged files (runs on pre-commit)
 
 - **Framework**: Vitest everywhere
 - **API tests**: `@cloudflare/vitest-pool-workers` — runs in real Workers runtime with D1/KV/DO bindings. `singleWorker: true`. Tests in `apps/api/src/__tests__/` (24 files)
+- **local-data tests**: Vitest + `fake-indexeddb` — 28 tests in `packages/local-data/src/__tests__/adapter.test.ts` covering every API shape the 4 SPAs consume
 - **Frontend tests**: jsdom + `@testing-library/react` — ⚠️ zero test files across all 4 frontend apps
 - **Pattern**: Integration-first, minimal mocking. Test helpers in `src/__tests__/helpers.ts`
 - Each API test calls `ensureSchema()` in `beforeAll` and `resetDb()` in `beforeEach`
